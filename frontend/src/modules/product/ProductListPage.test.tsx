@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 
 const products = [
   {
@@ -28,15 +29,28 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
   status, headers: { 'Content-Type': 'application/json' },
 }))
 
-function show() {
+const auth: AuthState = {
+  loading: false,
+  me: {
+    id: 1, organizationId: 1, username: 'product-owner', displayName: '产品负责人',
+    roles: ['PRODUCT_OWNER'], permissions: ['product:read', 'product:write'],
+  },
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
+
+function show(permissions = ['product:read', 'product:write']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>
-    <MemoryRouter initialEntries={['/products']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Routes>
-        <Route path="/products" element={<ProductListPage />} />
-        <Route path="/products/:productId" element={<span>产品详情</span>} />
-      </Routes>
-    </MemoryRouter>
+    <AuthContext.Provider value={{ ...auth, me: { ...auth.me!, permissions } }}>
+      <MemoryRouter initialEntries={['/products']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
+          <Route path="/products" element={<ProductListPage />} />
+          <Route path="/products/:productId" element={<span>产品详情</span>} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
   </QueryClientProvider>)
 }
 
@@ -102,6 +116,61 @@ it('归档产品只能查看不能编辑', async () => {
   expect(within(drawer).getByLabelText('产品名称')).toBeDisabled()
   expect(within(drawer).queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
   expect(within(drawer).getByText('归档产品仅可查看')).toBeVisible()
+})
+
+it('只读角色不能创建或修改任何产品', async () => {
+  const fetch = vi.fn(() => json(products))
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show(['product:read'])
+
+  expect(await screen.findByRole('link', { name: '智鹿 ERP' })).toBeVisible()
+  expect(screen.queryByRole('button', { name: '新建产品' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '编辑智鹿 ERP' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '查看智鹿 ERP' }))
+  const drawer = screen.getByRole('dialog', { name: '查看产品' })
+  expect(within(drawer).getByLabelText('产品名称')).toBeDisabled()
+  expect(within(drawer).queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it('编辑状态只提供后端允许的下一状态', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  const user = userEvent.setup()
+  show()
+
+  await user.click(await screen.findByRole('button', { name: '编辑智鹿 ERP' }))
+  await user.click(within(screen.getByRole('dialog', { name: '编辑产品' })).getByRole('combobox', { name: '状态' }))
+  const options = await screen.findByRole('listbox')
+  expect(within(options).getByRole('option', { name: '已启用' })).toBeInTheDocument()
+  expect(within(options).getByRole('option', { name: '停止演进' })).toBeInTheDocument()
+  expect(within(options).queryByRole('option', { name: '规划中' })).not.toBeInTheDocument()
+  expect(within(options).queryByRole('option', { name: '已归档' })).not.toBeInTheDocument()
+})
+
+it('分类、状态和负责人筛选会共同约束产品结果', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  const user = userEvent.setup()
+  show()
+
+  expect(await screen.findByRole('link', { name: '智鹿 ERP' })).toBeVisible()
+  await user.click(screen.getByRole('combobox', { name: '分类筛选' }))
+  await user.click(await screen.findByRole('option', { name: '客户经营' }))
+  expect(screen.getByRole('link', { name: '客户关系云' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: '智鹿 ERP' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('combobox', { name: '状态筛选' }))
+  await user.click(await screen.findByRole('option', { name: '规划中' }))
+  expect(screen.getByText('共 1 个产品')).toBeVisible()
+
+  await user.click(screen.getByRole('combobox', { name: '分类筛选' }))
+  await user.click(await screen.findByRole('option', { name: '企业应用' }))
+  await user.click(screen.getByRole('combobox', { name: '状态筛选' }))
+  await user.click(await screen.findByRole('option', { name: '已启用' }))
+  await user.click(screen.getByRole('combobox', { name: '负责人筛选' }))
+  await user.click(await screen.findByRole('option', { name: '负责人 #20' }))
+  expect(screen.getByRole('link', { name: '智鹿 ERP' })).toBeVisible()
+  expect(screen.queryByRole('link', { name: products[2].name })).not.toBeInTheDocument()
 })
 
 it('产品详情展示结构版本概览和归档只读提示', async () => {
