@@ -165,6 +165,64 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void v11UsesV7ActorReferencesForProductOwnership() {
+    DriverManagerDataSource dataSource = legacyDataSource("legacy-v7-ownership");
+    JdbcTemplate legacy = new JdbcTemplate(dataSource);
+    organizationAndUser(legacy, 991, "ORG-A");
+    organizationAndUser(legacy, 992, "ORG-B");
+    organizationAndUser(legacy, 993, "ORG-C");
+    organizationAndUser(legacy, 994, "ORG-D");
+    productAndVersion(legacy, 991, null);
+    productAndVersion(legacy, 992, null);
+    productAndVersion(legacy, 993, null);
+    legacy.update("insert into product_baseline(id,product_version_id,capability_code,"
+        + "capability_name,dimension,scope_description,owner_user_id) "
+        + "values (991,991,'BASELINE','基线','FUNCTIONAL','范围',992)");
+    legacy.update("insert into maturity_assessment(id,product_version_id,period_key,"
+        + "standard_coverage,reuse_rate,documentation_score,extension_readiness,"
+        + "delivery_stability,maturity_score,assessed_by) "
+        + "values (992,992,'2026-Q1',80,80,80,80,80,80,993)");
+    legacy.update("insert into standardization_debt(id,product_version_id,pattern_key,title,"
+        + "occurrence_count,distinct_projects,owner_user_id) "
+        + "values (993,993,'V7-DEBT','标准化债务',1,1,994)");
+
+    migrateV11(dataSource);
+
+    assertEquals(Long.valueOf(992), legacy.queryForObject(
+        "select organization_id from product where id=991", Long.class));
+    assertEquals(Long.valueOf(993), legacy.queryForObject(
+        "select organization_id from product where id=992", Long.class));
+    assertEquals(Long.valueOf(994), legacy.queryForObject(
+        "select organization_id from product where id=993", Long.class));
+  }
+
+  @Test
+  void v11FailsBeforeSchemaChangesWhenV7ActorsSpanOrganizations() {
+    DriverManagerDataSource dataSource = legacyDataSource("legacy-v7-shared-product");
+    JdbcTemplate legacy = new JdbcTemplate(dataSource);
+    organizationAndUser(legacy, 991, "ORG-A");
+    organizationAndUser(legacy, 992, "ORG-B");
+    productAndVersion(legacy, 991, null);
+    legacy.update("insert into product_baseline(id,product_version_id,capability_code,"
+        + "capability_name,dimension,scope_description,owner_user_id) "
+        + "values (991,991,'BASELINE','基线','FUNCTIONAL','范围',991)");
+    legacy.update("insert into maturity_assessment(id,product_version_id,period_key,"
+        + "standard_coverage,reuse_rate,documentation_score,extension_readiness,"
+        + "delivery_stability,maturity_score,assessed_by) "
+        + "values (991,991,'2026-Q1',80,80,80,80,80,80,992)");
+
+    FlywayException failure = assertThrows(FlywayException.class,
+        () -> migrateV11(dataSource));
+
+    assertTrue(messages(failure).toLowerCase(java.util.Locale.ROOT)
+            .contains("v11_product_single_organization_guard"),
+        messages(failure));
+    assertEquals(Integer.valueOf(0), legacy.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='product' and column_name='organization_id'", Integer.class));
+  }
+
+  @Test
   void productPermissionsMatchBuiltInRoleContract() {
     assertEquals(Integer.valueOf(6), jdbc.queryForObject(
         "select count(*) from role r join role_permission rp on rp.role_id=r.id "

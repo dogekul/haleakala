@@ -25,6 +25,18 @@ SELECT product_id,organization_id FROM (
   SELECT v.product_id,k.organization_id FROM knowledge_item k
     JOIN product_version v ON v.id=k.product_version_id
     WHERE k.product_version_id IS NOT NULL
+  UNION
+  SELECT v.product_id,u.organization_id FROM product_baseline b
+    JOIN product_version v ON v.id=b.product_version_id
+    JOIN app_user u ON u.id=b.owner_user_id
+  UNION
+  SELECT v.product_id,u.organization_id FROM maturity_assessment a
+    JOIN product_version v ON v.id=a.product_version_id
+    JOIN app_user u ON u.id=a.assessed_by
+  UNION
+  SELECT v.product_id,u.organization_id FROM standardization_debt d
+    JOIN product_version v ON v.id=d.product_version_id
+    JOIN app_user u ON u.id=d.owner_user_id
 ) referenced_product_organizations;
 
 CREATE TEMPORARY TABLE v11_product_organization_map (
