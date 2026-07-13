@@ -8,9 +8,9 @@ import { PlaceholderPage } from './PlaceholderPage'
 
 const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then(module => ({ default: module.ProjectDetail })))
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
+const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage').then(module => ({ default: module.DashboardPage })))
 
 const routes = [
-  ['/dashboard', 'dashboard', 'dashboard:read'],
   ['/requirements', 'requirements', 'requirement:read'],
   ['/standardization', 'standardization', 'standardization:read'],
   ['/knowledge', 'knowledge', 'knowledge:read'],
@@ -22,6 +22,9 @@ export function App() {
   return <Routes>
     <Route path="/login" element={<LoginPage />} />
     <Route path="/403" element={<ForbiddenPage />} />
+    <Route path="/dashboard/*" element={<RequireAuth><RequirePermission code="dashboard:read">
+      <AppShell><LazyPage><DashboardPage /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
     <Route path="/projects" element={<RequireAuth><RequirePermission code="project:read">
       <AppShell><LazyPage><ProjectWorkspace /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
@@ -42,5 +45,5 @@ function LazyPage({ children }: { children: React.ReactNode }) {
 }
 
 function NavigateHome() {
-  return <RequireAuth><AppShell><PlaceholderPage module="dashboard" /></AppShell></RequireAuth>
+  return <RequireAuth><AppShell><LazyPage><DashboardPage /></LazyPage></AppShell></RequireAuth>
 }

@@ -214,6 +214,28 @@ button, input { font: inherit; }
 .agent-job-card { margin-top: 16px; }
 .agent-job-card code { color: #245bdb; }
 
+.dashboard-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+.eyebrow.dark { color: #245bdb; }
+.dashboard-heading h2.ant-typography { margin: 8px 0 2px; font-size: 28px; }
+.dashboard-heading p.ant-typography { margin: 0; color: #646a73; }
+.kpi-row { margin-bottom: 14px; }
+.kpi-card { overflow: hidden; border-color: #e5e6eb; }
+.kpi-card .ant-card-body { position: relative; display: flex; align-items: center; gap: 12px; padding: 17px; }
+.kpi-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: #edf2ff; color: #245bdb; font-size: 18px; }
+.kpi-card.green .kpi-icon { color: #28784d; background: #eaf8f0; }.kpi-card.orange .kpi-icon { color: #ad6800; background: #fff7e6; }
+.kpi-card.red .kpi-icon { color: #c62828; background: #fff0f0; }.kpi-card.purple .kpi-icon { color: #6938b5; background: #f5efff; }
+.kpi-card .ant-statistic-title { margin-bottom: 0; font-size: 12px; }.kpi-card .ant-statistic-content { font-size: 23px; font-weight: 650; }
+.dashboard-filter { margin-bottom: 18px; border-color: #e5e6eb; }.dashboard-filter .ant-card-body { padding: 12px; }
+.dashboard-section { margin-bottom: 18px; }.section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.section-heading h4.ant-typography { margin: 0; }.section-heading > div > span { color: #8f959e; font-size: 12px; }
+.compact-progress { width: 150px; }.compact-progress > span { font-size: 12px; }.compact-progress .ant-progress { margin: 0; }
+.dashboard-project-card { height: 190px; border-left: 3px solid #2ea869; }.dashboard-project-card.risk-red { border-left-color: #f54a45; }.dashboard-project-card.risk-yellow { border-left-color: #f5a623; }
+.dashboard-project-card > .ant-card-body > p { margin: 14px 0; color: #646a73; font-size: 12px; }.card-stage { display: flex; justify-content: space-between; font-size: 12px; }
+.dashboard-lower { margin-top: 18px; }.insight-card { min-height: 350px; border-color: #e5e6eb; }.heatmap-head, .heatmap-row { display: grid; grid-template-columns: 1fr 88px; align-items: center; }
+.heatmap-head { padding: 0 8px 8px; color: #8f959e; border-bottom: 1px solid #eff0f1; font-size: 11px; }.heatmap-row { min-height: 52px; padding: 7px 8px; border-bottom: 1px solid #f2f3f5; }
+.heatmap-row > div:first-child { display: flex; flex-direction: column; }.heatmap-row span { color: #8f959e; font-size: 11px; }.heat-score { width: 50px; padding: 7px; border-radius: 5px; text-align: center; font-weight: 700; }
+.score-high { color: #b42318; background: #fee4e2; }.score-medium { color: #b54708; background: #ffead5; }.score-low { color: #027a48; background: #d1fadf; }.dashboard-empty { padding: 80px 0; color: #8f959e; text-align: center; }
+
 .detail-back { margin-bottom: 14px; font-size: 13px; }
 .project-hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 22px 24px; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
 .project-hero h2.ant-typography { margin: 10px 0 6px; }
