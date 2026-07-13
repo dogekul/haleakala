@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +14,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  @ExceptionHandler(AuthenticationException.class)
+  public ResponseEntity<ApiError> handleAuthentication(AuthenticationException exception) {
+    ApiError body = new ApiError(
+        "BAD_CREDENTIALS",
+        "用户名或密码错误",
+        UUID.randomUUID().toString(),
+        null);
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+  }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException exception) {
@@ -30,4 +41,3 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
   }
 }
-
