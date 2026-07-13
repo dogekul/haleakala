@@ -9,6 +9,9 @@ export const standardizationApi = {
   debts: (versionId: number) => api<StandardizationDebt[]>(`/api/v1/standardization/debts?productVersionId=${versionId}`),
   evaluateDebts: (versionId: number) => api<StandardizationDebt[]>(`/api/v1/standardization/debts/evaluate?productVersionId=${versionId}`, { method: 'POST' }),
   transitionDebt: (id: number, targetStatus: string, verificationNote?: string) => api<StandardizationDebt>(`/api/v1/standardization/debts/${id}/transition`, { method: 'PUT', body: JSON.stringify({ targetStatus, verificationNote }) }),
+  convertToFeature: (id: number, input: Record<string, unknown>) => api<StandardizationDebt>(`/api/v1/standardization/debts/${id}/convert-to-feature`, {
+    method: 'POST', body: JSON.stringify(input),
+  }),
   costs: (versionId: number) => api<CostSummary>(`/api/v1/standardization/costs?productVersionId=${versionId}`),
   flywheel: (versionId: number) => api<FlywheelMetric>(`/api/v1/standardization/flywheel?productVersionId=${versionId}`, { method: 'POST' }),
 }

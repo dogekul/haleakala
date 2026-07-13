@@ -2,6 +2,7 @@ export interface Requirement {
   id: number
   organizationId: number
   projectId: number
+  productId: number
   projectCode: string
   projectName: string
   code: string
@@ -21,3 +22,11 @@ export interface Requirement {
 
 export interface DuplicateCandidate { id: number; title: string; description: string; similarityScore: number }
 export interface Funnel { L0: number; L1: number; L2: number }
+export interface FeatureCoverageEntry {
+  featureId: number
+  featureCode: string
+  featureName: string
+  moduleName: string
+  coverageType: 'FULL' | 'PARTIAL'
+}
+export interface RequirementCoverage { requirementId: number; fullyCovered: boolean; entries: FeatureCoverageEntry[] }

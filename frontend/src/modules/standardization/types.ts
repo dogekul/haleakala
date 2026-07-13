@@ -42,6 +42,8 @@ export interface StandardizationDebt {
   status: 'CANDIDATE' | 'PENDING' | 'INCLUDED' | 'VERIFYING' | 'CLOSED'
   targetVersion?: string
   verificationNote?: string
+  convertedFeatureId?: number
+  version: number
 }
 
 export interface CostSummary {

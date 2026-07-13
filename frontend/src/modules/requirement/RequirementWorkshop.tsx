@@ -1,6 +1,6 @@
 import {
   ApartmentOutlined, AppstoreOutlined, BarsOutlined, BulbOutlined, CheckOutlined,
-  FilterOutlined, MergeCellsOutlined, PlusOutlined, RobotOutlined, WarningOutlined,
+  FilterOutlined, LinkOutlined, MergeCellsOutlined, PlusOutlined, RobotOutlined, WarningOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../services/api'
 import { projectApi } from '../project/projectApi'
 import { requirementApi } from './requirementApi'
+import { FeatureCoverageDrawer } from './FeatureCoverageDrawer'
 import type { DuplicateCandidate, Funnel, Requirement } from './types'
 
 const levels = {
@@ -27,6 +28,7 @@ export function RequirementWorkshop() {
   const [createOpen, setCreateOpen] = useState(false)
   const [decision, setDecision] = useState<Requirement>()
   const [duplicateOf, setDuplicateOf] = useState<Requirement>()
+  const [coverageOf, setCoverageOf] = useState<Requirement>()
   const handledRequirementId = useRef<number>()
   const requirements = useQuery({ queryKey: ['requirements'], queryFn: requirementApi.list })
   const funnel = useQuery({ queryKey: ['requirement-funnel'], queryFn: requirementApi.funnel })
@@ -47,11 +49,12 @@ export function RequirementWorkshop() {
     <ClassificationFunnel value={funnel.data ?? { L0: 0, L1: 0, L2: 0 }} />
     <Card className="requirement-toolbar"><div><Space><Input.Search placeholder="搜索需求编号或标题" style={{ width: 280 }} /><Button icon={<FilterOutlined />}>筛选</Button></Space>
       <Segmented value={view} onChange={value => setView(String(value))} options={[{ value: 'list', label: '列表', icon: <BarsOutlined /> }, { value: 'board', label: '看板', icon: <AppstoreOutlined /> }]} /></div></Card>
-    {view === 'list' ? <RequirementList values={visibleRequirements} onDecision={setDecision} onDuplicate={setDuplicateOf} />
+    {view === 'list' ? <RequirementList values={visibleRequirements} onDecision={setDecision} onDuplicate={setDuplicateOf} onCoverage={setCoverageOf} />
       : <RequirementBoard values={visibleRequirements} onDecision={setDecision} />}
     <CollectionDrawer open={createOpen} onClose={() => setCreateOpen(false)} />
     <DecisionDrawer requirement={decision} onClose={() => setDecision(undefined)} />
     <DuplicateModal requirement={duplicateOf} onClose={() => setDuplicateOf(undefined)} />
+    <FeatureCoverageDrawer requirement={coverageOf} onClose={() => setCoverageOf(undefined)} />
   </div>
 }
 
@@ -65,14 +68,14 @@ function ClassificationFunnel({ value }: { value: Funnel }) {
   </Card>
 }
 
-function RequirementList({ values, onDecision, onDuplicate }: { values: Requirement[]; onDecision(value: Requirement): void; onDuplicate(value: Requirement): void }) {
+function RequirementList({ values, onDecision, onDuplicate, onCoverage }: { values: Requirement[]; onDecision(value: Requirement): void; onDuplicate(value: Requirement): void; onCoverage(value: Requirement): void }) {
   return <div className="requirement-table"><Table rowKey="id" dataSource={values} columns={[
     { title: '需求', dataIndex: 'title', render: (_: string, row: Requirement) => <div className="requirement-title"><strong>{row.title}</strong><span>{row.code} · {row.projectCode}</span></div> },
     { title: '优先级', dataIndex: 'priority', width: 90, render: (value: string) => <Tag color={value === 'P0' ? 'red' : value === 'P1' ? 'orange' : 'blue'}>{value}</Tag> },
     { title: 'AI 建议', dataIndex: 'suggestedLevel', width: 130, render: (value: string, row: Requirement) => value ? <Space><Tag>{value}</Tag><span className="confidence">{Math.round((row.confidence ?? 0) * 100)}%</span></Space> : <span className="muted">待分析</span> },
     { title: '人工结论', dataIndex: 'confirmedLevel', width: 120, render: (value: string) => value ? levelTag(value) : <Tag>待确认</Tag> },
     { title: '状态', dataIndex: 'status', width: 110, render: (value: string) => <Tag color={value === 'CONFIRMED' ? 'success' : value === 'MERGED' ? 'default' : 'processing'}>{value}</Tag> },
-    { title: '操作', width: 210, render: (_: unknown, row: Requirement) => <Space><Button size="small" type="link" icon={<RobotOutlined />} onClick={() => onDecision(row)}>分类决策</Button><Button size="small" type="link" icon={<MergeCellsOutlined />} disabled={row.status === 'MERGED'} onClick={() => onDuplicate(row)}>查重合并</Button></Space> },
+    { title: '操作', width: 310, render: (_: unknown, row: Requirement) => <Space><Button size="small" type="link" icon={<RobotOutlined />} onClick={() => onDecision(row)}>分类决策</Button><Button size="small" type="link" icon={<LinkOutlined />} onClick={() => onCoverage(row)}>功能覆盖</Button><Button size="small" type="link" icon={<MergeCellsOutlined />} disabled={row.status === 'MERGED'} onClick={() => onDuplicate(row)}>查重合并</Button></Space> },
   ]} /></div>
 }
 
