@@ -3,6 +3,7 @@ package com.zhilu.delivery.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhilu.delivery.common.api.ApiError;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.iam.service.IamService;
 import com.zhilu.delivery.iam.service.OidcLoginSuccessHandler;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -29,6 +31,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -78,6 +81,9 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/swagger-ui/**")
         .permitAll()
+        .antMatchers(HttpMethod.GET,
+            "/api/v1/admin/audit-logs", "/api/v1/admin/audit-log-facets")
+        .access("hasAuthority('audit:read') or hasAuthority('system:manage')")
         .antMatchers("/api/v1/admin/**").hasAuthority("system:manage")
         .antMatchers(HttpMethod.GET, "/api/v1/products/**").authenticated()
         .antMatchers("/api/v1/products/**").hasAuthority("system:manage")
@@ -121,15 +127,22 @@ public class SecurityConfig {
 
   @Component
   public static class SessionCurrentUserFilter extends OncePerRequestFilter {
+    private final IamService iam;
+
+    public SessionCurrentUserFilter(IamService iam) {
+      this.iam = iam;
+    }
+
     @Override
     protected void doFilterInternal(
         HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
         throws ServletException, IOException {
-      if (SecurityContextHolder.getContext().getAuthentication() == null) {
-        HttpSession session = request.getSession(false);
-        Object value = session == null ? null : session.getAttribute(CurrentUser.SESSION_KEY);
-        if (value instanceof CurrentUser) {
-          CurrentUser user = (CurrentUser) value;
+      HttpSession session = request.getSession(false);
+      Object value = session == null ? null : session.getAttribute(CurrentUser.SESSION_KEY);
+      if (value instanceof CurrentUser) {
+        try {
+          CurrentUser user = iam.currentUser(((CurrentUser) value).getId());
+          session.setAttribute(CurrentUser.SESSION_KEY, user);
           List<GrantedAuthority> authorities = new ArrayList<GrantedAuthority>();
           for (String permission : user.getPermissions()) {
             authorities.add(new SimpleGrantedAuthority(permission));
@@ -140,6 +153,11 @@ public class SecurityConfig {
           UsernamePasswordAuthenticationToken authentication =
               new UsernamePasswordAuthenticationToken(user, null, authorities);
           SecurityContextHolder.getContext().setAuthentication(authentication);
+        } catch (AuthenticationException disabledOrMissing) {
+          session.removeAttribute(CurrentUser.SESSION_KEY);
+          session.removeAttribute(
+              HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+          SecurityContextHolder.clearContext();
         }
       }
       filterChain.doFilter(request, response);

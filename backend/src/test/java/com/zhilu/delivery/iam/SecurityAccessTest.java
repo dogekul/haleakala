@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import javax.servlet.http.HttpSession;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.Collections;
+import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,10 +77,57 @@ class SecurityAccessTest {
   }
 
   @Test
+  void existingSessionImmediatelyLosesRevokedPermission() throws Exception {
+    MvcResult login = login();
+    org.springframework.mock.web.MockHttpSession session =
+        (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
+    jdbc.update("delete from role_permission");
+
+    mvc.perform(get("/api/v1/admin/users").session(session))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void existingSessionImmediatelyReflectsRevokedRole() throws Exception {
+    MvcResult login = login();
+    org.springframework.mock.web.MockHttpSession session =
+        (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
+    jdbc.update("delete from user_role where user_id=200");
+
+    mvc.perform(get("/api/v1/auth/me").session(session))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roles.length()").value(0))
+        .andExpect(jsonPath("$.permissions.length()").value(0));
+  }
+
+  @Test
+  void disabledUserCannotKeepUsingExistingSession() throws Exception {
+    MvcResult login = login();
+    org.springframework.mock.web.MockHttpSession session =
+        (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
+    jdbc.update("update app_user set status='DISABLED' where id=200");
+
+    mvc.perform(get("/api/v1/auth/me").session(session))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
   void nonAdminCannotReadUserAdministration() throws Exception {
     mvc.perform(get("/api/v1/admin/users").with(user("engineer").authorities(() -> "project:read")))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  void authenticatedUserCanReadOrganizationBrandingSettings() throws Exception {
+    CurrentUser engineer = new CurrentUser(200L, 200L, "admin", "交付工程师",
+        Collections.singletonList("DELIVERY_ENGINEER"),
+        Collections.singletonList("project:read"));
+    mvc.perform(get("/api/v1/runtime-settings").with(authentication(
+            new UsernamePasswordAuthenticationToken(engineer, null,
+                Collections.singletonList(new SimpleGrantedAuthority("project:read"))))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.platformName").value("智鹿交付"));
   }
 
   @Test
@@ -113,6 +161,22 @@ class SecurityAccessTest {
       jdbc.update("insert into role(code,name,built_in) values ('ADMIN','系统管理员',true)");
     }
     return jdbc.queryForObject("select id from role where code='ADMIN'", Long.class);
+  }
+
+  private MvcResult login() throws Exception {
+    return mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"username\":\"admin\",\"password\":\"secret123\"}"))
+        .andExpect(status().isOk())
+        .andReturn();
+  }
+
+  private org.springframework.test.web.servlet.request.RequestPostProcessor actor(
+      String permission) {
+    CurrentUser principal = new CurrentUser(200L, 200L, "admin", "系统管理员",
+        Arrays.asList("DELIVERY_ENGINEER"), Arrays.asList(permission));
+    return authentication(new UsernamePasswordAuthenticationToken(principal, null,
+        Collections.singletonList(new SimpleGrantedAuthority(permission))));
   }
 
   private Long ensurePermission() {
