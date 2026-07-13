@@ -65,30 +65,30 @@ class StandardizationServiceTest {
   }
 
   @Test void fiveProjectsCreateOneIdempotentCandidateAndCloseNeedsVerification() {
-    List<Map<String,Object>> first=standardization.evaluateDebts(1000,1000);
-    List<Map<String,Object>> second=standardization.evaluateDebts(1000,1000);
+    List<Map<String,Object>> first=standardization.evaluateDebts(1000,1000,1000);
+    List<Map<String,Object>> second=standardization.evaluateDebts(1000,1000,1000);
     assertEquals(1,first.size()); assertEquals(1,second.size());
     assertEquals(1,jdbc.queryForObject("select count(*) from standardization_debt",Integer.class));
     long debt=((Number)first.get(0).get("id")).longValue();
-    assertThrows(ConflictException.class,()->standardization.transitionDebt(debt,"CLOSED","直接关闭",1000));
-    standardization.transitionDebt(debt,"PENDING",null,1000);
-    standardization.transitionDebt(debt,"INCLUDED",null,1000);
-    standardization.transitionDebt(debt,"VERIFYING","进入验证",1000);
-    assertEquals("CLOSED",standardization.transitionDebt(debt,"CLOSED","五项目回归通过",1000).get("status"));
+    assertThrows(ConflictException.class,()->standardization.transitionDebt(1000,debt,"CLOSED","直接关闭",1000));
+    standardization.transitionDebt(1000,debt,"PENDING",null,1000);
+    standardization.transitionDebt(1000,debt,"INCLUDED",null,1000);
+    standardization.transitionDebt(1000,debt,"VERIFYING","进入验证",1000);
+    assertEquals("CLOSED",standardization.transitionDebt(1000,debt,"CLOSED","五项目回归通过",1000).get("status"));
   }
 
   @Test void maturityAndCostAreDeterministic() {
-    Map<String,Object> assessment=standardization.assess(1000,1000);
+    Map<String,Object> assessment=standardization.assess(1000,1000,1000);
     assertEquals(0,((Number)assessment.get("standardCoverage")).intValue());
     assertEquals(50,((Number)assessment.get("maturityScore")).intValue());
-    assertEquals(100000.0,((Number)standardization.costs(1000).get("actualCost")).doubleValue(),0.01);
+    assertEquals(100000.0,((Number)standardization.costs(1000,1000).get("actualCost")).doubleValue(),0.01);
   }
 
   @Test void flywheelUsesAuthenticatedActorBeforeFirstDeliveryProject() {
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (1001,1000,'V6','RELEASED')");
 
-    Map<String, Object> flywheel = standardization.flywheel(1001, 1000);
+    Map<String, Object> flywheel = standardization.flywheel(1000, 1001, 1000);
 
     assertEquals(0, ((Number) flywheel.get("confirmedRequirements")).intValue());
     assertEquals(0, ((Number) flywheel.get("reuseRate")).intValue());
@@ -116,9 +116,9 @@ class StandardizationServiceTest {
     ExecutorService executor = Executors.newFixedThreadPool(2);
     try {
       Future<Map<String, Object>> first = executor.submit(
-          () -> standardization.assess(1001, 1000));
+          () -> standardization.assess(1000, 1001, 1000));
       Future<Map<String, Object>> second = executor.submit(
-          () -> standardization.assess(1001, 1000));
+          () -> standardization.assess(1000, 1001, 1000));
 
       Map<String, Object> firstAssessment = first.get(10, TimeUnit.SECONDS);
       Map<String, Object> secondAssessment = second.get(10, TimeUnit.SECONDS);
@@ -155,12 +155,50 @@ class StandardizationServiceTest {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from standardization_debt_requirement where requirement_id=1000",
         Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CREATE_CANDIDATE' "
+            + "and resource_type='STANDARDIZATION_DEBT' and resource_id=?",
+        Integer.class, String.valueOf(candidate.get("id"))));
     assertThrows(ConflictException.class,
         () -> standardization.createCandidateFromRequirement(1000, actor()));
     assertThrows(ConflictException.class,
         () -> standardization.createCandidateFromRequirement(1001, actor()));
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from standardization_debt", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CREATE_CANDIDATE'", Integer.class));
+  }
+
+  @Test void everyStandardizationGroupRejectsAnotherOrganization() {
+    jdbc.update("insert into organization(id,name,code) values (2000,'友商','OTHER-STD')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (2000,2000,'other','友商用户','ACTIVE')");
+    CurrentUser outsider = new CurrentUser(2000L, 2000L, "other", "友商用户",
+        Collections.singletonList("PMO"),
+        Collections.singletonList("standardization:write"));
+    long debtId = debtLinkedTo(1000);
+
+    assertTrue(standardization.baselines(2000, null).isEmpty());
+    assertThrows(NotFoundException.class, () -> standardization.saveBaseline(2000, null, 1000,
+        "CROSS", "跨组织", "FUNCTION", "不允许", null, null, null, 0));
+    assertThrows(NotFoundException.class, () -> standardization.assess(2000, 1000, 2000));
+    assertThrows(NotFoundException.class, () -> standardization.deviations(2000, 1000));
+    assertTrue(standardization.debts(2000, null).isEmpty());
+    assertThrows(NotFoundException.class,
+        () -> standardization.evaluateDebts(2000, 1000, 2000));
+    assertThrows(NotFoundException.class,
+        () -> standardization.transitionDebt(2000, debtId, "PENDING", null, 2000));
+    assertThrows(NotFoundException.class, () -> standardization.costs(2000, 1000));
+    assertThrows(NotFoundException.class, () -> standardization.flywheel(2000, 1000, 2000));
+    assertThrows(NotFoundException.class,
+        () -> standardization.createCandidateFromRequirement(1000, outsider));
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_baseline where capability_code='CROSS'", Integer.class));
+    assertEquals("CANDIDATE", jdbc.queryForObject(
+        "select status from standardization_debt where id=?", String.class, debtId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=2000", Integer.class));
   }
 
   @Test void candidateConversionCreatesFeatureCoverageManifestDebtTraceAndAudit() {

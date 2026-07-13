@@ -31,8 +31,9 @@ public class StandardizationController {
   }
 
   @GetMapping("/baselines")
-  public List<Map<String, Object>> baselines(@RequestParam(required = false) Long productVersionId) {
-    return standardization.baselines(productVersionId);
+  public List<Map<String, Object>> baselines(@RequestParam(required = false) Long productVersionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.baselines(user.getOrganizationId(), productVersionId);
   }
 
   @PostMapping("/baselines")
@@ -40,7 +41,8 @@ public class StandardizationController {
   public Map<String, Object> createBaseline(
       @Valid @RequestBody BaselineRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    Map<String, Object> value = standardization.saveBaseline(null, request.productVersionId,
+    Map<String, Object> value = standardization.saveBaseline(user.getOrganizationId(), null,
+        request.productVersionId,
         request.capabilityCode, request.capabilityName, request.dimension,
         request.scopeDescription, request.configurationOptions, request.extensionPoints,
         request.ownerUserId, 0);
@@ -54,7 +56,8 @@ public class StandardizationController {
       @PathVariable long id,
       @Valid @RequestBody BaselineRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    Map<String, Object> value = standardization.saveBaseline(id, request.productVersionId,
+    Map<String, Object> value = standardization.saveBaseline(user.getOrganizationId(), id,
+        request.productVersionId,
         request.capabilityCode, request.capabilityName, request.dimension,
         request.scopeDescription, request.configurationOptions, request.extensionPoints,
         request.ownerUserId, request.version);
@@ -66,17 +69,19 @@ public class StandardizationController {
   @PostMapping("/assessments")
   public Map<String, Object> assess(
       @RequestParam long productVersionId, @AuthenticationPrincipal CurrentUser user) {
-    return standardization.assess(productVersionId, user.getId());
+    return standardization.assess(user.getOrganizationId(), productVersionId, user.getId());
   }
 
   @GetMapping("/deviations")
-  public List<Map<String, Object>> deviations(@RequestParam long productVersionId) {
-    return standardization.deviations(productVersionId);
+  public List<Map<String, Object>> deviations(@RequestParam long productVersionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.deviations(user.getOrganizationId(), productVersionId);
   }
 
   @GetMapping("/debts")
-  public List<Map<String, Object>> debts(@RequestParam(required = false) Long productVersionId) {
-    return standardization.debts(productVersionId);
+  public List<Map<String, Object>> debts(@RequestParam(required = false) Long productVersionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.debts(user.getOrganizationId(), productVersionId);
   }
 
   @PostMapping("/debts/from-requirement")
@@ -102,7 +107,8 @@ public class StandardizationController {
   @PostMapping("/debts/evaluate")
   public List<Map<String, Object>> evaluateDebts(
       @RequestParam long productVersionId, @AuthenticationPrincipal CurrentUser user) {
-    List<Map<String, Object>> values = standardization.evaluateDebts(productVersionId, user.getId());
+    List<Map<String, Object>> values = standardization.evaluateDebts(
+        user.getOrganizationId(), productVersionId, user.getId());
     audit.record(user.getOrganizationId(), user.getId(), "EVALUATE", "STANDARDIZATION_DEBT",
         String.valueOf(productVersionId), "evaluated=" + values.size());
     return values;
@@ -113,22 +119,23 @@ public class StandardizationController {
       @PathVariable long id,
       @Valid @RequestBody TransitionRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    Map<String, Object> value = standardization.transitionDebt(id, request.targetStatus,
-        request.verificationNote, user.getId());
+    Map<String, Object> value = standardization.transitionDebt(user.getOrganizationId(), id,
+        request.targetStatus, request.verificationNote, user.getId());
     audit.record(user.getOrganizationId(), user.getId(), "TRANSITION", "STANDARDIZATION_DEBT",
         String.valueOf(id), request.targetStatus);
     return value;
   }
 
   @GetMapping("/costs")
-  public Map<String, Object> costs(@RequestParam long productVersionId) {
-    return standardization.costs(productVersionId);
+  public Map<String, Object> costs(@RequestParam long productVersionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.costs(user.getOrganizationId(), productVersionId);
   }
 
   @PostMapping("/flywheel")
   public Map<String, Object> flywheel(@RequestParam long productVersionId,
       @AuthenticationPrincipal CurrentUser user) {
-    return standardization.flywheel(productVersionId, user.getId());
+    return standardization.flywheel(user.getOrganizationId(), productVersionId, user.getId());
   }
 
   public static final class BaselineRequest {

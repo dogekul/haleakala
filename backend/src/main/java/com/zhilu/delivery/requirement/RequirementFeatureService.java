@@ -1,6 +1,8 @@
 package com.zhilu.delivery.requirement;
 
+import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.catalog.ProductCatalogService;
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.Arrays;
@@ -20,10 +22,13 @@ public class RequirementFeatureService {
 
   private final JdbcTemplate jdbc;
   private final ProductCatalogService catalog;
+  private final AuditService audit;
 
-  public RequirementFeatureService(JdbcTemplate jdbc, ProductCatalogService catalog) {
+  public RequirementFeatureService(
+      JdbcTemplate jdbc, ProductCatalogService catalog, AuditService audit) {
     this.jdbc = jdbc;
     this.catalog = catalog;
+    this.audit = audit;
   }
 
   public Map<String, Object> coverage(long requirementId, CurrentUser user) {
@@ -56,15 +61,42 @@ public class RequirementFeatureService {
   @Transactional
   public Map<String, Object> replaceCoverage(long requirementId, CurrentUser user,
       List<CoverageEntry> entries) {
+    lockRequirement(requirementId, user.getOrganizationId());
     Map<String, Object> context = requirementContext(requirementId, user);
     validateFeatures(((Number) context.get("product_id")).longValue(), entries);
+    if (containsFull(entries)) {
+      Integer candidates = jdbc.queryForObject(
+          "select count(*) from standardization_debt_requirement dr "
+              + "join standardization_debt d on d.id=dr.standardization_debt_id "
+              + "where dr.requirement_id=? and d.status in ('CANDIDATE','PENDING')",
+          Integer.class, requirementId);
+      if (candidates != null && candidates > 0) {
+        throw new ConflictException("需求已进入标准化候选，不能标记为完全覆盖");
+      }
+    }
     jdbc.update("delete from requirement_product_feature where requirement_id=?", requirementId);
     for (CoverageEntry entry : entries) {
       jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
               + "coverage_type,source,created_by) values (?,?,?,'MANUAL',?)",
           requirementId, entry.getFeatureId(), entry.getCoverageType(), user.getId());
     }
+    audit.record(user.getOrganizationId(), user.getId(), "REPLACE_COVERAGE", "REQUIREMENT",
+        String.valueOf(requirementId), "entries=" + entries.size());
     return coverage(requirementId, user);
+  }
+
+  private boolean containsFull(List<CoverageEntry> entries) {
+    for (CoverageEntry entry : entries) {
+      if ("FULL".equals(entry.getCoverageType())) return true;
+    }
+    return false;
+  }
+
+  private void lockRequirement(long requirementId, long organizationId) {
+    List<Long> values = jdbc.query(
+        "select id from requirement_item where id=? and organization_id=? for update",
+        (row, index) -> row.getLong("id"), requirementId, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("需求不存在");
   }
 
   public Map<String, Object> productCoverage(long organizationId, long productId) {

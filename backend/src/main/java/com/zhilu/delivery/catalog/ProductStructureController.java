@@ -93,8 +93,8 @@ public class ProductStructureController {
   public Map<String, Object> replaceManifest(
       @PathVariable long productId, @PathVariable long versionId,
       @RequestBody ManifestRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return manifests.replaceManifest(user.getOrganizationId(), productId, versionId,
-        request.version, request.entries);
+    return manifests.replaceManifest(user.getOrganizationId(), user.getId(), productId,
+        versionId, request.version, request.entries);
   }
 
   public static final class ModuleRequest {

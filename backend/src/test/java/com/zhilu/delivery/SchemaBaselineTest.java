@@ -2,10 +2,13 @@ package com.zhilu.delivery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:delivery;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -43,5 +46,23 @@ class SchemaBaselineTest {
         Integer.class);
     assertEquals(5, tables);
     assertEquals(2, permissions);
+  }
+
+  @Test
+  void upgradesLegacyMaintenanceProductToSunset() {
+    String url = "jdbc:h2:mem:legacy-maintenance;MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
+        + "DB_CLOSE_DELAY=-1";
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(url, "sa", "");
+    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("9"))
+        .load().migrate();
+    JdbcTemplate legacy = new JdbcTemplate(dataSource);
+    legacy.update("insert into organization(id,name,code) values (991,'旧组织','LEGACY-ORG')");
+    legacy.update("insert into product(id,owner_user_id,code,name,status) "
+        + "values (991,null,'LEGACY-PRODUCT','旧产品','MAINTENANCE')");
+
+    Flyway.configure().dataSource(dataSource).load().migrate();
+
+    assertEquals("SUNSET", legacy.queryForObject(
+        "select status from product where id=991", String.class));
   }
 }

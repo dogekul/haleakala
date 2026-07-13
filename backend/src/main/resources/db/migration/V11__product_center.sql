@@ -6,6 +6,7 @@ ALTER TABLE product DROP INDEX uk_product_code;
 ALTER TABLE product ADD CONSTRAINT fk_product_organization FOREIGN KEY (organization_id) REFERENCES organization(id);
 ALTER TABLE product ADD CONSTRAINT uk_product_org_code UNIQUE (organization_id,code);
 UPDATE product SET status='ARCHIVED' WHERE status='DISABLED';
+UPDATE product SET status='SUNSET' WHERE status='MAINTENANCE';
 UPDATE product_version SET status='RELEASED' WHERE status='ACTIVE';
 UPDATE product_version SET status='ARCHIVED' WHERE status='DISABLED';
 

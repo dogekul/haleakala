@@ -1,5 +1,11 @@
 package com.zhilu.delivery.requirement;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -8,13 +14,24 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.standardization.StandardizationService;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -28,8 +45,10 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class RequirementApiIT {
   @Autowired private MockMvc mvc;
-  @Autowired private JdbcTemplate jdbc;
+  @SpyBean private JdbcTemplate jdbc;
   @Autowired private RequirementService requirements;
+  @Autowired private RequirementFeatureService features;
+  @Autowired private StandardizationService standardization;
   private CurrentUser user;
   private long requirementId;
   private long uncoveredRequirementId;
@@ -40,7 +59,7 @@ class RequirementApiIT {
 
   @BeforeEach void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-    for (String table : new String[]{"standardization_debt_requirement",
+    for (String table : new String[]{"audit_log", "standardization_debt_requirement",
         "requirement_product_feature", "product_feature", "product_module",
         "standardization_debt", "classification_decision", "classification_suggestion",
         "requirement_item", "project_member", "delivery_project", "product_version",
@@ -104,6 +123,10 @@ class RequirementApiIT {
         .andExpect(jsonPath("$.entries[0].moduleName").value("客户管理"))
         .andExpect(jsonPath("$.entries[0].coverageType").value("PARTIAL"))
         .andExpect(jsonPath("$.entries[1].coverageType").value("FULL"));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=910 and actor_user_id=910 "
+            + "and action='REPLACE_COVERAGE' and resource_type='REQUIREMENT' and resource_id=?",
+        Integer.class, String.valueOf(requirementId)));
 
     mvc.perform(get("/api/v1/requirements/{id}/product-features", requirementId)
             .with(reader()))
@@ -123,6 +146,8 @@ class RequirementApiIT {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
     assertOriginalCoverageRemains();
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_COVERAGE'", Integer.class));
 
     mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
             .with(writer()).with(csrf()).contentType("application/json")
@@ -145,6 +170,134 @@ class RequirementApiIT {
                 + ",\"coverageType\":\"FULL\"}]}"))
         .andExpect(status().isNotFound());
     assertOriginalCoverageRemains();
+  }
+
+  @Test void concurrentCoverageReplacementsSerializeAndLastWholeReplacementWins()
+      throws Exception {
+    CountDownLatch firstReachedDelete = new CountDownLatch(1);
+    CountDownLatch allowFirstDelete = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      firstReachedDelete.countDown();
+      if (!allowFirstDelete.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("first replacement did not resume");
+      }
+      return invocation.callRealMethod();
+    }).when(jdbc).update(argThat(sql ->
+        sql.startsWith("delete from requirement_product_feature")), (Object) any());
+    List<RequirementFeatureService.CoverageEntry> first = Collections.singletonList(
+        new RequirementFeatureService.CoverageEntry(firstFeature, "PARTIAL"));
+    List<RequirementFeatureService.CoverageEntry> second = Collections.singletonList(
+        new RequirementFeatureService.CoverageEntry(secondFeature, "PARTIAL"));
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Map<String, Object>> firstSave = executor.submit(
+          () -> features.replaceCoverage(requirementId, user, first));
+      assertTrue(firstReachedDelete.await(5, TimeUnit.SECONDS));
+      Future<Map<String, Object>> secondSave = executor.submit(
+          () -> features.replaceCoverage(requirementId, user, second));
+      assertThrows(TimeoutException.class, () -> secondSave.get(250, TimeUnit.MILLISECONDS));
+      allowFirstDelete.countDown();
+      firstSave.get(5, TimeUnit.SECONDS);
+      secondSave.get(5, TimeUnit.SECONDS);
+    } finally {
+      allowFirstDelete.countDown();
+      executor.shutdownNow();
+    }
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from requirement_product_feature where requirement_id=?",
+        Integer.class, requirementId));
+    assertEquals(Long.valueOf(secondFeature), jdbc.queryForObject(
+        "select product_feature_id from requirement_product_feature where requirement_id=?",
+        Long.class, requirementId));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_COVERAGE' and resource_id=?",
+        Integer.class, String.valueOf(requirementId)));
+  }
+
+  @Test void fullCoverageFirstSerializesThenCandidateIsRejectedWithoutAudit() throws Exception {
+    CountDownLatch coverageReachedDelete = new CountDownLatch(1);
+    CountDownLatch allowCoverageCommit = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      coverageReachedDelete.countDown();
+      if (!allowCoverageCommit.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("coverage replacement did not resume");
+      }
+      return invocation.callRealMethod();
+    }).when(jdbc).update(argThat(sql ->
+        sql.startsWith("delete from requirement_product_feature")), (Object) any());
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> coverage = executor.submit(() -> features.replaceCoverage(requirementId, user,
+          Collections.singletonList(
+              new RequirementFeatureService.CoverageEntry(firstFeature, "FULL"))));
+      assertTrue(coverageReachedDelete.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> candidate = executor.submit(() -> {
+        try {
+          standardization.createCandidateFromRequirement(requirementId, user);
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class, () -> candidate.get(250, TimeUnit.MILLISECONDS));
+      allowCoverageCommit.countDown();
+      coverage.get(5, TimeUnit.SECONDS);
+      assertTrue(candidate.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+    } finally {
+      allowCoverageCommit.countDown();
+      executor.shutdownNow();
+    }
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where requirement_id=?",
+        Integer.class, requirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CREATE_CANDIDATE' and details_text=?",
+        Integer.class, "requirementId=" + requirementId));
+  }
+
+  @Test void candidateFirstSerializesThenFullCoverageIsRejectedWithoutCoverageAudit()
+      throws Exception {
+    CountDownLatch candidateReachedInsert = new CountDownLatch(1);
+    CountDownLatch allowCandidateCommit = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      candidateReachedInsert.countDown();
+      if (!allowCandidateCommit.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("candidate creation did not resume");
+      }
+      return invocation.callRealMethod();
+    }).when(jdbc).update(argThat(sql -> sql.startsWith("insert into standardization_debt(")),
+        any(), any(), any());
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> candidate = executor.submit(
+          () -> standardization.createCandidateFromRequirement(requirementId, user));
+      assertTrue(candidateReachedInsert.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> coverage = executor.submit(() -> {
+        try {
+          features.replaceCoverage(requirementId, user, Collections.singletonList(
+              new RequirementFeatureService.CoverageEntry(firstFeature, "FULL")));
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class, () -> coverage.get(250, TimeUnit.MILLISECONDS));
+      allowCandidateCommit.countDown();
+      candidate.get(5, TimeUnit.SECONDS);
+      assertTrue(coverage.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+    } finally {
+      allowCandidateCommit.countDown();
+      executor.shutdownNow();
+    }
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where requirement_id=?",
+        Integer.class, requirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from requirement_product_feature where requirement_id=? "
+            + "and coverage_type='FULL'", Integer.class, requirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_COVERAGE' and resource_id=?",
+        Integer.class, String.valueOf(requirementId)));
   }
 
   @Test void preservesRequirementProjectDataScopeForCoverage() throws Exception {

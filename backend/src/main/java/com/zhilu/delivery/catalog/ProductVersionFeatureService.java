@@ -2,6 +2,7 @@ package com.zhilu.delivery.catalog;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import java.util.Arrays;
@@ -21,10 +22,13 @@ public class ProductVersionFeatureService {
 
   private final JdbcTemplate jdbc;
   private final ProductCatalogService catalog;
+  private final AuditService audit;
 
-  public ProductVersionFeatureService(JdbcTemplate jdbc, ProductCatalogService catalog) {
+  public ProductVersionFeatureService(
+      JdbcTemplate jdbc, ProductCatalogService catalog, AuditService audit) {
     this.jdbc = jdbc;
     this.catalog = catalog;
+    this.audit = audit;
   }
 
   public Map<String, Object> manifest(long organizationId, long productId, long versionId) {
@@ -46,9 +50,19 @@ public class ProductVersionFeatureService {
   }
 
   @Transactional
-  public Map<String, Object> replaceManifest(long organizationId, long productId,
-      long versionId, long expectedVersion, List<ManifestEntry> entries) {
-    catalog.version(organizationId, productId, versionId);
+  public Map<String, Object> replaceManifest(long organizationId, long actorUserId,
+      long productId, long versionId, long expectedVersion, List<ManifestEntry> entries) {
+    String productStatus = lockProduct(organizationId, productId);
+    if (!"ACTIVE".equals(productStatus)) {
+      throw new ConflictException("只能修改生效产品的版本清单");
+    }
+    Map<String, Object> version = lockVersion(productId, versionId);
+    if (!"PLANNING".equals(version.get("status"))) {
+      throw new ConflictException("只能修改规划中版本的功能清单");
+    }
+    if (((Number) version.get("version")).longValue() != expectedVersion) {
+      throw new ConflictException("版本清单已被更新，请刷新后重试");
+    }
     validateEntries(productId, entries);
     int changed = jdbc.update("update product_version set version=version+1,"
             + "updated_at=current_timestamp where id=? and product_id=? and version=?",
@@ -62,7 +76,30 @@ public class ProductVersionFeatureService {
               + "availability) values (?,?,?)",
           versionId, entry.getFeatureId(), entry.getAvailability());
     }
+    audit.record(organizationId, actorUserId, "REPLACE_MANIFEST", "PRODUCT_VERSION",
+        String.valueOf(versionId), "entries=" + entries.size());
     return manifest(organizationId, productId, versionId);
+  }
+
+  private String lockProduct(long organizationId, long productId) {
+    List<String> values = jdbc.query(
+        "select status from product where id=? and organization_id=? for update",
+        (row, index) -> row.getString("status"), productId, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("产品不存在");
+    return values.get(0);
+  }
+
+  private Map<String, Object> lockVersion(long productId, long versionId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select status,version from product_version where id=? and product_id=? for update",
+        (row, index) -> {
+          Map<String, Object> value = new LinkedHashMap<String, Object>();
+          value.put("status", row.getString("status"));
+          value.put("version", row.getLong("version"));
+          return value;
+        }, versionId, productId);
+    if (values.isEmpty()) throw new NotFoundException("产品版本不存在");
+    return values.get(0);
   }
 
   @Transactional

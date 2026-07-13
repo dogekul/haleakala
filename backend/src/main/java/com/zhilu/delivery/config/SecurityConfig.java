@@ -90,6 +90,9 @@ public class SecurityConfig {
         .antMatchers("/api/v1/dashboard/**").hasAuthority("dashboard:read")
         .antMatchers(HttpMethod.GET, "/api/v1/requirements/**").hasAuthority("requirement:read")
         .antMatchers("/api/v1/requirements/**").hasAuthority("requirement:write")
+        .antMatchers(HttpMethod.POST,
+            "/api/v1/standardization/debts/*/convert-to-feature")
+        .access("hasAuthority('standardization:write') and hasAuthority('product:write')")
         .antMatchers(HttpMethod.POST, "/api/v1/standardization/debts/from-requirement")
         .access("hasAuthority('requirement:write') or hasAuthority('standardization:write')")
         .antMatchers(HttpMethod.GET, "/api/v1/standardization/**").hasAuthority("standardization:read")

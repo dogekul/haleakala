@@ -99,6 +99,11 @@ class ProductVersionFeatureIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.version").value(1))
         .andExpect(jsonPath("$.entries[0].availability").value("INCLUDED"));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=550 "
+            + "and actor_user_id=550 and action='REPLACE_MANIFEST' "
+            + "and resource_type='PRODUCT_VERSION' and resource_id=?",
+        Integer.class, String.valueOf(versionId)));
   }
 
   @Test
@@ -184,7 +189,7 @@ class ProductVersionFeatureIT {
     assertEquals(Long.valueOf(1L), jdbc.queryForObject(
         "select version from product_version where id=?", Long.class, versionId));
     assertThrows(ConflictException.class, () -> manifests.replaceManifest(
-        550L, productId, versionId, 0L,
+        550L, 550L, productId, versionId, 0L,
         Collections.singletonList(
             new ProductVersionFeatureService.ManifestEntry(featureId, "REMOVED"))));
 
@@ -196,6 +201,117 @@ class ProductVersionFeatureIT {
         "select count(*) from product_version_feature where product_version_id=? "
             + "and product_feature_id=? and availability='PLANNED'",
         Integer.class, versionId, featureId));
+  }
+
+  @Test void replaceRejectsNonPlanningVersionAndInactiveProductWithoutAuditOrWrites() {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long featureId = feature(productId, "FIN", "AR");
+    jdbc.update("update product_version set status='RELEASED' where id=?", versionId);
+
+    assertThrows(ConflictException.class, () -> manifests.replaceManifest(
+        550L, 550L, productId, versionId, 0L, Collections.singletonList(
+            new ProductVersionFeatureService.ManifestEntry(featureId, "INCLUDED"))));
+    jdbc.update("update product_version set status='PLANNING' where id=?", versionId);
+    jdbc.update("update product set status='ARCHIVED' where id=?", productId);
+    assertThrows(ConflictException.class, () -> manifests.replaceManifest(
+        550L, 550L, productId, versionId, 0L, Collections.singletonList(
+            new ProductVersionFeatureService.ManifestEntry(featureId, "INCLUDED"))));
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=?",
+        Integer.class, versionId));
+    assertEquals(Long.valueOf(0), jdbc.queryForObject(
+        "select version from product_version where id=?", Long.class, versionId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_MANIFEST'", Integer.class));
+  }
+
+  @Test void replaceWaitsForConcurrentReleaseThenRejectsWithoutWritesOrAudit() throws Exception {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long includedFeatureId = feature(productId, "FIN", "AR");
+    long candidateFeatureId = feature(productId, "SALES", "LEAD");
+    jdbc.update("insert into product_version_feature(product_version_id,product_feature_id,"
+        + "availability) values (?,?,'INCLUDED')", versionId, includedFeatureId);
+    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+    CountDownLatch released = new CountDownLatch(1);
+    CountDownLatch allowCommit = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Future<?> release = executor.submit(() -> transaction.execute(status -> {
+      catalog.updateVersion(550L, productId, versionId,
+          LocalDate.of(2026, 7, 1), "RELEASED", 0L);
+      released.countDown();
+      await(allowCommit);
+      return null;
+    }));
+    try {
+      assertTrue(released.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> replace = executor.submit(() -> {
+        try {
+          manifests.replaceManifest(550L, 550L, productId, versionId, 0L,
+              Collections.singletonList(new ProductVersionFeatureService.ManifestEntry(
+                  candidateFeatureId, "INCLUDED")));
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class, () -> replace.get(250, TimeUnit.MILLISECONDS));
+      allowCommit.countDown();
+      release.get(5, TimeUnit.SECONDS);
+      assertTrue(replace.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+    } finally {
+      allowCommit.countDown();
+      executor.shutdownNow();
+    }
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=?",
+        Integer.class, versionId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_MANIFEST'", Integer.class));
+  }
+
+  @Test void replaceWaitsForConcurrentArchiveThenRejectsWithoutWritesOrAudit() throws Exception {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long featureId = feature(productId, "FIN", "AR");
+    jdbc.update("update product set status='SUNSET' where id=?", productId);
+    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+    CountDownLatch archived = new CountDownLatch(1);
+    CountDownLatch allowCommit = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Future<?> archive = executor.submit(() -> transaction.execute(status -> {
+      catalog.updateProduct(550L, productId, null, "ERP", null, null, "ARCHIVED", 0L);
+      archived.countDown();
+      await(allowCommit);
+      return null;
+    }));
+    try {
+      assertTrue(archived.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> replace = executor.submit(() -> {
+        try {
+          manifests.replaceManifest(550L, 550L, productId, versionId, 0L,
+              Collections.singletonList(new ProductVersionFeatureService.ManifestEntry(
+                  featureId, "INCLUDED")));
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class, () -> replace.get(250, TimeUnit.MILLISECONDS));
+      allowCommit.countDown();
+      archive.get(5, TimeUnit.SECONDS);
+      assertTrue(replace.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+    } finally {
+      allowCommit.countDown();
+      executor.shutdownNow();
+    }
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=?",
+        Integer.class, versionId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_MANIFEST'", Integer.class));
   }
 
   @Test

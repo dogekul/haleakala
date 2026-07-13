@@ -10,8 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import javax.servlet.http.HttpSession;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:security;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -221,11 +224,35 @@ class SecurityAccessTest {
             .with(actor("standardization:write")).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"productId\":2000,\"moduleId\":2000,\"productVersionId\":2001,"
+                + "\"code\":\"SEC-NO-PRODUCT\",\"name\":\"缺产品权限\",\"version\":0}"))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(post("/api/v1/standardization/debts/" + debtId + "/convert-to-feature")
+            .with(actor("product:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"productId\":2000,\"moduleId\":2000,\"productVersionId\":2001,"
+                + "\"code\":\"SEC-NO-STANDARDIZATION\",\"name\":\"缺标准化权限\",\"version\":0}"))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(post("/api/v1/standardization/debts/" + debtId + "/convert-to-feature")
+            .with(actor("standardization:write", "product:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"productId\":2000,\"moduleId\":2000,\"productVersionId\":2001,"
                 + "\"code\":\"SEC-CONVERT\",\"name\":\"权限测试功能\",\"version\":0}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("INCLUDED"))
         .andExpect(jsonPath("$.convertedFeatureId").isNumber())
         .andExpect(jsonPath("$.version").value(1));
+  }
+
+  private RequestPostProcessor actor(String... permissions) {
+    CurrentUser principal = new CurrentUser(200L, 200L, "admin", "系统管理员",
+        Collections.singletonList("ADMIN"), Arrays.asList(permissions));
+    List<SimpleGrantedAuthority> authorities = new ArrayList<SimpleGrantedAuthority>();
+    for (String permission : permissions) {
+      authorities.add(new SimpleGrantedAuthority(permission));
+    }
+    return authentication(new UsernamePasswordAuthenticationToken(principal, null, authorities));
   }
 
   private Long ensureRole() {
@@ -242,14 +269,6 @@ class SecurityAccessTest {
             .content("{\"username\":\"admin\",\"password\":\"secret123\"}"))
         .andExpect(status().isOk())
         .andReturn();
-  }
-
-  private org.springframework.test.web.servlet.request.RequestPostProcessor actor(
-      String permission) {
-    CurrentUser principal = new CurrentUser(200L, 200L, "admin", "系统管理员",
-        Arrays.asList("DELIVERY_ENGINEER"), Arrays.asList(permission));
-    return authentication(new UsernamePasswordAuthenticationToken(principal, null,
-        Collections.singletonList(new SimpleGrantedAuthority(permission))));
   }
 
   private Long ensurePermission() {
