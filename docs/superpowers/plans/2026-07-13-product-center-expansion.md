@@ -1063,6 +1063,9 @@ git commit -m "feat: connect product features to delivery flow"
 
 **Files:**
 - Create: `frontend/e2e/product-center.e2e.ts`
+- Create: `frontend/playwright.config.ts`
+- Modify: `frontend/package.json`
+- Modify: `frontend/pnpm-lock.yaml`
 - Modify: `docs/superpowers/specs/2026-07-13-product-center-expansion-design.md`
 - Modify only if failures prove necessary: files changed in Tasks 1-9.
 
@@ -1071,6 +1074,8 @@ git commit -m "feat: connect product features to delivery flow"
 - Produces: browser-level proof of the complete product -> version -> project -> requirement -> standardization -> feature traceability flow.
 
 - [ ] **Step 1: Write the failing Playwright scenario**
+
+Add `@playwright/test` as a dev dependency, add `"e2e": "playwright test"` to `package.json`, and create `playwright.config.ts` with `testDir: './e2e'`, `testMatch: '**/*.e2e.ts'`, one worker, a 60-second test timeout, and base URL `process.env.E2E_BASE_URL ?? 'http://localhost:53990'`. Configure retained traces and failure-only screenshots.
 
 Add a serial test that logs in with the seeded administrator, opens Product Center, creates a uniquely suffixed product, creates three module levels and a feature, creates a planning version, includes the feature, releases it, and verifies the product detail tabs. Then open seeded product `FIN-CLOUD`, create a feature under a new E2E module, link that feature to seeded requirement `REQ-260001`, and convert the seeded `reconciliation.retry` debt candidate into a second feature under the same product. This uses deterministic demo data and never conditionally skips a business step.
 
@@ -1133,7 +1138,7 @@ Only do this after Steps 2-5 pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/e2e/product-center.e2e.ts docs/superpowers/specs/2026-07-13-product-center-expansion-design.md
+git add frontend/e2e/product-center.e2e.ts frontend/playwright.config.ts frontend/package.json frontend/pnpm-lock.yaml docs/superpowers/specs/2026-07-13-product-center-expansion-design.md
 git commit -m "test: verify product center workflow"
 ```
 
