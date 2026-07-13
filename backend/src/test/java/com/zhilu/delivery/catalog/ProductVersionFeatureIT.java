@@ -1,5 +1,8 @@
 package com.zhilu.delivery.catalog;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,8 +10,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.time.LocalDate;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +31,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:version-feature;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -32,6 +45,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class ProductVersionFeatureIT {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private ProductVersionFeatureService manifests;
+  @Autowired private ProductCatalogService catalog;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @BeforeEach
   void seedCatalog() {
@@ -157,6 +173,90 @@ class ProductVersionFeatureIT {
         .andExpect(jsonPath("$.version").value(2));
   }
 
+  @Test
+  void appendAdvancesVersionAndIsIdempotent() {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long featureId = feature(productId, "FIN", "AR");
+
+    manifests.appendPlannedFeature(550L, productId, versionId, featureId);
+
+    assertEquals(Long.valueOf(1L), jdbc.queryForObject(
+        "select version from product_version where id=?", Long.class, versionId));
+    assertThrows(ConflictException.class, () -> manifests.replaceManifest(
+        550L, productId, versionId, 0L,
+        Collections.singletonList(
+            new ProductVersionFeatureService.ManifestEntry(featureId, "REMOVED"))));
+
+    manifests.appendPlannedFeature(550L, productId, versionId, featureId);
+
+    assertEquals(Long.valueOf(1L), jdbc.queryForObject(
+        "select version from product_version where id=?", Long.class, versionId));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=? "
+            + "and product_feature_id=? and availability='PLANNED'",
+        Integer.class, versionId, featureId));
+  }
+
+  @Test
+  void rejectsAppendToReleasedVersion() {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long featureId = feature(productId, "FIN", "AR");
+    jdbc.update("update product_version set status='RELEASED' where id=?", versionId);
+
+    assertThrows(ConflictException.class,
+        () -> manifests.appendPlannedFeature(550L, productId, versionId, featureId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=?",
+        Integer.class, versionId));
+  }
+
+  @Test
+  void appendWaitsForConcurrentReleaseAndThenRejectsIt() throws Exception {
+    long productId = product(550L, "ERP");
+    long versionId = version(productId, "V1");
+    long includedFeatureId = feature(productId, "FIN", "AR");
+    long candidateFeatureId = feature(productId, "SALES", "LEAD");
+    jdbc.update("insert into product_version_feature(product_version_id,product_feature_id,"
+        + "availability) values (?,?,'INCLUDED')", versionId, includedFeatureId);
+    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+    CountDownLatch released = new CountDownLatch(1);
+    CountDownLatch allowReleaseCommit = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Future<?> release = executor.submit(() -> transaction.execute(status -> {
+      catalog.updateVersion(550L, productId, versionId,
+          LocalDate.of(2026, 7, 1), "RELEASED", 0L);
+      released.countDown();
+      await(allowReleaseCommit);
+      return null;
+    }));
+
+    try {
+      assertTrue(released.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> append = executor.submit(() -> {
+        try {
+          manifests.appendPlannedFeature(550L, productId, versionId, candidateFeatureId);
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class, () -> append.get(250, TimeUnit.MILLISECONDS));
+
+      allowReleaseCommit.countDown();
+      release.get(5, TimeUnit.SECONDS);
+      assertTrue(append.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+      assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+          "select count(*) from product_version_feature where product_version_id=? "
+              + "and product_feature_id=?",
+          Integer.class, versionId, candidateFeatureId));
+    } finally {
+      allowReleaseCommit.countDown();
+      executor.shutdownNow();
+    }
+  }
+
   private long product(long organizationId, String code) {
     jdbc.update("insert into product(organization_id,code,name,status) values (?,?,?,'ACTIVE')",
         organizationId, code, code);
@@ -204,6 +304,18 @@ class ProductVersionFeatureIT {
     return "{\"versionName\":\"" + name + "\","
         + (releaseDate == null ? "" : "\"releaseDate\":\"" + releaseDate + "\",")
         + "\"status\":\"RELEASED\",\"version\":" + version + "}";
+  }
+
+  private void await(CountDownLatch latch) {
+    try {
+      if (!latch.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for concurrent manifest operation");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while waiting for concurrent manifest operation",
+          interrupted);
+    }
   }
 
   private RequestPostProcessor reader() {

@@ -68,8 +68,12 @@ public class ProductVersionFeatureService {
   @Transactional
   public void appendPlannedFeature(long organizationId, long productId,
       long versionId, long featureId) {
-    Map<String, Object> version = catalog.version(organizationId, productId, versionId);
-    if (!"PLANNING".equals(version.get("status"))) {
+    catalog.product(organizationId, productId);
+    List<String> statuses = jdbc.query(
+        "select status from product_version where id=? and product_id=? for update",
+        (row, index) -> row.getString("status"), versionId, productId);
+    if (statuses.isEmpty()) throw new NotFoundException("产品版本不存在");
+    if (!"PLANNING".equals(statuses.get(0))) {
       throw new ConflictException("只能向规划中版本加入候选功能");
     }
     Integer valid = jdbc.queryForObject(
@@ -84,6 +88,8 @@ public class ProductVersionFeatureService {
       jdbc.update("insert into product_version_feature(product_version_id,product_feature_id,"
               + "availability) values (?,?,'PLANNED')",
           versionId, featureId);
+      jdbc.update("update product_version set version=version+1,updated_at=current_timestamp "
+          + "where id=? and product_id=?", versionId, productId);
     }
   }
 
