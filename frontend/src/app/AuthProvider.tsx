@@ -38,11 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { void refresh() }, [refresh])
 
   const login = useCallback(async (username: string, password: string) => {
-    setMe(await api<CurrentUser>('/api/v1/auth/login', {
+    await api<CurrentUser>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    }))
-  }, [])
+    })
+    await refresh()
+  }, [refresh])
 
   const logout = useCallback(async () => {
     await api<void>('/api/v1/auth/logout', { method: 'POST' })

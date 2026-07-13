@@ -18,6 +18,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.GrantedAuthority;
@@ -28,6 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -59,7 +61,9 @@ public class SecurityConfig {
     http
         .httpBasic().disable()
         .formLogin().disable()
-        .csrf().ignoringAntMatchers(
+        .csrf()
+        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+        .ignoringAntMatchers(
             "/api/v1/auth/login",
             "/api/v1/auth/logout",
             "/api/v1/integrations/agent/events")
@@ -75,6 +79,8 @@ public class SecurityConfig {
             "/swagger-ui/**")
         .permitAll()
         .antMatchers("/api/v1/admin/**").hasAuthority("system:manage")
+        .antMatchers(HttpMethod.GET, "/api/v1/projects/**").hasAuthority("project:read")
+        .antMatchers("/api/v1/projects/**").hasAuthority("project:write")
         .anyRequest().authenticated()
         .and()
         .exceptionHandling()

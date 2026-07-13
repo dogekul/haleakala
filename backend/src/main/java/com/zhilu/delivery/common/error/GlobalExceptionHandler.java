@@ -15,6 +15,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  @ExceptionHandler(ConflictException.class)
+  public ResponseEntity<ApiError> handleConflict(ConflictException exception) {
+    ApiError body = new ApiError(
+        "CONFLICT", exception.getMessage(), UUID.randomUUID().toString(), null);
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+  }
+
   @ExceptionHandler(NotFoundException.class)
   public ResponseEntity<ApiError> handleNotFound(NotFoundException exception) {
     ApiError body = new ApiError(

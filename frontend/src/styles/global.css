@@ -9,6 +9,7 @@
 html, body, #root { min-width: 1120px; min-height: 100%; margin: 0; }
 body { min-height: 100vh; }
 button, input { font: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .app-shell {
   display: grid;
@@ -174,6 +175,55 @@ button, input { font: inherit; }
 .sso-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: #b5b8bf; font-size: 12px; }
 .sso-divider::before, .sso-divider::after { content: ''; flex: 1; height: 1px; background: #eff0f1; }
 .security-note { margin-top: 22px; color: #b5b8bf; font-size: 11px; text-align: center; }
+
+.page-heading.compact { align-items: center; }
+.filter-surface { margin-bottom: 14px; }
+.filter-surface .ant-card-body { padding: 12px 14px; }
+.project-toolbar { display: flex; align-items: center; justify-content: space-between; }
+.result-count { color: #8f959e; font-size: 12px; }
+.project-table { overflow: hidden; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
+.project-name-cell { display: flex; flex-direction: column; gap: 3px; }
+.project-name-cell a { color: #1f2329; font-weight: 600; }
+.project-name-cell a:hover { color: #3370ff; }
+.project-name-cell span, .cell-sub { display: block; color: #8f959e; font-size: 12px; }
+.project-card { height: 220px; border-color: #e5e6eb; }
+.project-card.risk-red { border-left: 3px solid #f54a45; }
+.project-card.risk-yellow { border-left: 3px solid #f5a623; }
+.project-card.risk-green { border-left: 3px solid #2ea869; }
+.project-card-head { display: flex; align-items: flex-start; justify-content: space-between; }
+.project-card-head > div { display: flex; flex-direction: column; gap: 5px; }
+.project-card-head > div > span { color: #8f959e; font-size: 11px; }
+.project-card-head a { color: #1f2329; font-size: 16px; font-weight: 600; }
+.project-card-product { margin: 14px 0 20px; color: #646a73; font-size: 13px; }
+.stage-progress { display: flex; justify-content: space-between; color: #646a73; font-size: 12px; }
+.project-card-foot { display: flex; justify-content: space-between; margin-top: 14px; color: #8f959e; font-size: 12px; }
+.drawer-hint { margin-bottom: 20px; padding: 12px; color: #52617a; border: 1px solid #dbe5ff; border-radius: 6px; background: #f4f7ff; font-size: 12px; }
+
+.detail-back { margin-bottom: 14px; font-size: 13px; }
+.project-hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 22px 24px; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
+.project-hero h2.ant-typography { margin: 10px 0 6px; }
+.project-hero > div > .ant-space:last-child { color: #646a73; font-size: 13px; }
+.dot-divider { color: #c9cdd4; }
+.hero-stage { display: flex; flex-direction: column; align-items: flex-end; }
+.hero-stage span { color: #8f959e; font-size: 11px; }
+.hero-stage strong { margin-top: 4px; color: #3370ff; font-size: 20px; }
+.project-detail > .ant-tabs { margin-top: 8px; }
+.lifecycle-card .ant-steps { padding: 14px 4px 28px; }
+.stage-focus { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-radius: 8px; background: #f4f7ff; }
+.stage-focus span { color: #3370ff; font-size: 11px; font-weight: 600; }
+.stage-focus h3 { margin: 5px 0; }
+.stage-focus p { margin: 0; color: #646a73; }
+.detail-grid { margin-top: 16px; }
+.detail-grid .ant-card { min-height: 260px; }
+.detail-grid .ant-timeline p { margin: 2px 0 0; color: #8f959e; font-size: 12px; }
+.agent-placeholder { display: flex; flex-direction: column; align-items: center; padding: 80px 20px; text-align: center; }
+.agent-placeholder > .anticon { color: #3370ff; font-size: 46px; }
+.agent-placeholder h3 { margin-top: 16px; }
+.milestone-item { min-width: 360px; }
+.milestone-item .ant-progress { max-width: 360px; margin-top: 8px; }
+.success-icon { color: #2ea869; }
+.template-icon { margin-bottom: 20px; color: #3370ff; font-size: 28px; }
+.markdown-editor { font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
 
 @media (max-width: 1280px) {
   .app-shell { grid-template-columns: 80px 200px minmax(0, 1fr); }
