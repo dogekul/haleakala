@@ -38,6 +38,8 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await page.getByPlaceholder('搜索产品名称或编码').fill(productName)
   await page.getByRole('link', { name: productName }).click()
   await expect(page.getByRole('heading', { name: productName })).toBeVisible()
+  const productId = Number(new URL(page.url()).pathname.split('/').filter(Boolean).at(-1))
+  expect(productId).toBeGreaterThan(0)
 
   await page.getByRole('tab', { name: '模块与功能' }).click()
   await createModule(page, `ROOT-${suffix}`, rootModule)
@@ -50,6 +52,8 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await featureDrawer.getByLabel('功能名称').fill(catalogFeature)
   await featureDrawer.getByRole('button', { name: '保存功能' }).click()
   await expect(page.getByText('功能已创建')).toBeVisible()
+  await seedScrollableModules(page, productId, suffix)
+  await assertModuleTreeScroll(page)
   await assertVisual(page, testInfo.outputPath('product-structure-1440.png'))
 
   await page.getByRole('tab', { name: '版本', exact: true }).click()
@@ -138,6 +142,7 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(page.getByText('该产品已归档，所有配置仅可查看。')).toBeVisible()
   await page.getByRole('tab', { name: '模块与功能' }).click()
   await expect(page.getByRole('button', { name: '新建模块' })).toHaveCount(0)
+  await assertModuleTreeScroll(page)
   await assertVisual(page, testInfo.outputPath('archived-product-1024.png'))
 
   expect(browserErrors, 'browser console and page errors').toEqual([])
@@ -152,6 +157,46 @@ async function createModule(page: Page, code: string, name: string, parent?: str
   await drawer.getByRole('button', { name: '保存模块' }).click()
   await expect(drawer).toBeHidden()
   await expect(page.getByText('模块已创建').last()).toBeVisible()
+}
+
+async function seedScrollableModules(page: Page, productId: number, suffix: string) {
+  await page.evaluate(async ({ productId, suffix }) => {
+    const encodedCsrf = document.cookie.split('; ')
+      .find(item => item.startsWith('XSRF-TOKEN='))
+      ?.slice('XSRF-TOKEN='.length)
+    if (!encodedCsrf) throw new Error('Missing XSRF-TOKEN while seeding scroll modules')
+
+    for (let index = 1; index <= 18; index += 1) {
+      const response = await fetch(`/api/v1/products/${productId}/modules`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XSRF-TOKEN': decodeURIComponent(encodedCsrf),
+        },
+        body: JSON.stringify({
+          code: `SCROLL-${suffix}-${index}`,
+          name: `滚动验证模块 ${String(index).padStart(2, '0')}`,
+          status: 'PLANNING',
+          sortOrder: index + 10,
+          version: 0,
+        }),
+      })
+      if (!response.ok) throw new Error(`Failed to seed scroll module ${index}: ${response.status}`)
+    }
+  }, { productId, suffix })
+
+  await page.reload()
+  await page.getByRole('tab', { name: '模块与功能' }).click()
+  await expect(page.getByText(`SCROLL-${suffix}-18 · 滚动验证模块 18`, { exact: true })).toBeAttached()
+}
+
+async function assertModuleTreeScroll(page: Page) {
+  const tree = page.getByTestId('product-module-tree-scroll')
+  await expect(tree).toBeVisible()
+  await expect.poll(() => tree.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+  await tree.evaluate(element => { element.scrollTop = element.scrollHeight })
+  await expect.poll(() => tree.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
 }
 
 async function choose(page: Page, scope: Page | Locator, label: string, option: string, search = false) {

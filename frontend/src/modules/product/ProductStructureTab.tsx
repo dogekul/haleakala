@@ -36,9 +36,11 @@ export function ProductStructureTab({ productId, readOnly }: { productId: number
     <div className="product-structure-layout">
       <Card className="product-structure-tree" title="产品模块" extra={!readOnly && <Button size="small" icon={<PlusOutlined />}
         aria-label="新建模块" onClick={() => setEditingModule(null)}>新建模块</Button>}>
-        {(modules.data?.length ?? 0) > 0 ? <Tree defaultExpandAll blockNode selectedKeys={selectedModuleId ? [selectedModuleId] : []}
-          treeData={buildModuleTree(modules.data ?? [])} onSelect={keys => keys[0] && setSelectedModuleId(Number(keys[0]))} />
-          : <div className="product-empty-copy">尚未创建模块</div>}
+        <div className="product-module-tree-scroll" data-testid="product-module-tree-scroll">
+          {(modules.data?.length ?? 0) > 0 ? <Tree defaultExpandAll blockNode selectedKeys={selectedModuleId ? [selectedModuleId] : []}
+            treeData={buildModuleTree(modules.data ?? [])} onSelect={keys => keys[0] && setSelectedModuleId(Number(keys[0]))} />
+            : <div className="product-empty-copy">尚未创建模块</div>}
+        </div>
         {selectedModule && !readOnly && <Button className="product-structure-edit-module" type="link" size="small"
           icon={<EditOutlined />} onClick={() => setEditingModule(selectedModule)}>编辑当前模块</Button>}
       </Card>

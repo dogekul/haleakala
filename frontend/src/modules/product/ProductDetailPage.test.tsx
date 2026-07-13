@@ -99,6 +99,7 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   expect(fetch).not.toHaveBeenCalledWith('/api/v1/products/8/modules', expect.anything())
 
   await user.click(screen.getByRole('tab', { name: '模块与功能' }))
+  expect(await screen.findByTestId('product-module-tree-scroll')).toBeVisible()
   expect(await screen.findByText('FIN · 财务管理')).toBeVisible()
   expect(screen.getByText('AR · 应收管理')).toBeVisible()
   expect(screen.getByText('AR-SETTLE · 对账中心')).toBeVisible()

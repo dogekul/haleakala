@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 
 import com.zhilu.delivery.catalog.ProductStructureService;
@@ -36,7 +37,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
     "spring.jpa.hibernate.ddl-auto=none", "spring.session.store-type=none"
 })
 class StandardizationServiceTest {
-  @Autowired private JdbcTemplate jdbc;
+  @SpyBean private JdbcTemplate jdbc;
   @Autowired private StandardizationService standardization;
   @SpyBean private ProductStructureService structures;
 
@@ -91,6 +92,48 @@ class StandardizationServiceTest {
 
     assertEquals(0, ((Number) flywheel.get("confirmedRequirements")).intValue());
     assertEquals(0, ((Number) flywheel.get("reuseRate")).intValue());
+    assertEquals(Long.valueOf(1000), jdbc.queryForObject(
+        "select assessed_by from maturity_assessment where product_version_id=1001",
+        Long.class));
+  }
+
+  @Test void concurrentFirstAssessmentsRecoverFromDuplicateInsert() throws Exception {
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (1001,1000,'V6','RELEASED')");
+    CountDownLatch bothAtInsert = new CountDownLatch(2);
+    doAnswer(invocation -> {
+      String sql = invocation.getArgument(0);
+      if (sql.startsWith("insert into maturity_assessment")) {
+        bothAtInsert.countDown();
+        if (!bothAtInsert.await(5, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("assessments did not race at first insert");
+        }
+      }
+      return invocation.callRealMethod();
+    }).when(jdbc).update(argThat(sql -> sql.startsWith("insert into maturity_assessment")),
+        any(), any(), any(), any(), any(), any(), any(), any(), any());
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Map<String, Object>> first = executor.submit(
+          () -> standardization.assess(1001, 1000));
+      Future<Map<String, Object>> second = executor.submit(
+          () -> standardization.assess(1001, 1000));
+
+      Map<String, Object> firstAssessment = first.get(10, TimeUnit.SECONDS);
+      Map<String, Object> secondAssessment = second.get(10, TimeUnit.SECONDS);
+      assertEquals(firstAssessment, secondAssessment);
+      assertEquals(Integer.valueOf(((Number) firstAssessment.get("maturityScore")).intValue()),
+          jdbc.queryForObject("select maturity_score from maturity_assessment "
+              + "where product_version_id=1001", Integer.class));
+    } finally {
+      executor.shutdownNow();
+    }
+
+    assertEquals(0L, bothAtInsert.getCount());
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from maturity_assessment where product_version_id=1001",
+        Integer.class));
     assertEquals(Long.valueOf(1000), jdbc.queryForObject(
         "select assessed_by from maturity_assessment where product_version_id=1001",
         Long.class));

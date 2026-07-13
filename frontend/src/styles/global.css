@@ -195,6 +195,7 @@ button, input { font: inherit; }
 .product-structure-layout > *, .product-version-layout > * { min-width: 0; }
 .product-structure-tree, .product-structure-features, .product-version-list, .version-manifest-card, .product-coverage-card { overflow: hidden; border-color: #e5e6eb; }
 .product-structure-tree .ant-tree-title { display: block; overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+.product-module-tree-scroll { overflow-y: auto; min-height: 160px; max-height: 280px; overscroll-behavior: contain; }
 .product-structure-edit-module { margin-top: 12px; padding-left: 0; }
 .product-feature-name, .product-requirement-name { min-width: 0; }
 .product-feature-name strong, .product-feature-name span, .product-requirement-name a, .product-requirement-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

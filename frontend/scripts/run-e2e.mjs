@@ -1,10 +1,29 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { chromium } from '@playwright/test'
+import { ensureChromium } from './playwright-browser.mjs'
 
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = path.resolve(frontend, '..')
+
+try {
+  ensureChromium({
+    executablePath: () => chromium.executablePath(),
+    existsSync,
+    install: () => spawnSync('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+      cwd: frontend,
+      env: process.env,
+      stdio: 'inherit',
+    }),
+  })
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error)
+  process.exit(1)
+}
+
 if (process.env.E2E_BASE_URL) {
   const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...process.argv.slice(2)], {
     cwd: frontend,
