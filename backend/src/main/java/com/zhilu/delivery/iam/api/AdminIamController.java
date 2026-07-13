@@ -1,5 +1,6 @@
 package com.zhilu.delivery.iam.api;
 
+import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.IamAdminService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.Collections;
@@ -24,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/admin")
 public class AdminIamController {
   private final IamAdminService admin;
+  private final AuditService audit;
 
-  public AdminIamController(IamAdminService admin) {
+  public AdminIamController(IamAdminService admin, AuditService audit) {
     this.admin = admin;
+    this.audit = audit;
   }
 
   @GetMapping("/users")
@@ -39,7 +42,7 @@ public class AdminIamController {
   public Map<String, Object> createUser(
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return admin.createLocalUser(
+    Map<String, Object> created = admin.createLocalUser(
         user.getOrganizationId(),
         request.primaryTeamId,
         request.username,
@@ -47,6 +50,8 @@ public class AdminIamController {
         request.displayName,
         request.email,
         request.roleCodes == null ? Collections.emptyList() : request.roleCodes);
+    record(user, "USER_CREATED", "USER", created.get("id"), request.username);
+    return created;
   }
 
   @PutMapping("/users/{id}/status")
@@ -56,6 +61,7 @@ public class AdminIamController {
       @Valid @RequestBody StatusRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     admin.updateUserStatus(user, id, request.status);
+    record(user, "USER_STATUS_UPDATED", "USER", id, request.status);
   }
 
   @PutMapping("/users/{id}")
@@ -63,8 +69,10 @@ public class AdminIamController {
       @PathVariable long id,
       @Valid @RequestBody UpdateUserRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return admin.updateUser(user, id, request.displayName, request.email,
+    Map<String, Object> updated = admin.updateUser(user, id, request.displayName, request.email,
         request.primaryTeamId, request.roleCodes, request.status);
+    record(user, "USER_UPDATED", "USER", id, request.displayName);
+    return updated;
   }
 
   @GetMapping("/teams")
@@ -77,7 +85,10 @@ public class AdminIamController {
   public Map<String, Object> createTeam(
       @Valid @RequestBody CreateTeamRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return admin.createTeam(user.getOrganizationId(), request.parentId, request.name, request.code);
+    Map<String, Object> created =
+        admin.createTeam(user.getOrganizationId(), request.parentId, request.name, request.code);
+    record(user, "TEAM_CREATED", "TEAM", created.get("id"), request.name);
+    return created;
   }
 
   @PutMapping("/teams/{id}")
@@ -85,8 +96,10 @@ public class AdminIamController {
       @PathVariable long id,
       @Valid @RequestBody UpdateTeamRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return admin.updateTeam(user.getOrganizationId(), id, request.parentId,
+    Map<String, Object> updated = admin.updateTeam(user.getOrganizationId(), id, request.parentId,
         request.name, request.code, request.enabled);
+    record(user, "TEAM_UPDATED", "TEAM", id, request.name);
+    return updated;
   }
 
   @GetMapping("/roles")
@@ -101,8 +114,17 @@ public class AdminIamController {
 
   @PutMapping("/roles/{id}/permissions")
   public Map<String, Object> replacePermissions(
-      @PathVariable long id, @Valid @RequestBody RolePermissionsRequest request) {
-    return admin.replacePermissions(id, request.permissionCodes);
+      @PathVariable long id, @Valid @RequestBody RolePermissionsRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> updated = admin.replacePermissions(id, request.permissionCodes);
+    record(user, "ROLE_PERMISSIONS_UPDATED", "ROLE", id,
+        String.join(",", request.permissionCodes));
+    return updated;
+  }
+
+  private void record(CurrentUser user, String action, String type, Object id, String details) {
+    audit.record(user.getOrganizationId(), user.getId(), action, type,
+        String.valueOf(id), details);
   }
 
   public static final class CreateUserRequest {

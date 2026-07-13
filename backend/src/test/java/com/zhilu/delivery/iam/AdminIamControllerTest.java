@@ -1,5 +1,6 @@
 package com.zhilu.delivery.iam;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,6 +37,7 @@ class AdminIamControllerTest {
 
   @BeforeEach
   void seedOrganization() {
+    jdbc.update("delete from audit_log");
     jdbc.update("delete from user_role");
     jdbc.update("delete from app_user");
     jdbc.update("delete from team");
@@ -71,6 +73,10 @@ class AdminIamControllerTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.username").value("wang"))
         .andExpect(jsonPath("$.passwordHash").doesNotExist());
+
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=300 and action in "
+            + "('TEAM_CREATED','USER_CREATED')", Integer.class));
   }
 
   @Test
