@@ -182,6 +182,8 @@ button, input { font: inherit; }
 .product-detail-title > span { color: #8f959e; font-size: 12px; }
 .product-detail-title h2.ant-typography { overflow: hidden; min-width: 0; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
 .product-detail-heading p.ant-typography { margin: 8px 0 0; color: #646a73; }
+.product-detail-tabs { min-width: 0; margin-top: 18px; }
+.product-detail-tabs .ant-tabs-content-holder, .product-detail-tabs .ant-tabs-tabpane { min-width: 0; }
 .product-overview-stats { margin-top: 16px; }
 .product-overview-stats .ant-card { height: 100%; border-color: #e5e6eb; }
 .product-overview-card { margin-top: 16px; border-color: #e5e6eb; }
@@ -189,10 +191,37 @@ button, input { font: inherit; }
 .product-overview-card dl div { min-width: 0; }
 .product-overview-card dt { margin-bottom: 5px; color: #8f959e; font-size: 12px; }
 .product-overview-card dd { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
+.product-structure-layout, .product-version-layout { display: grid; min-width: 0; grid-template-columns: minmax(260px, 0.8fr) minmax(0, 2.2fr); gap: 16px; }
+.product-structure-layout > *, .product-version-layout > * { min-width: 0; }
+.product-structure-tree, .product-structure-features, .product-version-list, .version-manifest-card, .product-coverage-card { overflow: hidden; border-color: #e5e6eb; }
+.product-structure-tree .ant-tree-title { display: block; overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+.product-structure-edit-module { margin-top: 12px; padding-left: 0; }
+.product-feature-name, .product-requirement-name { min-width: 0; }
+.product-feature-name strong, .product-feature-name span, .product-requirement-name a, .product-requirement-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-feature-name span, .product-requirement-name span { margin-top: 3px; color: #8f959e; font-size: 12px; }
+.product-editor-row { display: flex; width: 100%; }
+.product-editor-row .ant-space-item { min-width: 0; flex: 1; }
+.product-editor-row .ant-form-item, .product-editor-row .ant-input-number { width: 100%; }
+.product-version-list .ant-table-row { cursor: pointer; }
+.product-version-list .ant-table-row.is-selected > td { background: #edf2ff; }
+.version-manifest-search { max-width: 320px; margin-bottom: 12px; }
+.version-manifest-list { overflow: auto; max-height: 520px; border-top: 1px solid #eff0f1; }
+.version-manifest-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; gap: 16px; padding: 12px 4px; border-bottom: 1px solid #eff0f1; }
+.version-manifest-row > div { min-width: 0; }
+.version-manifest-row strong, .version-manifest-row span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.version-manifest-row span { margin-top: 3px; color: #8f959e; font-size: 12px; }
+.version-manifest-row select { width: 100%; height: 32px; padding: 0 8px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; }
+.version-release-alert { margin-bottom: 16px; }
+.product-empty-copy { padding: 28px 0; color: #8f959e; text-align: center; }
+.product-coverage-summary { margin-bottom: 16px; }
+.product-coverage-summary .ant-card { height: 100%; border-color: #e5e6eb; }
+.product-coverage-card + .product-coverage-card { margin-top: 16px; }
+.product-coverage-counts { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
 
 @media (max-width: 1024px) {
   .product-list-toolbar { align-items: flex-start; flex-direction: column; }
   .product-overview-card dl { grid-template-columns: 1fr; }
+  .product-structure-layout, .product-version-layout { grid-template-columns: 1fr; }
 }
 
 .agent-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
