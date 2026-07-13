@@ -12,6 +12,7 @@ import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
+import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
 import { ApiError } from '../../services/api'
 import { projectApi } from './projectApi'
 import { stageNames, type Project } from './types'
@@ -37,7 +38,7 @@ function ProjectDetailContent({ project }: { project: Project }) {
     </div>
     <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'lifecycle', label: '七阶段看板', children: <Lifecycle project={project} /> },
-      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentPlaceholder /> },
+      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
       { key: 'templates', label: '模板中心', children: <Templates project={project} /> },
       { key: 'risks', label: `风险登记册 (${project.risks.length})`, children: <Risks project={project} /> },
       { key: 'milestones', label: '里程碑与时间线', children: <Milestones project={project} /> },
@@ -78,12 +79,6 @@ function Lifecycle({ project }: { project: Project }) {
         { key: 'artifact', label: '交付产出', children: `${project.artifacts.length} 份` },
       ]} /></Card></Col></Row>
   </div>
-}
-
-function AgentPlaceholder() {
-  return <Card><div className="agent-placeholder"><RobotOutlined /><Typography.Title level={3}>Skill 执行面板</Typography.Title>
-    <Typography.Paragraph>支持 deliver-init、deliver-require、deliver-dev、deliver-transition、deliver-standardize 与 deliver-close。</Typography.Paragraph>
-    <Tag color="processing">Agent 契约接入中</Tag></div></Card>
 }
 
 function Risks({ project }: { project: Project }) {

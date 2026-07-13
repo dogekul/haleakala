@@ -1,0 +1,203 @@
+package com.zhilu.delivery.automation;
+
+import com.zhilu.delivery.audit.AuditService;
+import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.storage.FileObjectView;
+import com.zhilu.delivery.storage.FileService;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class AgentJobService {
+  private static final Set<String> SKILLS = Collections.unmodifiableSet(new HashSet<String>(
+      Arrays.asList("deliver-init", "deliver-require", "deliver-dev", "deliver-transition",
+          "deliver-standardize", "deliver-close")));
+  private static final Set<String> TERMINAL = Collections.unmodifiableSet(new HashSet<String>(
+      Arrays.asList("SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED")));
+
+  private final JdbcTemplate jdbc;
+  private final AgentGateway gateway;
+  private final FileService files;
+  private final AuditService audit;
+  private final String callbackUrl;
+  private final long timeoutMinutes;
+
+  public AgentJobService(JdbcTemplate jdbc, AgentGateway gateway, FileService files,
+      AuditService audit,
+      @Value("${delivery.agent.callback-url:http://backend:8080/api/v1/integrations/agent/events}") String callbackUrl,
+      @Value("${delivery.agent.timeout-minutes:30}") long timeoutMinutes) {
+    this.jdbc = jdbc; this.gateway = gateway; this.files = files; this.audit = audit;
+    this.callbackUrl = callbackUrl; this.timeoutMinutes = timeoutMinutes;
+  }
+
+  @Transactional
+  public AgentJobView submit(long projectId, String skill, String scenario,
+      String idempotencyKey, long actorUserId) {
+    validate(skill, idempotencyKey);
+    List<AgentJobView> existing = jdbc.query(
+        "select * from agent_job where project_id=? and idempotency_key=?", this::map,
+        projectId, idempotencyKey);
+    if (!existing.isEmpty()) return existing.get(0);
+    Map<String, Object> project = jdbc.queryForMap(
+        "select p.organization_id,p.code,p.name,p.customer_name,p.current_stage,pr.name product_name,pv.version_name "
+            + "from delivery_project p join product pr on pr.id=p.product_id "
+            + "join product_version pv on pv.id=p.product_version_id where p.id=?", projectId);
+    LocalDateTime timeoutAt = LocalDateTime.now().plusMinutes(timeoutMinutes);
+    jdbc.update("insert into agent_job(project_id,skill_code,scenario,status,progress,"
+            + "idempotency_key,created_by,timeout_at) values (?,?,?,'QUEUED',0,?,?,?)",
+        projectId, skill, normalizeScenario(scenario), idempotencyKey, actorUserId,
+        Timestamp.valueOf(timeoutAt));
+    Long id = jdbc.queryForObject(
+        "select id from agent_job where project_id=? and idempotency_key=?", Long.class,
+        projectId, idempotencyKey);
+    try {
+      AgentSubmission submission = gateway.submit(new AgentRequest(
+          skill, normalizeScenario(scenario), callbackUrl, project));
+      if (submission == null || blank(submission.getExternalJobId())) {
+        throw new IllegalStateException("Agent 未返回 externalJobId");
+      }
+      String status = normalizeActive(submission.getStatus());
+      jdbc.update("update agent_job set external_job_id=?,status=?,started_at=current_timestamp,"
+              + "updated_at=current_timestamp,version=version+1 where id=?",
+          submission.getExternalJobId(), status, id);
+      jdbc.update("insert into agent_attempt(agent_job_id,attempt_no,outcome) values (?,1,'ACCEPTED')", id);
+    } catch (RuntimeException error) {
+      jdbc.update("update agent_job set status='FAILED',error_message=?,finished_at=current_timestamp,"
+          + "updated_at=current_timestamp,version=version+1 where id=?", concise(error), id);
+      jdbc.update("insert into agent_attempt(agent_job_id,attempt_no,outcome,error_message) "
+          + "values (?,1,'FAILED',?)", id, concise(error));
+    }
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    audit.record(organizationId, actorUserId, "AGENT_JOB_SUBMITTED", "AGENT_JOB",
+        String.valueOf(id), skill);
+    return get(id);
+  }
+
+  public List<AgentJobView> list(long projectId) {
+    return jdbc.query("select * from agent_job where project_id=? order by created_at desc",
+        this::map, projectId);
+  }
+
+  public AgentJobView get(long id) {
+    List<AgentJobView> rows = jdbc.query("select * from agent_job where id=?", this::map, id);
+    if (rows.isEmpty()) throw new NotFoundException("Agent 任务不存在");
+    return rows.get(0);
+  }
+
+  @Transactional
+  public void accept(AgentEvent event) {
+    validateEvent(event);
+    Integer seen = jdbc.queryForObject(
+        "select count(*) from callback_receipt where event_id=?", Integer.class, event.getEventId());
+    if (seen != null && seen > 0) return;
+    List<Map<String, Object>> rows = jdbc.queryForList(
+        "select j.*,p.organization_id from agent_job j join delivery_project p on p.id=j.project_id "
+            + "where j.external_job_id=?", event.getExternalJobId());
+    if (rows.isEmpty()) throw new NotFoundException("Agent 外部任务不存在");
+    Map<String, Object> row = rows.get(0);
+    long id = ((Number) row.get("id")).longValue();
+    String current = String.valueOf(row.get("status"));
+    String next = event.getStatus().toUpperCase(java.util.Locale.ROOT);
+    ensureTransition(current, next);
+    jdbc.update("insert into callback_receipt(event_id,agent_job_id,status) values (?,?,?)",
+        event.getEventId(), id, next);
+    if (TERMINAL.contains(current)) return;
+    int progress = Math.max(0, Math.min(100, event.getProgress()));
+    boolean terminal = TERMINAL.contains(next);
+    jdbc.update("update agent_job set status=?,progress=?,error_message=?,"
+            + (terminal ? "finished_at=current_timestamp," : "")
+            + "updated_at=current_timestamp,version=version+1 where id=?",
+        next, progress, event.getError(), id);
+    if ("SUCCEEDED".equals(next)) {
+      bindArtifacts(row, event.getArtifacts());
+    }
+    audit.record(((Number) row.get("organization_id")).longValue(), null,
+        "AGENT_CALLBACK", "AGENT_JOB", String.valueOf(id), event.getEventId() + ":" + next);
+  }
+
+  @Transactional
+  public AgentJobView cancel(long id) {
+    AgentJobView job = get(id);
+    if (TERMINAL.contains(job.getStatus())) return job;
+    if (!blank(job.getExternalJobId())) gateway.cancel(job.getExternalJobId());
+    jdbc.update("update agent_job set status='CANCELLED',finished_at=current_timestamp,"
+        + "updated_at=current_timestamp,version=version+1 where id=?", id);
+    return get(id);
+  }
+
+  @Scheduled(fixedDelayString = "${delivery.agent.timeout-scan-ms:60000}")
+  @Transactional
+  public void markTimedOut() {
+    jdbc.update("update agent_job set status='TIMED_OUT',error_message='任务执行超时',"
+        + "finished_at=current_timestamp,updated_at=current_timestamp,version=version+1 "
+        + "where status in ('QUEUED','RUNNING') and timeout_at < current_timestamp");
+  }
+
+  private void bindArtifacts(Map<String, Object> job, List<AgentArtifact> artifacts) {
+    if (artifacts == null) return;
+    for (AgentArtifact artifact : artifacts) {
+      if (artifact == null || blank(artifact.getName()) || artifact.getContent() == null) continue;
+      byte[] bytes = artifact.getContent().getBytes(StandardCharsets.UTF_8);
+      String mime = blank(artifact.getMimeType()) ? "text/markdown" : artifact.getMimeType();
+      long organizationId = ((Number) job.get("organization_id")).longValue();
+      long actor = ((Number) job.get("created_by")).longValue();
+      FileObjectView file = files.store(new ByteArrayInputStream(bytes), artifact.getName(), mime,
+          bytes.length, organizationId, actor);
+      jdbc.update("insert into project_artifact(project_id,stage_code,file_id,artifact_type,name) "
+              + "values (?,?,?,?,?)", ((Number) job.get("project_id")).longValue(), null,
+          file.getId(), blank(artifact.getArtifactType()) ? "AGENT_OUTPUT" : artifact.getArtifactType(),
+          artifact.getName());
+    }
+  }
+
+  private AgentJobView map(java.sql.ResultSet row, int index) throws java.sql.SQLException {
+    Timestamp created = row.getTimestamp("created_at");
+    Timestamp finished = row.getTimestamp("finished_at");
+    return new AgentJobView(row.getLong("id"), row.getLong("project_id"),
+        row.getString("skill_code"), row.getString("scenario"), row.getString("status"),
+        row.getInt("progress"), row.getString("external_job_id"), row.getString("error_message"),
+        created == null ? null : created.toLocalDateTime(),
+        finished == null ? null : finished.toLocalDateTime());
+  }
+
+  private void validate(String skill, String key) {
+    if (!SKILLS.contains(skill)) throw new IllegalArgumentException("不支持的 Skill: " + skill);
+    if (blank(key) || key.length() > 96) throw new IllegalArgumentException("幂等键不能为空且最多 96 个字符");
+  }
+  private void validateEvent(AgentEvent event) {
+    if (event == null || blank(event.getEventId()) || blank(event.getExternalJobId())
+        || blank(event.getStatus())) throw new IllegalArgumentException("Agent 回调字段不完整");
+    String status = event.getStatus().toUpperCase(java.util.Locale.ROOT);
+    if (!Arrays.asList("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED").contains(status))
+      throw new IllegalArgumentException("Agent 状态不受支持");
+  }
+  private void ensureTransition(String current, String next) {
+    if (current.equals(next)) return;
+    if (TERMINAL.contains(current)) throw new ConflictException("终态 Agent 任务不能回退到 " + next);
+    if ("QUEUED".equals(next)) throw new ConflictException("Agent 任务不能回退到排队状态");
+  }
+  private String normalizeScenario(String scenario) { return blank(scenario) ? "normal" : scenario.trim(); }
+  private String normalizeActive(String status) {
+    return "QUEUED".equalsIgnoreCase(status) ? "QUEUED" : "RUNNING";
+  }
+  private boolean blank(String value) { return value == null || value.trim().isEmpty(); }
+  private String concise(Throwable error) {
+    String value = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+    return value.length() > 1000 ? value.substring(0, 1000) : value;
+  }
+}

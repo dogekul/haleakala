@@ -34,10 +34,18 @@ management:
         include: health,info
 
 delivery:
+  agent:
+    base-url: ${AGENT_BASE_URL:http://localhost:8090}
+    callback-url: ${AGENT_CALLBACK_URL:http://backend:8080/api/v1/integrations/agent/events}
+    shared-secret: ${AGENT_SHARED_SECRET:change-me}
+    timeout-minutes: ${AGENT_TIMEOUT_MINUTES:30}
+  ai:
+    base-url: ${AI_BASE_URL:}
+    model: ${AI_MODEL:}
+    api-key: ${AI_API_KEY:}
   storage:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:delivery}
     max-file-size: ${MAX_FILE_SIZE:104857600}
-

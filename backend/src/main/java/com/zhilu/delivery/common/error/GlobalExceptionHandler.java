@@ -1,6 +1,7 @@
 package com.zhilu.delivery.common.error;
 
 import com.zhilu.delivery.common.api.ApiError;
+import com.zhilu.delivery.automation.AiNotConfiguredException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -14,6 +15,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  @ExceptionHandler(AiNotConfiguredException.class)
+  public ResponseEntity<ApiError> handleAiNotConfigured(AiNotConfiguredException exception) {
+    ApiError body = new ApiError(
+        "AI_NOT_CONFIGURED", exception.getMessage(), UUID.randomUUID().toString(), null);
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+  }
 
   @ExceptionHandler(ConflictException.class)
   public ResponseEntity<ApiError> handleConflict(ConflictException exception) {
