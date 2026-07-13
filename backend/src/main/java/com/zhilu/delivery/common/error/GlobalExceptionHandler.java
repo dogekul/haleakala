@@ -15,6 +15,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  @ExceptionHandler(NotFoundException.class)
+  public ResponseEntity<ApiError> handleNotFound(NotFoundException exception) {
+    ApiError body = new ApiError(
+        "NOT_FOUND", exception.getMessage(), UUID.randomUUID().toString(), null);
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException exception) {
+    ApiError body = new ApiError(
+        "INVALID_ARGUMENT", exception.getMessage(), UUID.randomUUID().toString(), null);
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+  }
+
   @ExceptionHandler(AuthenticationException.class)
   public ResponseEntity<ApiError> handleAuthentication(AuthenticationException exception) {
     ApiError body = new ApiError(
