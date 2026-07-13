@@ -10,6 +10,7 @@ import javax.validation.constraints.NotBlank;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,20 +43,24 @@ public class ProductCatalogController {
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
   public Map<String, Object> create(@Valid @RequestBody ProductRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> product =
-        catalog.createProduct(request.ownerUserId, request.code, request.name, request.category);
+        catalog.createProduct(user.getOrganizationId(), request.ownerUserId,
+            request.code, request.name, request.category);
     audit(user, "CREATE", "PRODUCT", product.get("id"), request.name);
     return product;
   }
 
   @PutMapping("/{id}")
+  @Transactional
   public Map<String, Object> update(
       @PathVariable long id, @Valid @RequestBody ProductRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> product =
-        catalog.updateProduct(id, request.ownerUserId, request.name, request.category, request.status);
+        catalog.updateProduct(user.getOrganizationId(), id, request.ownerUserId,
+            request.name, request.category, request.status);
     audit(user, "UPDATE", "PRODUCT", id, request.name);
     return product;
   }
@@ -73,6 +78,7 @@ public class ProductCatalogController {
 
   @PostMapping("/{productId}/versions")
   @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
   public Map<String, Object> createVersion(
       @PathVariable long productId, @Valid @RequestBody VersionRequest request,
       @AuthenticationPrincipal CurrentUser user) {
@@ -83,6 +89,7 @@ public class ProductCatalogController {
   }
 
   @PutMapping("/{productId}/versions/{versionId}")
+  @Transactional
   public Map<String, Object> updateVersion(
       @PathVariable long productId,
       @PathVariable long versionId,

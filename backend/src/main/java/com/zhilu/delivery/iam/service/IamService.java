@@ -36,6 +36,9 @@ public class IamService {
   public CurrentUser currentUser(long userId) {
     AppUser user = users.findById(userId)
         .orElseThrow(() -> new BadCredentialsException("用户不存在"));
+    if (!"ACTIVE".equals(user.getStatus())) {
+      throw new BadCredentialsException("用户已停用");
+    }
     return currentUser(user);
   }
 

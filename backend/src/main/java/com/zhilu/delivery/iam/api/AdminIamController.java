@@ -12,6 +12,7 @@ import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,6 +40,7 @@ public class AdminIamController {
 
   @PostMapping("/users")
   @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
   public Map<String, Object> createUser(
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal CurrentUser user) {
@@ -56,6 +58,7 @@ public class AdminIamController {
 
   @PutMapping("/users/{id}/status")
   @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
   public void updateUserStatus(
       @PathVariable long id,
       @Valid @RequestBody StatusRequest request,
@@ -65,6 +68,7 @@ public class AdminIamController {
   }
 
   @PutMapping("/users/{id}")
+  @Transactional
   public Map<String, Object> updateUser(
       @PathVariable long id,
       @Valid @RequestBody UpdateUserRequest request,
@@ -82,6 +86,7 @@ public class AdminIamController {
 
   @PostMapping("/teams")
   @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
   public Map<String, Object> createTeam(
       @Valid @RequestBody CreateTeamRequest request,
       @AuthenticationPrincipal CurrentUser user) {
@@ -92,6 +97,7 @@ public class AdminIamController {
   }
 
   @PutMapping("/teams/{id}")
+  @Transactional
   public Map<String, Object> updateTeam(
       @PathVariable long id,
       @Valid @RequestBody UpdateTeamRequest request,
@@ -113,6 +119,7 @@ public class AdminIamController {
   }
 
   @PutMapping("/roles/{id}/permissions")
+  @Transactional
   public Map<String, Object> replacePermissions(
       @PathVariable long id, @Valid @RequestBody RolePermissionsRequest request,
       @AuthenticationPrincipal CurrentUser user) {

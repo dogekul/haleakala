@@ -40,7 +40,9 @@ export const adminApi = {
     })
     return api<AuditResult>(`/api/v1/admin/audit-logs?${params}`)
   },
+  auditFacets: () => api<{ actions: string[]; resourceTypes: string[] }>('/api/v1/admin/audit-log-facets'),
   settings: () => api<SystemSettings>('/api/v1/admin/settings'),
+  runtimeSettings: () => api<Pick<SystemSettings, 'platformName' | 'environmentLabel' | 'timezone'>>('/api/v1/runtime-settings'),
   saveSettings: (input: SystemSettings) => api<SystemSettings>('/api/v1/admin/settings', {
     method: 'PUT', body: JSON.stringify(input),
   }),

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { adminApi } from './adminApi'
+import { AdminQueryAlert } from './AdminQueryAlert'
 import type { AdminUser, Team } from './types'
 
 export function UsersTeamsPage() {
@@ -21,6 +22,7 @@ export function UsersTeamsPage() {
   return <section>
     <PageHeading title="用户与团队" description="管理组织成员、归属团队和业务角色，停用用户不会破坏历史交付记录。"
       action={<Space><Button icon={<TeamOutlined />} onClick={() => setEditingTeam(null)}>新建团队</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => setEditingUser(null)}>新建用户</Button></Space>} />
+    <AdminQueryAlert errors={[users.error, teams.error, roles.error]} onRetry={() => { void Promise.all([users.refetch(), teams.refetch(), roles.refetch()]) }} />
     <Row gutter={14} className="admin-stats">
       <Col span={8}><Card><Statistic prefix={<UserOutlined />} title="组织用户" value={users.data?.length ?? 0} /></Card></Col>
       <Col span={8}><Card><Statistic prefix={<TeamOutlined />} title="启用团队" value={teams.data?.filter(item => item.enabled).length ?? 0} /></Card></Col>
@@ -52,12 +54,15 @@ function UserEditor({ value, teams, roles, onClose }: { value: AdminUser | null 
   const [form] = Form.useForm()
   const client = useQueryClient()
   useEffect(() => {
-    if (value !== undefined) form.setFieldsValue(value ?? { status: 'ACTIVE', roleCodes: [] })
+    if (value !== undefined) {
+      form.resetFields()
+      form.setFieldsValue(value ?? { status: 'ACTIVE', roleCodes: [] })
+    }
     if (value) form.setFieldValue('roleCodes', value.roles)
   }, [form, value])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => adminApi.saveUser(value?.id, input), onSuccess: async () => { await client.invalidateQueries({ queryKey: ['admin-users'] }); onClose(); form.resetFields(); message.success(value ? '用户已更新' : '用户已创建') }, onError: (error: Error) => message.error(error.message) })
   return <Modal title={value ? '编辑用户' : '新建用户'} open={value !== undefined} onCancel={onClose} okText="保存" cancelText="取消" confirmLoading={save.isPending} onOk={() => form.submit()} destroyOnHidden>
-    <Form form={form} layout="vertical" onFinish={save.mutate}>
+    <Form form={form} layout="vertical" preserve={false} onFinish={save.mutate}>
       {!value && <><Form.Item label="用户名" name="username" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="初始密码" name="password" rules={[{ required: true, min: 8 }]}><Input.Password /></Form.Item></>}
       <Row gutter={12}><Col span={12}><Form.Item label="显示名称" name="displayName" rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={12}><Form.Item label="邮箱" name="email" rules={[{ type: 'email' }]}><Input /></Form.Item></Col></Row>
       <Form.Item label="所属团队" name="primaryTeamId"><Select allowClear options={teams.filter(item => item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
@@ -70,11 +75,11 @@ function UserEditor({ value, teams, roles, onClose }: { value: AdminUser | null 
 function TeamEditor({ value, teams, onClose }: { value: Team | null | undefined; teams: Team[]; onClose(): void }) {
   const [form] = Form.useForm()
   const client = useQueryClient()
-  useEffect(() => { if (value !== undefined) form.setFieldsValue(value ?? { enabled: true }) }, [form, value])
+  useEffect(() => { if (value !== undefined) { form.resetFields(); form.setFieldsValue(value ?? { enabled: true }) } }, [form, value])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => adminApi.saveTeam(value?.id, input), onSuccess: async () => { await client.invalidateQueries({ queryKey: ['admin-teams'] }); onClose(); form.resetFields(); message.success(value ? '团队已更新' : '团队已创建') }, onError: (error: Error) => message.error(error.message) })
   return <Modal title={value ? '编辑团队' : '新建团队'} open={value !== undefined} onCancel={onClose} okText="保存" cancelText="取消" confirmLoading={save.isPending} onOk={() => form.submit()} destroyOnHidden>
-    <Form form={form} layout="vertical" onFinish={save.mutate}>
-      <Form.Item label="团队名称" name="name" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="团队编码" name="code" rules={[{ required: true }]}><Input disabled={Boolean(value)} /></Form.Item>
+    <Form form={form} layout="vertical" preserve={false} onFinish={save.mutate}>
+      <Form.Item label="团队名称" name="name" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="团队编码" name="code" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item label="上级团队" name="parentId"><Select allowClear options={teams.filter(item => item.id !== value?.id && item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
       {value && <Form.Item label="状态" name="enabled"><Select options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>}
     </Form>

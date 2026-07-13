@@ -4,13 +4,16 @@ import { useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ApiError } from '../services/api'
 import { useAuth } from './AuthProvider'
+import { homeRoute } from './homeRoute'
 
 export function LoginPage() {
   const { me, login } = useAuth()
   const location = useLocation()
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  if (me) return <Navigate to={(location.state as { from?: string } | null)?.from ?? '/dashboard'} replace />
+  if (me) return <Navigate to={homeRoute(
+    me.permissions, (location.state as { from?: string } | null)?.from,
+  )} replace />
 
   const submit = async (values: { username: string; password: string }) => {
     setSubmitting(true)

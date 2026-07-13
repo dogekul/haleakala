@@ -1,6 +1,7 @@
 import { Button, Result, Spin } from 'antd'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthProvider'
+import { homeRoute } from './homeRoute'
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -16,6 +17,7 @@ export function RequirePermission({ code, children }: { code: string; children: 
 }
 
 export function ForbiddenPage() {
+  const { me } = useAuth()
   return <Result status="403" title="403" subTitle="你没有访问此页面的权限"
-    extra={<Button type="primary" href="/dashboard">返回工作台</Button>} />
+    extra={<Button type="primary" href={homeRoute(me?.permissions ?? [])}>返回工作台</Button>} />
 }

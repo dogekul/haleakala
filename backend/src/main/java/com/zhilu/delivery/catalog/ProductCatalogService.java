@@ -1,11 +1,13 @@
 package com.zhilu.delivery.catalog;
 
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,20 +37,27 @@ public class ProductCatalogService {
 
   @Transactional
   public Map<String, Object> createProduct(
-      Long ownerUserId, String code, String name, String category) {
-    jdbc.update("insert into product(owner_user_id,code,name,category,status) "
-            + "values (?,?,?,?,'ACTIVE')",
-        ownerUserId, code.trim(), name.trim(), category);
+      long organizationId, Long ownerUserId, String code, String name, String category) {
+    validateOwner(organizationId, ownerUserId);
+    try {
+      jdbc.update("insert into product(owner_user_id,code,name,category,status) "
+              + "values (?,?,?,?,'ACTIVE')",
+          ownerUserId, code.trim(), name.trim(), category);
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("产品编码已存在");
+    }
     Long id = jdbc.queryForObject("select id from product where code=?", Long.class, code.trim());
     return product(id);
   }
 
   @Transactional
   public Map<String, Object> updateProduct(
-      long id, Long ownerUserId, String name, String category, String status) {
+      long organizationId, long id, Long ownerUserId, String name, String category, String status) {
+    validateOwner(organizationId, ownerUserId);
+    validateStatus(status, "产品");
     int changed = jdbc.update("update product set owner_user_id=?,name=?,category=?,status=?,"
             + "updated_at=current_timestamp,version=version+1 where id=?",
-        ownerUserId, name, category, status, id);
+        ownerUserId, name.trim(), category, status, id);
     if (changed == 0) {
       throw new NotFoundException("产品不存在");
     }
@@ -77,9 +86,13 @@ public class ProductCatalogService {
   public Map<String, Object> createVersion(
       long productId, String versionName, LocalDate releaseDate) {
     product(productId);
-    jdbc.update("insert into product_version(product_id,version_name,release_date,status) "
-            + "values (?,?,?,'ACTIVE')",
-        productId, versionName.trim(), releaseDate == null ? null : Date.valueOf(releaseDate));
+    try {
+      jdbc.update("insert into product_version(product_id,version_name,release_date,status) "
+              + "values (?,?,?,'ACTIVE')",
+          productId, versionName.trim(), releaseDate == null ? null : Date.valueOf(releaseDate));
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("产品版本已存在");
+    }
     Long id = jdbc.queryForObject(
         "select id from product_version where product_id=? and version_name=?",
         Long.class, productId, versionName.trim());
@@ -89,6 +102,7 @@ public class ProductCatalogService {
   @Transactional
   public Map<String, Object> updateVersion(
       long productId, long versionId, LocalDate releaseDate, String status) {
+    validateStatus(status, "产品版本");
     int changed = jdbc.update("update product_version set release_date=?,status=?,"
             + "updated_at=current_timestamp,version=version+1 where id=? and product_id=?",
         releaseDate == null ? null : Date.valueOf(releaseDate), status, versionId, productId);
@@ -96,6 +110,22 @@ public class ProductCatalogService {
       throw new NotFoundException("产品版本不存在");
     }
     return version(productId, versionId);
+  }
+
+  private void validateOwner(long organizationId, Long ownerUserId) {
+    if (ownerUserId == null) return;
+    Integer count = jdbc.queryForObject(
+        "select count(*) from app_user where id=? and organization_id=?",
+        Integer.class, ownerUserId, organizationId);
+    if (count == null || count == 0) {
+      throw new IllegalArgumentException("产品负责人不存在或不属于当前组织");
+    }
+  }
+
+  private void validateStatus(String status, String label) {
+    if (!"ACTIVE".equals(status) && !"DISABLED".equals(status)) {
+      throw new IllegalArgumentException(label + "状态不受支持");
+    }
   }
 
   private Map<String, Object> productRow(java.sql.ResultSet row) throws java.sql.SQLException {

@@ -2,6 +2,7 @@ package com.zhilu.delivery.admin;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,7 +70,8 @@ public class AdminAuditService {
           item.put("traceId", row.getString("trace_id"));
           item.put("details", row.getString("details_text"));
           Timestamp created = row.getTimestamp("created_at");
-          item.put("createdAt", created == null ? null : created.toLocalDateTime());
+          item.put("createdAt", created == null ? null
+              : created.toLocalDateTime().atZone(ZoneId.systemDefault()).toOffsetDateTime());
           return item;
         }, pageArguments.toArray());
     Map<String, Object> result = new LinkedHashMap<String, Object>();
@@ -77,6 +79,18 @@ public class AdminAuditService {
     result.put("page", safePage);
     result.put("pageSize", safePageSize);
     result.put("total", total == null ? 0 : total);
+    return result;
+  }
+
+  public Map<String, Object> facets(long organizationId) {
+    Map<String, Object> result = new LinkedHashMap<String, Object>();
+    result.put("actions", jdbc.queryForList(
+        "select distinct action from audit_log where organization_id=? order by action",
+        String.class, organizationId));
+    result.put("resourceTypes", jdbc.queryForList(
+        "select distinct resource_type from audit_log where organization_id=? "
+            + "order by resource_type",
+        String.class, organizationId));
     return result;
   }
 

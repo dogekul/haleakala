@@ -1,9 +1,11 @@
 import { lazy, Suspense } from 'react'
 import { Spin } from 'antd'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { ForbiddenPage, RequireAuth, RequirePermission } from './AccessPages'
 import { LoginPage } from './LoginPage'
+import { useAuth } from './AuthProvider'
+import { homeRoute } from './homeRoute'
 
 const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then(module => ({ default: module.ProjectDetail })))
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
@@ -13,6 +15,7 @@ const StandardizationPage = lazy(() => import('../modules/standardization/Standa
 const KnowledgePage = lazy(() => import('../modules/knowledge/KnowledgePage').then(module => ({ default: module.KnowledgePage })))
 const ResourcePage = lazy(() => import('../modules/resource/ResourcePage').then(module => ({ default: module.ResourcePage })))
 const AdminPage = lazy(() => import('../modules/admin/AdminPage').then(module => ({ default: module.AdminPage })))
+const AuditLogsPage = lazy(() => import('../modules/admin/AuditLogsPage').then(module => ({ default: module.AuditLogsPage })))
 
 export function App() {
   return <Routes>
@@ -42,6 +45,9 @@ export function App() {
     <Route path="/admin/*" element={<RequireAuth><RequirePermission code="system:manage">
       <AppShell><LazyPage><AdminPage /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
+    <Route path="/audit-logs" element={<RequireAuth><RequirePermission code="audit:read">
+      <AppShell><LazyPage><AuditLogsPage /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
     <Route path="*" element={<NavigateHome />} />
   </Routes>
 }
@@ -51,5 +57,6 @@ function LazyPage({ children }: { children: React.ReactNode }) {
 }
 
 function NavigateHome() {
-  return <RequireAuth><AppShell><LazyPage><DashboardPage /></LazyPage></AppShell></RequireAuth>
+  const { me } = useAuth()
+  return <RequireAuth><Navigate to={homeRoute(me?.permissions ?? [])} replace /></RequireAuth>
 }

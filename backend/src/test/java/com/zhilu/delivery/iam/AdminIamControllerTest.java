@@ -1,6 +1,11 @@
 package com.zhilu.delivery.iam;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,12 +15,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.audit.AuditService;
 import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -34,6 +41,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class AdminIamControllerTest {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @SpyBean private AuditService audit;
 
   @BeforeEach
   void seedOrganization() {
@@ -127,6 +135,21 @@ class AdminIamControllerTest {
   }
 
   @Test
+  void teamHierarchyCannotFormAnIndirectCycle() throws Exception {
+    jdbc.update("insert into team(id,organization_id,name,code) "
+        + "values (310,300,'交付一组','DELIVERY-1')");
+    jdbc.update("insert into team(id,organization_id,parent_id,name,code) "
+        + "values (311,300,310,'交付二组','DELIVERY-2')");
+
+    mvc.perform(put("/api/v1/admin/teams/310").with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"parentId\":311,\"name\":\"交付一组\","
+                + "\"code\":\"DELIVERY-1\",\"enabled\":true}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+  }
+
+  @Test
   void adminCanReadPermissionCatalogButCannotRemoveOwnManagementPermission() throws Exception {
     mvc.perform(get("/api/v1/admin/permissions").with(admin()))
         .andExpect(status().isOk())
@@ -141,6 +164,22 @@ class AdminIamControllerTest {
             .content("{\"permissionCodes\":[\"dashboard:read\"]}"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("CONFLICT"));
+  }
+
+  @Test
+  void managementWriteRollsBackWhenAuditRecordingFails() {
+    doThrow(new IllegalStateException("audit unavailable")).when(audit).record(
+        anyLong(), any(), anyString(), anyString(), anyString(), anyString());
+
+    assertThrows(Exception.class, () -> mvc.perform(post("/api/v1/admin/teams")
+        .with(admin())
+        .with(csrf())
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"name\":\"交付二组\",\"code\":\"DELIVERY-2\"}")));
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from team where organization_id=300 and code='DELIVERY-2'",
+        Integer.class));
   }
 
   private RequestPostProcessor admin() {

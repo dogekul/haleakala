@@ -2,6 +2,7 @@ package com.zhilu.delivery.catalog;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,8 +44,11 @@ class ProductCatalogIT {
     jdbc.update("delete from app_user");
     jdbc.update("delete from organization");
     jdbc.update("insert into organization(id,name,code) values (350,'智鹿科技','ZHILU-CATALOG')");
+    jdbc.update("insert into organization(id,name,code) values (351,'其他组织','OTHER-CATALOG')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (350,350,'admin','系统管理员','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (351,351,'outsider','其他用户','ACTIVE')");
   }
 
   @Test
@@ -71,6 +75,46 @@ class ProductCatalogIT {
     assertEquals(Integer.valueOf(3), jdbc.queryForObject(
         "select count(*) from audit_log where organization_id=350 and resource_type in "
             + "('PRODUCT','PRODUCT_VERSION')", Integer.class));
+  }
+
+  @Test
+  void rejectsUnsupportedProductStatusAndCrossOrganizationOwner() throws Exception {
+    long productId = createProduct("ERP", "智鹿 ERP");
+
+    mvc.perform(put("/api/v1/products/{id}", productId)
+            .with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"智鹿 ERP\",\"status\":\"BROKEN\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+
+    mvc.perform(post("/api/v1/products")
+            .with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ownerUserId\":351,\"code\":\"CRM\",\"name\":\"智鹿 CRM\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+  }
+
+  @Test
+  void reportsDuplicateProductAndVersionAsConflicts() throws Exception {
+    long productId = createProduct("ERP", "智鹿 ERP");
+
+    mvc.perform(post("/api/v1/products")
+            .with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"重复产品\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+    String version = "{\"versionName\":\"V5.2\",\"releaseDate\":\"2026-07-01\"}";
+    mvc.perform(post("/api/v1/products/{id}/versions", productId)
+            .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
+        .andExpect(status().isCreated());
+    mvc.perform(post("/api/v1/products/{id}/versions", productId)
+            .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CONFLICT"));
   }
 
   private long createProduct(String code, String name) throws Exception {

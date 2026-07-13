@@ -1,5 +1,6 @@
 import {
   BookOutlined,
+  AuditOutlined,
   DashboardOutlined,
   FolderOpenOutlined,
   LogoutOutlined,
@@ -9,10 +10,12 @@ import {
   TeamOutlined,
   ToolOutlined,
 } from '@ant-design/icons'
+import { useQuery } from '@tanstack/react-query'
 import { Avatar, Button, Dropdown, Tooltip } from 'antd'
 import { useMemo, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
+import { adminApi } from '../modules/admin/adminApi'
 
 interface ModuleNav {
   path: string
@@ -28,21 +31,28 @@ const modules: ModuleNav[] = [
   { path: '/standardization', label: '标准化中心', permission: 'standardization:read', icon: <ProductOutlined /> },
   { path: '/knowledge', label: '知识库', permission: 'knowledge:read', icon: <BookOutlined /> },
   { path: '/resources', label: '资源中心', permission: 'resource:read', icon: <TeamOutlined /> },
+  { path: '/audit-logs', label: '审计日志', permission: 'audit:read', icon: <AuditOutlined /> },
   { path: '/admin', label: '系统管理', permission: 'system:manage', icon: <SettingOutlined /> },
 ]
 
 export function AppShell({ children }: { children?: ReactNode }) {
   const { me, logout } = useAuth()
   const location = useLocation()
-  const visible = useMemo(() => modules.filter(item => me?.permissions.includes(item.permission)), [me])
+  const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: adminApi.runtimeSettings, enabled: Boolean(me) })
+  const visible = useMemo(() => modules.filter(item => me?.permissions.includes(item.permission)
+    && !(item.path === '/audit-logs' && me.permissions.includes('system:manage'))), [me])
   const active = visible.find(item => location.pathname.startsWith(item.path)) ?? visible[0]
+  const platformName = settings.data?.platformName ?? '智鹿交付'
+  const environmentLabel = settings.data?.environmentLabel ?? '内部生产环境'
 
   return (
     <div className="app-shell">
       <aside className="module-rail" aria-label="主模块导航">
-        <Link to="/dashboard" className="brand-mark" aria-label="智鹿交付首页">
-          <span className="brand-deer">鹿</span>
-        </Link>
+        <Tooltip title={platformName} placement="right">
+          <Link to="/dashboard" className="brand-mark" aria-label={`${platformName}首页`}>
+            <span className="brand-deer">鹿</span>
+          </Link>
+        </Tooltip>
         <nav className="rail-nav">
           {visible.map(item => (
             <Tooltip key={item.path} title={item.label} placement="right">
@@ -62,7 +72,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
             <strong>{active?.label ?? '工作台'}</strong>
           </div>
           <div className="topbar-actions">
-            <span className="env-pill">内部生产环境</span>
+            <span className="env-pill">{environmentLabel}</span>
             <Dropdown menu={{ items: [
               { key: 'profile', label: me?.username, disabled: true },
               { type: 'divider' },

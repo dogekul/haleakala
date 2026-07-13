@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Checkbox, Col, Drawer, Empty, Row, Space, Tag, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { adminApi } from './adminApi'
+import { AdminQueryAlert } from './AdminQueryAlert'
 import type { Role } from './types'
 import { PageHeading } from './UsersTeamsPage'
 
@@ -12,6 +13,7 @@ export function RolesPage() {
   const [editing, setEditing] = useState<Role>()
   return <section>
     <PageHeading title="角色权限" description="按业务角色分配最小必要权限；系统管理员始终保留系统管理权限。" />
+    <AdminQueryAlert errors={[roles.error, permissions.error]} onRetry={() => { void Promise.all([roles.refetch(), permissions.refetch()]) }} />
     <Row gutter={[14, 14]}>
       {(roles.data ?? []).map(role => <Col span={8} key={role.id}><Card className="role-card" title={<Space><SafetyCertificateOutlined />{role.name}</Space>} extra={role.builtIn && <Tag>内置</Tag>}>
         <Typography.Paragraph>{role.description || '暂无说明'}</Typography.Paragraph>

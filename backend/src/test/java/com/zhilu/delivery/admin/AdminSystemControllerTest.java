@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.util.Arrays;
 import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,11 @@ class AdminSystemControllerTest {
         .andExpect(jsonPath("$.page").value(1))
         .andExpect(jsonPath("$.items[0].traceId").value("TRACE-400"))
         .andExpect(jsonPath("$.items[0].actorName").value("系统管理员"));
+
+    mvc.perform(get("/api/v1/admin/audit-log-facets").with(admin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.actions[0]").value("UPDATE"))
+        .andExpect(jsonPath("$.resourceTypes[0]").value("USER"));
   }
 
   @Test
@@ -93,12 +99,22 @@ class AdminSystemControllerTest {
                 + "\"supportEmail\":\"\",\"agentTimeoutMinutes\":30}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+
+    mvc.perform(put("/api/v1/admin/settings").with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"platformName\":\"智鹿交付\","
+                + "\"environmentLabel\":\"生产环境\","
+                + "\"timezone\":\"Asia/Shanghai\",\"supportEmail\":\"\","
+                + "\"agentTimeoutMinutes\":30,\"databaseUrl\":\"should-not-be-accepted\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
   }
 
   private RequestPostProcessor admin() {
     CurrentUser principal = new CurrentUser(400L, 400L, "admin", "系统管理员",
-        Collections.singletonList("ADMIN"), Collections.singletonList("system:manage"));
+        Collections.singletonList("ADMIN"), Arrays.asList("system:manage", "audit:read"));
     return authentication(new UsernamePasswordAuthenticationToken(principal, null,
-        Collections.singletonList(new SimpleGrantedAuthority("system:manage"))));
+        Arrays.asList(new SimpleGrantedAuthority("system:manage"),
+            new SimpleGrantedAuthority("audit:read"))));
   }
 }

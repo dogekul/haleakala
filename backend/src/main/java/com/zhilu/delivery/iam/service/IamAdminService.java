@@ -5,10 +5,12 @@ import com.zhilu.delivery.common.error.NotFoundException;
 import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -275,6 +277,18 @@ public class IamAdminService {
         "select count(*) from team where id=? and organization_id=?", Integer.class,
         teamId, organizationId);
     if (count == null || count == 0) throw new IllegalArgumentException("团队不存在或不属于当前组织");
+    if (currentTeamId == null) return;
+    Set<Long> visited = new HashSet<Long>();
+    Long ancestorId = teamId;
+    while (ancestorId != null) {
+      if (ancestorId.equals(currentTeamId) || !visited.add(ancestorId)) {
+        throw new IllegalArgumentException("团队层级不能形成循环");
+      }
+      List<Long> parents = jdbc.query(
+          "select parent_id from team where id=? and organization_id=?",
+          (row, index) -> (Long) row.getObject("parent_id"), ancestorId, organizationId);
+      ancestorId = parents.isEmpty() ? null : parents.get(0);
+    }
   }
 
   private void validateStatus(String status) {
