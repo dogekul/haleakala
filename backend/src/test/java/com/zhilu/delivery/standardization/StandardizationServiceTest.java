@@ -3,16 +3,31 @@ package com.zhilu.delivery.standardization;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 
+import com.zhilu.delivery.catalog.ProductStructureService;
 import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
@@ -23,6 +38,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class StandardizationServiceTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private StandardizationService standardization;
+  @SpyBean private ProductStructureService structures;
 
   @BeforeEach void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
@@ -159,6 +175,98 @@ class StandardizationServiceTest {
     assertConversionRolledBack(debtId, "STALE-CONVERT");
   }
 
+  @Test void failureAfterFeatureAndCoverageWritesRollsBackEverySideEffect() {
+    seedConversionCatalog();
+    long debtId = debtLinkedTo(1000, 1001);
+
+    assertThrows(ConflictException.class, () -> standardization.convertToFeature(
+        debtId, actor(), command(1000, 1000, 1000L, "RELEASED-ROLLBACK", 0)));
+
+    assertDeepRollback(debtId, "RELEASED-ROLLBACK", 1000, 0, 0);
+  }
+
+  @Test void concurrentConversionsReachFinalCasAndLoserRollsBackAllWrites() throws Exception {
+    seedConversionCatalog();
+    long debtId = debtLinkedTo(1000, 1001);
+    CountDownLatch bothPassedEntryValidation = new CountDownLatch(2);
+    doAnswer(invocation -> {
+      bothPassedEntryValidation.countDown();
+      if (!bothPassedEntryValidation.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("concurrent conversions did not reach feature creation");
+      }
+      return invocation.callRealMethod();
+    }).when(structures).saveFeature(anyLong(), anyLong(), anyLong(), any(), anyLong(), any(),
+        anyString(), anyString(), anyString(), anyString(), anyLong());
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Map<String, Object>> first = executor.submit(() -> standardization.convertToFeature(
+          debtId, actor(), command(1000, 1000, 1001L, "CAS-WINNER-A", 0)));
+      Future<Map<String, Object>> second = executor.submit(() -> standardization.convertToFeature(
+          debtId, actor(), command(1000, 1000, 1001L, "CAS-WINNER-B", 0)));
+      List<Future<Map<String, Object>>> conversions = Arrays.asList(first, second);
+      int succeeded = 0;
+      int finalCasConflicts = 0;
+      for (Future<Map<String, Object>> conversion : conversions) {
+        try {
+          Map<String, Object> value = conversion.get(10, TimeUnit.SECONDS);
+          assertEquals("INCLUDED", value.get("status"));
+          succeeded++;
+        } catch (ExecutionException failed) {
+          assertTrue(failed.getCause() instanceof ConflictException);
+          assertEquals("标准化债务已被更新，请刷新后重试",
+              failed.getCause().getMessage());
+          finalCasConflicts++;
+        }
+      }
+      assertEquals(0L, bothPassedEntryValidation.getCount());
+      assertEquals(1, succeeded);
+      assertEquals(1, finalCasConflicts);
+    } finally {
+      executor.shutdownNow();
+    }
+
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from product_feature where code in ('CAS-WINNER-A','CAS-WINNER-B')",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from requirement_product_feature", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=1001",
+        Integer.class));
+    assertEquals(Long.valueOf(1), jdbc.queryForObject(
+        "select version from product_version where id=1001", Long.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CREATE' and resource_type='PRODUCT_FEATURE'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CONVERT_TO_FEATURE'", Integer.class));
+    assertEquals("INCLUDED", jdbc.queryForObject(
+        "select status from standardization_debt where id=?", String.class, debtId));
+    assertEquals(Long.valueOf(1), jdbc.queryForObject(
+        "select version from standardization_debt where id=?", Long.class, debtId));
+    assertNotNull(jdbc.queryForObject(
+        "select converted_feature_id from standardization_debt where id=?", Long.class, debtId));
+  }
+
+  @Test void candidateCreationAndConversionRejectAnotherOrganization() {
+    seedConversionCatalog();
+    long debtId = debtLinkedTo(1000, 1001);
+    CurrentUser outsider = new CurrentUser(2000L, 2000L, "outsider", "外部用户",
+        Collections.singletonList("PRODUCT_MANAGER"),
+        Collections.singletonList("standardization:write"));
+
+    assertThrows(NotFoundException.class,
+        () -> standardization.createCandidateFromRequirement(1002, outsider));
+    assertThrows(NotFoundException.class, () -> standardization.convertToFeature(
+        debtId, outsider, command(1000, 1000, null, "CROSS-ORG", 0)));
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from standardization_debt where pattern_key='REQUIREMENT:1002'",
+        Integer.class));
+    assertDeepRollback(debtId, "CROSS-ORG", 1001, 0, 0);
+  }
+
   private CurrentUser actor() {
     return new CurrentUser(1000L, 1000L, "product", "产品经理",
         Collections.singletonList("PRODUCT_MANAGER"),
@@ -210,5 +318,21 @@ class StandardizationServiceTest {
         "select status from standardization_debt where id=?", String.class, debtId));
     assertEquals(null, jdbc.queryForObject(
         "select converted_feature_id from standardization_debt where id=?", Long.class, debtId));
+  }
+
+  private void assertDeepRollback(long debtId, String code, long productVersionId,
+      long expectedProductVersion, long expectedDebtVersion) {
+    assertConversionRolledBack(debtId, code);
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_version_feature", Integer.class));
+    assertEquals(Long.valueOf(expectedProductVersion), jdbc.queryForObject(
+        "select version from product_version where id=?", Long.class, productVersionId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where "
+            + "(action='CREATE' and resource_type='PRODUCT_FEATURE') "
+            + "or action='CONVERT_TO_FEATURE'",
+        Integer.class));
+    assertEquals(Long.valueOf(expectedDebtVersion), jdbc.queryForObject(
+        "select version from standardization_debt where id=?", Long.class, debtId));
   }
 }
