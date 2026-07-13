@@ -162,6 +162,58 @@ class ProductCatalogIT {
   }
 
   @Test
+  void returnsConflictBeforeValidatingAStaleProductTransition() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    updateProductStatus(productId, "ACTIVE", 0).andExpect(status().isOk());
+
+    updateProductStatus(productId, "PLANNING", 0)
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("数据已被更新，请刷新后重试"));
+  }
+
+  @Test
+  void returnsConflictBeforeValidatingAStaleVersionTransition() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    long versionId = createVersion(productId, "V1");
+    mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, versionId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\",\"releaseDate\":\"2026-07-01\","
+                + "\"status\":\"RELEASED\",\"version\":0}"))
+        .andExpect(status().isOk());
+
+    mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, versionId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\",\"status\":\"PLANNING\",\"version\":0}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("数据已被更新，请刷新后重试"));
+  }
+
+  @Test
+  void rejectsVersionCreationForArchivedProduct() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    updateProductStatus(productId, "ARCHIVED", 0).andExpect(status().isOk());
+
+    mvc.perform(post("/api/v1/products/{id}/versions", productId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("产品已归档，不能修改版本"));
+  }
+
+  @Test
+  void rejectsVersionUpdateForArchivedProduct() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    long versionId = createVersion(productId, "V1");
+    updateProductStatus(productId, "ARCHIVED", 0).andExpect(status().isOk());
+
+    mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, versionId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\",\"status\":\"PLANNING\",\"version\":0}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("产品已归档，不能修改版本"));
+  }
+
+  @Test
   void releasesVersionsOnlyWithDatesAndReturnsOnlyBindableVersions() throws Exception {
     long productId = createProduct("ERP", "ERP");
     long released = createVersion(productId, "V1");

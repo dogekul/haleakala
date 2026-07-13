@@ -76,6 +76,7 @@ public class ProductCatalogService {
   public Map<String, Object> updateProduct(long organizationId, long id, Long ownerUserId,
       String name, String category, String description, String status, long version) {
     Map<String, Object> current = product(organizationId, id);
+    requireCurrentVersion(current, version);
     validateOwner(organizationId, ownerUserId);
     validateStatus(PRODUCT_STATUSES, status, "产品");
     validateTransition(String.valueOf(current.get("status")), status, PRODUCT_NEXT, "产品");
@@ -111,7 +112,7 @@ public class ProductCatalogService {
   @Transactional
   public Map<String, Object> createVersion(
       long organizationId, long productId, String versionName, LocalDate releaseDate) {
-    product(organizationId, productId);
+    requireVersionWritesAllowed(product(organizationId, productId));
     try {
       jdbc.update("insert into product_version(product_id,version_name,release_date,status) "
               + "values (?,?,?,'PLANNING')",
@@ -129,6 +130,8 @@ public class ProductCatalogService {
   public Map<String, Object> updateVersion(long organizationId, long productId, long versionId,
       LocalDate releaseDate, String status, long version) {
     Map<String, Object> current = version(organizationId, productId, versionId);
+    requireCurrentVersion(current, version);
+    requireVersionWritesAllowed(product(organizationId, productId));
     validateStatus(VERSION_STATUSES, status, "产品版本");
     validateTransition(String.valueOf(current.get("status")), status, VERSION_NEXT, "产品版本");
     requireReleaseable(releaseDate, status);
@@ -144,6 +147,18 @@ public class ProductCatalogService {
   private void requireReleaseable(LocalDate releaseDate, String status) {
     if ("RELEASED".equals(status) && releaseDate == null) {
       throw new IllegalArgumentException("已发布版本必须填写发布日期");
+    }
+  }
+
+  private void requireCurrentVersion(Map<String, Object> current, long version) {
+    if (((Number) current.get("version")).longValue() != version) {
+      throw new ConflictException("数据已被更新，请刷新后重试");
+    }
+  }
+
+  private void requireVersionWritesAllowed(Map<String, Object> product) {
+    if ("ARCHIVED".equals(product.get("status"))) {
+      throw new ConflictException("产品已归档，不能修改版本");
     }
   }
 
