@@ -10,9 +10,9 @@ const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage').then(module => ({ default: module.DashboardPage })))
 const RequirementWorkshop = lazy(() => import('../modules/requirement/RequirementWorkshop').then(module => ({ default: module.RequirementWorkshop })))
+const StandardizationPage = lazy(() => import('../modules/standardization/StandardizationPage').then(module => ({ default: module.StandardizationPage })))
 
 const routes = [
-  ['/standardization', 'standardization', 'standardization:read'],
   ['/knowledge', 'knowledge', 'knowledge:read'],
   ['/resources', 'resources', 'resource:read'],
   ['/admin', 'admin', 'system:manage'],
@@ -27,6 +27,9 @@ export function App() {
     </RequirePermission></RequireAuth>} />
     <Route path="/requirements/*" element={<RequireAuth><RequirePermission code="requirement:read">
       <AppShell><LazyPage><RequirementWorkshop /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
+    <Route path="/standardization/*" element={<RequireAuth><RequirePermission code="standardization:read">
+      <AppShell><LazyPage><StandardizationPage /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
     <Route path="/projects" element={<RequireAuth><RequirePermission code="project:read">
       <AppShell><LazyPage><ProjectWorkspace /></LazyPage></AppShell>
