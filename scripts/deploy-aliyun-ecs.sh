@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSH_KEY="${SSH_KEY:-$HOME/Downloads/codex.pem}"
 TARGET_HOST="${TARGET_HOST:-root@8.166.121.138}"
 PUBLIC_HOST="${PUBLIC_HOST:-8.166.121.138}"
-PUBLIC_DEMO_HOST="${PUBLIC_DEMO_HOST:-zhilu.${PUBLIC_HOST}.nip.io}"
+PUBLIC_DEMO_URL="${PUBLIC_DEMO_URL:-http://${PUBLIC_HOST}/zhilu}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/zhilu-delivery}"
 COMPOSE_FILE="deploy/aliyun/docker-compose.ecs.yml"
 SSH_ARGS=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10)
@@ -20,7 +20,6 @@ key_mode="$(stat -f '%Lp' "$SSH_KEY" 2>/dev/null || stat -c '%a' "$SSH_KEY")"
 [[ -f "$ROOT_DIR/$COMPOSE_FILE" ]] || { echo "Missing $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$ROOT_DIR/deploy/aliyun/rainier-nginx.conf" ]] || { echo "Missing Rainier ingress config" >&2; exit 1; }
 [[ -x "$ROOT_DIR/scripts/smoke-test.sh" ]] || { echo "scripts/smoke-test.sh must be executable" >&2; exit 1; }
-[[ "$PUBLIC_DEMO_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid PUBLIC_DEMO_HOST" >&2; exit 1; }
 
 check_rainier() {
   curl -fsS --max-time 10 "http://$PUBLIC_HOST/" >/dev/null
@@ -47,12 +46,11 @@ rsync --archive --compress --delete \
   "$ROOT_DIR/" "$TARGET_HOST:$REMOTE_DIR/"
 
 echo "Building and starting Zhilu Delivery on ECS..."
-ssh "${SSH_ARGS[@]}" "$TARGET_HOST" bash -s -- "$REMOTE_DIR" "$COMPOSE_FILE" "$PUBLIC_DEMO_HOST" <<'REMOTE_SCRIPT'
+ssh "${SSH_ARGS[@]}" "$TARGET_HOST" bash -s -- "$REMOTE_DIR" "$COMPOSE_FILE" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 
 REMOTE_DIR="$1"
 COMPOSE_FILE="$2"
-PUBLIC_DEMO_HOST="$3"
 cd "$REMOTE_DIR"
 
 if [[ ! -f .env ]]; then
@@ -96,13 +94,10 @@ BASE_URL=http://127.0.0.1:53990 ./scripts/smoke-test.sh
 
 rainier_nginx=/opt/rainier/frontend/nginx.conf
 rainier_backup=/opt/rainier/frontend/nginx.conf.pre-zhilu
-rainier_candidate="$(mktemp)"
-trap 'rm -f "$rainier_candidate"' EXIT
 [[ -f "$rainier_nginx" ]] || { echo "Rainier Nginx config not found" >&2; exit 1; }
 docker inspect rainier-frontend >/dev/null
 [[ -f "$rainier_backup" ]] || cp -p "$rainier_nginx" "$rainier_backup"
-sed "s/__PUBLIC_DEMO_HOST__/$PUBLIC_DEMO_HOST/g" deploy/aliyun/rainier-nginx.conf > "$rainier_candidate"
-install -m 644 "$rainier_candidate" "$rainier_nginx"
+install -m 644 deploy/aliyun/rainier-nginx.conf "$rainier_nginx"
 docker cp "$rainier_nginx" rainier-frontend:/etc/nginx/conf.d/default.conf
 if ! docker exec rainier-frontend nginx -t; then
   cp -p "$rainier_backup" "$rainier_nginx"
@@ -113,8 +108,8 @@ docker exec rainier-frontend nginx -s reload
 REMOTE_SCRIPT
 
 echo "Checking the public demo..."
-BASE_URL="http://$PUBLIC_DEMO_HOST" "$ROOT_DIR/scripts/smoke-test.sh"
+BASE_URL="$PUBLIC_DEMO_URL" "$ROOT_DIR/scripts/smoke-test.sh"
 
 echo "Checking Rainier after deployment..."
 check_rainier
-echo "Deployment complete: http://$PUBLIC_DEMO_HOST"
+echo "Deployment complete: $PUBLIC_DEMO_URL/"

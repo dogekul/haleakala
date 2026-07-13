@@ -1,3 +1,5 @@
+import { apiPath } from './apiPath'
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -22,7 +24,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(path, { ...init, headers, credentials: 'include' })
+  const response = await fetch(apiPath(path), { ...init, headers, credentials: 'include' })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     throw new ApiError(response.status, body.code ?? 'REQUEST_FAILED', body.message ?? '请求失败', body.traceId)
