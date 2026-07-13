@@ -35,7 +35,8 @@ public class RequirementFeatureService {
     requirementContext(requirementId, user);
     List<Map<String, Object>> entries = jdbc.query(
         "select f.id feature_id,f.code feature_code,f.name feature_name,m.name module_name,"
-            + "rf.coverage_type from requirement_product_feature rf "
+            + "rf.coverage_type,rf.source,rf.created_by,rf.created_at "
+            + "from requirement_product_feature rf "
             + "join product_feature f on f.id=rf.product_feature_id "
             + "join product_module m on m.id=f.module_id where rf.requirement_id=? order by f.id",
         (row, index) -> {
@@ -45,6 +46,9 @@ public class RequirementFeatureService {
           entry.put("featureName", row.getString("feature_name"));
           entry.put("moduleName", row.getString("module_name"));
           entry.put("coverageType", row.getString("coverage_type"));
+          entry.put("source", row.getString("source"));
+          entry.put("createdBy", row.getLong("created_by"));
+          entry.put("createdAt", row.getTimestamp("created_at"));
           return entry;
         }, requirementId);
     boolean fullyCovered = false;
@@ -74,11 +78,26 @@ public class RequirementFeatureService {
         throw new ConflictException("需求已进入标准化候选，不能标记为完全覆盖");
       }
     }
+    Map<Long, Map<String, Object>> existingTraces = new LinkedHashMap<Long, Map<String, Object>>();
+    for (Map<String, Object> trace : jdbc.queryForList(
+        "select product_feature_id,source,created_by,created_at "
+            + "from requirement_product_feature where requirement_id=?",
+        requirementId)) {
+      existingTraces.put(((Number) trace.get("product_feature_id")).longValue(), trace);
+    }
     jdbc.update("delete from requirement_product_feature where requirement_id=?", requirementId);
     for (CoverageEntry entry : entries) {
-      jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
-              + "coverage_type,source,created_by) values (?,?,?,'MANUAL',?)",
-          requirementId, entry.getFeatureId(), entry.getCoverageType(), user.getId());
+      Map<String, Object> trace = existingTraces.get(entry.getFeatureId());
+      if (trace == null) {
+        jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+                + "coverage_type,source,created_by) values (?,?,?,'MANUAL',?)",
+            requirementId, entry.getFeatureId(), entry.getCoverageType(), user.getId());
+      } else {
+        jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+                + "coverage_type,source,created_by,created_at) values (?,?,?,?,?,?)",
+            requirementId, entry.getFeatureId(), entry.getCoverageType(), trace.get("source"),
+            trace.get("created_by"), trace.get("created_at"));
+      }
     }
     audit.record(user.getOrganizationId(), user.getId(), "REPLACE_COVERAGE", "REQUIREMENT",
         String.valueOf(requirementId), "entries=" + entries.size());
@@ -107,8 +126,9 @@ public class RequirementFeatureService {
             + "sum(case when rf.coverage_type='PARTIAL' and p.id is not null then 1 else 0 end) partial_count "
             + "from product_feature f join product_module m on m.id=f.module_id "
             + "left join requirement_product_feature rf on rf.product_feature_id=f.id "
-            + "left join requirement_item r on r.id=rf.requirement_id "
+            + "left join requirement_item r on r.id=rf.requirement_id and r.organization_id=? "
             + "left join delivery_project p on p.id=r.project_id and p.product_id=f.product_id "
+            + "and p.organization_id=? "
             + "where f.product_id=? group by f.id,f.code,f.name,m.name order by f.id",
         (row, index) -> {
           Map<String, Object> feature = new LinkedHashMap<String, Object>();
@@ -119,13 +139,14 @@ public class RequirementFeatureService {
           feature.put("fullCount", row.getLong("full_count"));
           feature.put("partialCount", row.getLong("partial_count"));
           return feature;
-        }, productId);
+        }, organizationId, organizationId, productId);
     List<Map<String, Object>> uncovered = jdbc.query(
         "select r.id requirement_id,r.requirement_code,r.title,p.code project_code,"
             + "case when exists (select 1 from standardization_debt_requirement dr "
             + "where dr.requirement_id=r.id) then true else false end debt_linked "
             + "from requirement_item r join delivery_project p on p.id=r.project_id "
-            + "where p.product_id=? and r.organization_id=? and not exists "
+            + "where p.product_id=? and r.organization_id=? and p.organization_id=? "
+            + "and not exists "
             + "(select 1 from requirement_product_feature rf where rf.requirement_id=r.id "
             + "and rf.coverage_type='FULL') order by r.id",
         (row, index) -> {
@@ -136,7 +157,7 @@ public class RequirementFeatureService {
           requirement.put("projectCode", row.getString("project_code"));
           requirement.put("debtLinked", row.getBoolean("debt_linked"));
           return requirement;
-        }, productId, organizationId);
+        }, productId, organizationId, organizationId);
     Map<String, Object> result = new LinkedHashMap<String, Object>();
     result.put("productId", productId);
     result.put("features", features);
@@ -146,9 +167,13 @@ public class RequirementFeatureService {
 
   private Map<String, Object> requirementContext(long requirementId, CurrentUser user) {
     List<Map<String, Object>> values = jdbc.queryForList(
-        "select p.product_id from requirement_item r join delivery_project p on p.id=r.project_id "
-            + "where r.id=? and r.organization_id=?",
-        requirementId, user.getOrganizationId());
+        "select p.product_id from requirement_item r "
+            + "join delivery_project p on p.id=r.project_id "
+            + "join product pr on pr.id=p.product_id "
+            + "where r.id=? and r.organization_id=? and p.organization_id=? "
+            + "and pr.organization_id=?",
+        requirementId, user.getOrganizationId(), user.getOrganizationId(),
+        user.getOrganizationId());
     if (values.isEmpty()) throw new NotFoundException("需求不存在");
     return values.get(0);
   }

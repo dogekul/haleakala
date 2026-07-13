@@ -94,8 +94,12 @@ public class StandardizationService {
     List<Map<String, Object>> contexts = jdbc.queryForList(
         "select r.title,p.product_version_id from requirement_item r "
             + "join delivery_project p on p.id=r.project_id "
-            + "where r.id=? and r.organization_id=?",
-        requirementId, user.getOrganizationId());
+            + "join product pr on pr.id=p.product_id "
+            + "join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
+            + "where r.id=? and r.organization_id=? and p.organization_id=? "
+            + "and pr.organization_id=?",
+        requirementId, user.getOrganizationId(), user.getOrganizationId(),
+        user.getOrganizationId());
     if (contexts.isEmpty()) throw new NotFoundException("需求不存在");
     Integer full = jdbc.queryForObject(
         "select count(*) from requirement_product_feature "

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +17,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.standardization.StandardizationService;
+import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -338,6 +340,139 @@ class RequirementApiIT {
     mvc.perform(get("/api/v1/products/{productId}/coverage", 912)
             .with(actor(user, "product:read")))
         .andExpect(status().isNotFound());
+  }
+
+  @Test void rejectsHistoricalRequirementBoundToAnotherOrganizationsProduct()
+      throws Exception {
+    long contaminatedRequirementId = 920L;
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
+        + "product_id,product_version_id,manager_user_id,created_by) "
+        + "values (920,910,'PRJ-CONTAMINATED','历史脏项目','客户',912,910,910,910)");
+    jdbc.update("insert into project_member(project_id,user_id,project_role) "
+        + "values (920,910,'ENGINEER')");
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,"
+        + "title,description,status,created_by) "
+        + "values (?,910,920,'REQ-CONTAMINATED','历史脏需求','跨组织产品绑定','CONFIRMED',910)",
+        contaminatedRequirementId);
+
+    mvc.perform(get("/api/v1/requirements/{id}/product-features", contaminatedRequirementId)
+            .with(reader()))
+        .andExpect(status().isNotFound());
+    mvc.perform(put("/api/v1/requirements/{id}/product-features", contaminatedRequirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"entries\":[{\"featureId\":" + otherOrganizationFeature
+                + ",\"coverageType\":\"PARTIAL\"}]}"))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"requirementId\":" + contaminatedRequirementId + "}"))
+        .andExpect(status().isNotFound());
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from requirement_product_feature where requirement_id=?",
+        Integer.class, contaminatedRequirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where requirement_id=?",
+        Integer.class, contaminatedRequirementId));
+  }
+
+  @Test void productCoverageExcludesRequirementsOwnedByAnotherOrganization() throws Exception {
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+        + "coverage_type,source,created_by) values (?,?,'PARTIAL','MANUAL',910)",
+        requirementId, firstFeature);
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
+        + "product_id,product_version_id,manager_user_id,created_by) "
+        + "values (921,911,'PRJ-FOREIGN-REQ','友商历史项目','客户',910,910,911,911)");
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,"
+        + "title,description,status,created_by) "
+        + "values (921,911,921,'REQ-FOREIGN','友商需求','不应计入本组织聚合','CONFIRMED',911)");
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+        + "coverage_type,source,created_by) values (921,?,'PARTIAL','MANUAL',911)", firstFeature);
+
+    mvc.perform(get("/api/v1/products/{productId}/coverage", 910)
+            .with(actor(user, "product:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.features[0].featureId").value(firstFeature))
+        .andExpect(jsonPath("$.features[0].partialCount").value(1));
+  }
+
+  @Test void retainedStandardizationCoveragePreservesTraceWhenCoverageIsAdjusted()
+      throws Exception {
+    Map<String, Object> candidate = standardization.createCandidateFromRequirement(
+        requirementId, user);
+    long debtId = ((Number) candidate.get("id")).longValue();
+    Map<String, Object> converted = standardization.convertToFeature(debtId, user,
+        new StandardizationService.ConvertFeatureCommand(910, 910, null,
+            "AUTO-TRACE", "自动沉淀功能", "追踪来源", null, 0));
+    long convertedFeatureId = ((Number) converted.get("convertedFeatureId")).longValue();
+    Map<String, Object> originalTrace = jdbc.queryForMap(
+        "select source,created_by,created_at from requirement_product_feature "
+            + "where requirement_id=? and product_feature_id=?",
+        requirementId, convertedFeatureId);
+
+    mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"entries\":[{\"featureId\":" + firstFeature
+                + ",\"coverageType\":\"PARTIAL\"},{\"featureId\":" + convertedFeatureId
+                + ",\"coverageType\":\"FULL\"}]}"))
+        .andExpect(status().isOk());
+    mvc.perform(get("/api/v1/requirements/{id}/product-features", requirementId)
+            .with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.entries[0].source").value("MANUAL"))
+        .andExpect(jsonPath("$.entries[0].createdBy").value(910))
+        .andExpect(jsonPath("$.entries[0].createdAt").isNotEmpty())
+        .andExpect(jsonPath("$.entries[1].featureId").value(convertedFeatureId))
+        .andExpect(jsonPath("$.entries[1].coverageType").value("FULL"))
+        .andExpect(jsonPath("$.entries[1].source").value("STANDARDIZATION"))
+        .andExpect(jsonPath("$.entries[1].createdBy").value(910))
+        .andExpect(jsonPath("$.entries[1].createdAt").isNotEmpty());
+
+    Map<String, Object> retainedTrace = jdbc.queryForMap(
+        "select source,created_by,created_at from requirement_product_feature "
+            + "where requirement_id=? and product_feature_id=?",
+        requirementId, convertedFeatureId);
+    assertEquals(originalTrace.get("source"), retainedTrace.get("source"));
+    assertEquals(originalTrace.get("created_by"), retainedTrace.get("created_by"));
+    assertEquals(originalTrace.get("created_at"), retainedTrace.get("created_at"));
+    assertEquals("MANUAL", jdbc.queryForObject(
+        "select source from requirement_product_feature where requirement_id=? "
+            + "and product_feature_id=?", String.class, requirementId, firstFeature));
+
+    features.replaceCoverage(requirementId, user, Collections.singletonList(
+        new RequirementFeatureService.CoverageEntry(firstFeature, "PARTIAL")));
+    features.replaceCoverage(requirementId, user, Arrays.asList(
+        new RequirementFeatureService.CoverageEntry(firstFeature, "PARTIAL"),
+        new RequirementFeatureService.CoverageEntry(convertedFeatureId, "PARTIAL")));
+    assertEquals("MANUAL", jdbc.queryForObject(
+        "select source from requirement_product_feature where requirement_id=? "
+            + "and product_feature_id=?", String.class, requirementId, convertedFeatureId));
+  }
+
+  @Test void failedCoverageReplacementRollsBackTraceAndCoverageChanges() {
+    Timestamp originalCreatedAt = Timestamp.valueOf("2025-01-02 03:04:05");
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+            + "coverage_type,source,created_by,created_at) "
+            + "values (?,?,'PARTIAL','STANDARDIZATION',910,?)",
+        requirementId, firstFeature, originalCreatedAt);
+    doAnswer(invocation -> {
+      throw new IllegalStateException("forced audit failure");
+    }).when(jdbc).update(argThat(sql -> sql.startsWith("insert into audit_log")),
+        any(), any(), any(), any(), any(), any(), any());
+
+    assertThrows(IllegalStateException.class, () -> features.replaceCoverage(
+        requirementId, user, Arrays.asList(
+            new RequirementFeatureService.CoverageEntry(firstFeature, "FULL"),
+            new RequirementFeatureService.CoverageEntry(secondFeature, "PARTIAL"))));
+
+    Map<String, Object> retained = jdbc.queryForMap(
+        "select product_feature_id,coverage_type,source,created_by,created_at "
+            + "from requirement_product_feature where requirement_id=?", requirementId);
+    assertEquals(firstFeature, ((Number) retained.get("product_feature_id")).longValue());
+    assertEquals("PARTIAL", retained.get("coverage_type"));
+    assertEquals("STANDARDIZATION", retained.get("source"));
+    assertEquals(910L, ((Number) retained.get("created_by")).longValue());
+    assertEquals(originalCreatedAt, retained.get("created_at"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor reader() {
