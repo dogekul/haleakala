@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -224,6 +225,40 @@ class ProductVersionFeatureIT {
     assertEquals(Long.valueOf(0), jdbc.queryForObject(
         "select version from product_version where id=?", Long.class, versionId));
     assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REPLACE_MANIFEST'", Integer.class));
+  }
+
+  @Test void replaceAllowsPlanningActiveAndSunsetProductsButRejectsArchived() {
+    int index = 0;
+    for (String status : Arrays.asList("PLANNING", "ACTIVE", "SUNSET")) {
+      long productId = product(550L, "MANIFEST-" + status);
+      long versionId = version(productId, "V1");
+      long featureId = feature(productId, "MODULE-" + index, "FEATURE-" + index);
+      jdbc.update("update product set status=? where id=?", status, productId);
+
+      manifests.replaceManifest(550L, 550L, productId, versionId, 0L,
+          Collections.singletonList(
+              new ProductVersionFeatureService.ManifestEntry(featureId, "INCLUDED")));
+
+      assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+          "select count(*) from product_version_feature where product_version_id=?",
+          Integer.class, versionId));
+      index++;
+    }
+
+    long archivedProductId = product(550L, "MANIFEST-ARCHIVED");
+    long archivedVersionId = version(archivedProductId, "V1");
+    long archivedFeatureId = feature(archivedProductId, "ARCHIVED", "FEATURE");
+    jdbc.update("update product set status='ARCHIVED' where id=?", archivedProductId);
+
+    assertThrows(ConflictException.class, () -> manifests.replaceManifest(
+        550L, 550L, archivedProductId, archivedVersionId, 0L,
+        Collections.singletonList(
+            new ProductVersionFeatureService.ManifestEntry(archivedFeatureId, "INCLUDED"))));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from product_version_feature where product_version_id=?",
+        Integer.class, archivedVersionId));
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
         "select count(*) from audit_log where action='REPLACE_MANIFEST'", Integer.class));
   }
 

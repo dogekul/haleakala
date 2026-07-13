@@ -1,6 +1,53 @@
+CREATE TEMPORARY TABLE v11_project_product_version_guard (
+  guard_key INT NOT NULL,
+  CONSTRAINT v11_project_product_version_guard_key UNIQUE (guard_key)
+);
+INSERT INTO v11_project_product_version_guard(guard_key) VALUES (1);
+INSERT INTO v11_project_product_version_guard(guard_key)
+SELECT 1 FROM delivery_project p
+JOIN product_version v ON v.id=p.product_version_id
+WHERE p.product_id<>v.product_id;
+
+CREATE TEMPORARY TABLE v11_product_single_organization_guard (
+  product_id BIGINT NOT NULL,
+  organization_id BIGINT NOT NULL,
+  CONSTRAINT v11_product_single_organization_guard_key PRIMARY KEY (product_id)
+);
+INSERT INTO v11_product_single_organization_guard(product_id,organization_id)
+SELECT product_id,organization_id FROM (
+  SELECT p.product_id,p.organization_id FROM delivery_project p
+  UNION
+  SELECT v.product_id,p.organization_id FROM delivery_project p
+    JOIN product_version v ON v.id=p.product_version_id
+  UNION
+  SELECT k.product_id,k.organization_id FROM knowledge_item k WHERE k.product_id IS NOT NULL
+  UNION
+  SELECT v.product_id,k.organization_id FROM knowledge_item k
+    JOIN product_version v ON v.id=k.product_version_id
+    WHERE k.product_version_id IS NOT NULL
+) referenced_product_organizations;
+
+CREATE TEMPORARY TABLE v11_product_organization_map (
+  product_id BIGINT NOT NULL,
+  organization_id BIGINT NOT NULL,
+  PRIMARY KEY (product_id)
+);
+INSERT INTO v11_product_organization_map(product_id,organization_id)
+SELECT p.id,COALESCE(g.organization_id,u.organization_id,(SELECT MIN(o.id) FROM organization o))
+FROM product p
+LEFT JOIN v11_product_single_organization_guard g ON g.product_id=p.id
+LEFT JOIN app_user u ON u.id=p.owner_user_id;
+
 ALTER TABLE product ADD COLUMN organization_id BIGINT NULL;
 ALTER TABLE product ADD COLUMN description TEXT NULL;
-UPDATE product SET organization_id=(SELECT MIN(id) FROM organization) WHERE organization_id IS NULL;
+UPDATE product SET organization_id=(
+  SELECT m.organization_id FROM v11_product_organization_map m WHERE m.product_id=product.id
+);
+UPDATE product SET owner_user_id=NULL
+WHERE owner_user_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM app_user u
+  WHERE u.id=product.owner_user_id AND u.organization_id=product.organization_id
+);
 ALTER TABLE product MODIFY COLUMN organization_id BIGINT NOT NULL;
 ALTER TABLE product DROP INDEX uk_product_code;
 ALTER TABLE product ADD CONSTRAINT fk_product_organization FOREIGN KEY (organization_id) REFERENCES organization(id);
@@ -98,3 +145,7 @@ INSERT INTO role_permission(role_id,permission_id)
 SELECT r.id,p.id FROM role r JOIN permission p ON p.code='product:write'
 WHERE r.code IN ('ADMIN','PRODUCT_MANAGER')
   AND NOT EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id=r.id AND rp.permission_id=p.id);
+
+DROP TABLE v11_product_organization_map;
+DROP TABLE v11_product_single_organization_guard;
+DROP TABLE v11_project_product_version_guard;

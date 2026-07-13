@@ -53,8 +53,8 @@ public class ProductVersionFeatureService {
   public Map<String, Object> replaceManifest(long organizationId, long actorUserId,
       long productId, long versionId, long expectedVersion, List<ManifestEntry> entries) {
     String productStatus = lockProduct(organizationId, productId);
-    if (!"ACTIVE".equals(productStatus)) {
-      throw new ConflictException("只能修改生效产品的版本清单");
+    if ("ARCHIVED".equals(productStatus)) {
+      throw new ConflictException("归档产品不能修改版本清单");
     }
     Map<String, Object> version = lockVersion(productId, versionId);
     if (!"PLANNING".equals(version.get("status"))) {

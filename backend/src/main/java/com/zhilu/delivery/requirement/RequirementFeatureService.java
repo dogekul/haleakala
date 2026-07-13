@@ -118,7 +118,11 @@ public class RequirementFeatureService {
     if (values.isEmpty()) throw new NotFoundException("需求不存在");
   }
 
-  public Map<String, Object> productCoverage(long organizationId, long productId) {
+  public Map<String, Object> productCoverage(CurrentUser user, long productId) {
+    long organizationId = user.getOrganizationId();
+    boolean crossScope = crossScope(user);
+    String memberScope = crossScope ? "" : " and exists (select 1 from project_member pm "
+        + "where pm.project_id=r.project_id and pm.user_id=?) ";
     catalog.product(organizationId, productId);
     List<Map<String, Object>> features = jdbc.query(
         "select f.id feature_id,f.code feature_code,f.name feature_name,m.name module_name,"
@@ -128,6 +132,7 @@ public class RequirementFeatureService {
             + "join product pr on pr.id=f.product_id and pr.organization_id=? "
             + "left join requirement_product_feature rf on rf.product_feature_id=f.id "
             + "left join requirement_item r on r.id=rf.requirement_id and r.organization_id=? "
+            + memberScope
             + "left join delivery_project p on p.id=r.project_id and p.product_id=f.product_id "
             + "and p.organization_id=? "
             + "left join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
@@ -141,7 +146,10 @@ public class RequirementFeatureService {
           feature.put("fullCount", row.getLong("full_count"));
           feature.put("partialCount", row.getLong("partial_count"));
           return feature;
-        }, organizationId, organizationId, organizationId, productId);
+        }, crossScope
+            ? new Object[]{organizationId, organizationId, organizationId, productId}
+            : new Object[]{organizationId, organizationId, user.getId(), organizationId,
+                productId});
     List<Map<String, Object>> uncovered = jdbc.query(
         "select r.id requirement_id,r.requirement_code,r.title,p.code project_code,"
             + "case when exists (select 1 from standardization_debt_requirement dr "
@@ -150,6 +158,7 @@ public class RequirementFeatureService {
             + "join product pr on pr.id=p.product_id and pr.organization_id=? "
             + "join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
             + "where p.product_id=? and r.organization_id=? and p.organization_id=? "
+            + memberScope
             + "and not exists "
             + "(select 1 from requirement_product_feature rf where rf.requirement_id=r.id "
             + "and rf.coverage_type='FULL') order by r.id",
@@ -161,7 +170,10 @@ public class RequirementFeatureService {
           requirement.put("projectCode", row.getString("project_code"));
           requirement.put("debtLinked", row.getBoolean("debt_linked"));
           return requirement;
-        }, organizationId, productId, organizationId, organizationId);
+        }, crossScope
+            ? new Object[]{organizationId, productId, organizationId, organizationId}
+            : new Object[]{organizationId, productId, organizationId, organizationId,
+                user.getId()});
     Map<String, Object> result = new LinkedHashMap<String, Object>();
     result.put("productId", productId);
     result.put("features", features);
@@ -198,6 +210,10 @@ public class RequirementFeatureService {
           Integer.class, entry.getFeatureId(), productId);
       if (valid == null || valid != 1) throw new NotFoundException("产品功能不存在");
     }
+  }
+
+  private boolean crossScope(CurrentUser user) {
+    return user.getRoles().contains("ADMIN") || user.getRoles().contains("PMO");
   }
 
   public static final class CoverageEntry {

@@ -46,7 +46,7 @@ class StandardizationServiceTest {
     for (String table : new String[]{"audit_log","product_version_feature","requirement_product_feature",
         "standardization_debt_requirement","flywheel_metric","cost_attribution",
         "standardization_debt","maturity_assessment","product_baseline","custom_dev_task",
-        "classification_decision","requirement_item","delivery_project","product_feature",
+        "classification_decision","requirement_item","project_member","delivery_project","product_feature",
         "product_module","product_version","product","app_user","organization"}) {
       jdbc.update("delete from " + table);
     }
@@ -58,6 +58,8 @@ class StandardizationServiceTest {
     for (int i=0;i<5;i++) {
       long id=1000+i;
       jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (?,1000,?,?,?,1000,1000,1000,1000)",id,"P-"+id,"项目"+id,"客户");
+      jdbc.update("insert into project_member(project_id,user_id,project_role) "
+          + "values (?,1000,'PRODUCT_MANAGER')", id);
       jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,title,description,status,created_by) values (?,1000,?,?,?,?,'CONFIRMED',1000)",id,id,"R-"+id,"批量对账重跑","批量对账重跑与差异定位");
       jdbc.update("insert into classification_decision(requirement_id,confirmed_level,confirmed_by) values (?,'L1',1000)",id);
       jdbc.update("insert into custom_dev_task(requirement_id,project_id,title,extension_point,status,actual_person_days,actual_cost) values (?,?,?,'reconciliation.retry','DONE',10,20000)",id,id,"对账重跑");

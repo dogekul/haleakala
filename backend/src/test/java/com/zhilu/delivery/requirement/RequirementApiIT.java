@@ -70,6 +70,7 @@ class RequirementApiIT {
     jdbc.update("insert into organization(id,name,code) values (910,'智鹿','ZHILU-REQ-API')");
     jdbc.update("insert into organization(id,name,code) values (911,'友商','OTHER-REQ-API')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (910,910,'engineer','工程师','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (914,910,'nonmember','非项目成员','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (911,911,'other','友商工程师','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,code,name,status) values (910,910,'CRM','CRM','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,code,name,status) values (911,910,'ERP','ERP','ACTIVE')");
@@ -340,6 +341,52 @@ class RequirementApiIT {
     mvc.perform(get("/api/v1/products/{productId}/coverage", 912)
             .with(actor(user, "product:read")))
         .andExpect(status().isNotFound());
+  }
+
+  @Test void productCoverageScopesRequirementsToMembersButAllowsAdmin() throws Exception {
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+        + "coverage_type,source,created_by) values (?,?,'PARTIAL','MANUAL',910)",
+        requirementId, firstFeature);
+    CurrentUser nonmember = new CurrentUser(914L, 910L, "nonmember", "非项目成员",
+        Collections.singletonList("DELIVERY_ENGINEER"),
+        Collections.singletonList("product:read"));
+
+    mvc.perform(get("/api/v1/products/{productId}/coverage", 910)
+            .with(actor(nonmember, "product:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.features[0].partialCount").value(0))
+        .andExpect(jsonPath("$.uncoveredRequirements.length()").value(0));
+
+    CurrentUser admin = new CurrentUser(914L, 910L, "admin", "管理员",
+        Collections.singletonList("ADMIN"), Collections.singletonList("product:read"));
+    mvc.perform(get("/api/v1/products/{productId}/coverage", 910)
+            .with(actor(admin, "product:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.features[0].partialCount").value(1))
+        .andExpect(jsonPath("$.uncoveredRequirements.length()").value(2));
+  }
+
+  @Test void candidateCreationRequiresProjectMembershipUnlessCrossScope() throws Exception {
+    CurrentUser nonmember = new CurrentUser(914L, 910L, "nonmember", "非项目成员",
+        Collections.singletonList("DELIVERY_ENGINEER"),
+        Collections.singletonList("requirement:write"));
+
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(actor(nonmember, "requirement:write")).with(csrf())
+            .contentType("application/json")
+            .content("{\"requirementId\":" + requirementId + "}"))
+        .andExpect(status().isNotFound());
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where requirement_id=?",
+        Integer.class, requirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CREATE_CANDIDATE'", Integer.class));
+
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"requirementId\":" + requirementId + "}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.status").value("CANDIDATE"));
   }
 
   @Test void rejectsHistoricalRequirementBoundToAnotherOrganizationsProduct()

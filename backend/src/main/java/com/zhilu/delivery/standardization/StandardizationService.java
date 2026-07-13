@@ -91,15 +91,21 @@ public class StandardizationService {
   public Map<String, Object> createCandidateFromRequirement(
       long requirementId, CurrentUser user) {
     lockRequirement(requirementId, user.getOrganizationId());
+    boolean crossScope = user.getRoles().contains("ADMIN") || user.getRoles().contains("PMO");
     List<Map<String, Object>> contexts = jdbc.queryForList(
         "select r.title,p.product_version_id from requirement_item r "
             + "join delivery_project p on p.id=r.project_id "
             + "join product pr on pr.id=p.product_id "
             + "join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
             + "where r.id=? and r.organization_id=? and p.organization_id=? "
-            + "and pr.organization_id=?",
-        requirementId, user.getOrganizationId(), user.getOrganizationId(),
-        user.getOrganizationId());
+            + "and pr.organization_id=?"
+            + (crossScope ? "" : " and exists (select 1 from project_member pm "
+                + "where pm.project_id=r.project_id and pm.user_id=?)"),
+        crossScope
+            ? new Object[]{requirementId, user.getOrganizationId(), user.getOrganizationId(),
+                user.getOrganizationId()}
+            : new Object[]{requirementId, user.getOrganizationId(), user.getOrganizationId(),
+                user.getOrganizationId(), user.getId()});
     if (contexts.isEmpty()) throw new NotFoundException("需求不存在");
     Integer full = jdbc.queryForObject(
         "select count(*) from requirement_product_feature "

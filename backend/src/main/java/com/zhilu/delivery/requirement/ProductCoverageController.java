@@ -20,6 +20,6 @@ public class ProductCoverageController {
   @GetMapping
   public Map<String, Object> coverage(
       @PathVariable long productId, @AuthenticationPrincipal CurrentUser user) {
-    return features.productCoverage(user.getOrganizationId(), productId);
+    return features.productCoverage(user, productId);
   }
 }
