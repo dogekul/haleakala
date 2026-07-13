@@ -4,7 +4,7 @@ import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, me
 import { useEffect, useMemo, useState } from 'react'
 import { PageState } from '../../components/PageState'
 import { productApi } from './productApi'
-import type { Availability, ProductFeature, ProductVersion, VersionStatus } from './types'
+import type { Availability, ProductFeature, ProductVersion, VersionManifest, VersionStatus } from './types'
 
 const versionLabels: Record<VersionStatus, string> = { PLANNING: '规划中', RELEASED: '已发布', SUNSET: '停止维护', ARCHIVED: '已归档' }
 const nextStatuses: Record<VersionStatus, VersionStatus[]> = {
@@ -118,7 +118,9 @@ function VersionEditor({ productId, value, readOnly, hasIncludedFeature, onClose
   const disabled = readOnly || value?.status === 'ARCHIVED'
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveVersion(productId, value?.id, { ...input, version: value?.version ?? 0 }),
-    onSuccess: async () => {
+    onSuccess: async saved => {
+      if (value) client.setQueryData<VersionManifest>(['product-manifest', productId, value.id], current =>
+        current ? { ...current, version: saved.version } : current)
       await Promise.all([client.invalidateQueries({ queryKey: ['product-versions', productId] }), client.invalidateQueries({ queryKey: ['product', productId] })])
       message.success(value ? '版本已更新' : '版本已创建')
       onClose()

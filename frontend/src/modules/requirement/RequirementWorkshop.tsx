@@ -8,6 +8,7 @@ import {
   Radio, Row, Segmented, Select, Space, Table, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../services/api'
 import { projectApi } from '../project/projectApi'
 import { requirementApi } from './requirementApi'
@@ -20,12 +21,23 @@ const levels = {
 } as const
 
 export function RequirementWorkshop() {
+  const [searchParams] = useSearchParams()
+  const focusedRequirementId = Number(searchParams.get('requirementId'))
   const [view, setView] = useState('list')
   const [createOpen, setCreateOpen] = useState(false)
   const [decision, setDecision] = useState<Requirement>()
   const [duplicateOf, setDuplicateOf] = useState<Requirement>()
   const requirements = useQuery({ queryKey: ['requirements'], queryFn: requirementApi.list })
   const funnel = useQuery({ queryKey: ['requirement-funnel'], queryFn: requirementApi.funnel })
+  const focused = Number.isInteger(focusedRequirementId) && focusedRequirementId > 0
+    ? requirements.data?.find(item => item.id === focusedRequirementId) : undefined
+  const visibleRequirements = focused ? [focused] : requirements.data ?? []
+  useEffect(() => {
+    if (focused) {
+      setView('list')
+      setDecision(focused)
+    }
+  }, [focused])
   return <div className="requirement-workshop">
     <div className="workshop-heading"><div><span className="eyebrow dark">REQUIREMENT WORKSHOP</span><Typography.Title level={2}>需求工坊</Typography.Title>
       <Typography.Paragraph>AI 提建议，交付工程师做最终判断；只有已确认结论进入漏斗。</Typography.Paragraph></div>
@@ -33,8 +45,8 @@ export function RequirementWorkshop() {
     <ClassificationFunnel value={funnel.data ?? { L0: 0, L1: 0, L2: 0 }} />
     <Card className="requirement-toolbar"><div><Space><Input.Search placeholder="搜索需求编号或标题" style={{ width: 280 }} /><Button icon={<FilterOutlined />}>筛选</Button></Space>
       <Segmented value={view} onChange={value => setView(String(value))} options={[{ value: 'list', label: '列表', icon: <BarsOutlined /> }, { value: 'board', label: '看板', icon: <AppstoreOutlined /> }]} /></div></Card>
-    {view === 'list' ? <RequirementList values={requirements.data ?? []} onDecision={setDecision} onDuplicate={setDuplicateOf} />
-      : <RequirementBoard values={requirements.data ?? []} onDecision={setDecision} />}
+    {view === 'list' ? <RequirementList values={visibleRequirements} onDecision={setDecision} onDuplicate={setDuplicateOf} />
+      : <RequirementBoard values={visibleRequirements} onDecision={setDecision} />}
     <CollectionDrawer open={createOpen} onClose={() => setCreateOpen(false)} />
     <DecisionDrawer requirement={decision} onClose={() => setDecision(undefined)} />
     <DuplicateModal requirement={duplicateOf} onClose={() => setDuplicateOf(undefined)} />

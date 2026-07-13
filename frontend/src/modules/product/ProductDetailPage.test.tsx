@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthState } from '../../app/AuthProvider'
+import { RequirementWorkshop } from '../requirement/RequirementWorkshop'
 import { ProductDetailPage } from './ProductDetailPage'
+import { buildModuleTree, validParentModules } from './ProductStructureTab'
+import type { ProductModule } from './types'
 
 const product = {
   id: 8, organizationId: 1, ownerUserId: 20, code: 'ERP', name: '智鹿 ERP', category: '企业应用',
@@ -48,6 +51,12 @@ function responseFor(path: string) {
   if (path === '/api/v1/products/8/versions/31/features') return json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
   if (path === '/api/v1/products/8/versions/32/features') return json({ versionId: 32, version: 5, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
   if (path === '/api/v1/products/8/coverage') return json(coverage)
+  if (path === '/api/v1/requirements/funnel') return json({ L0: 1, L1: 0, L2: 0 })
+  if (path === '/api/v1/requirements') return json([{
+    id: 41, organizationId: 1, projectId: 51, projectCode: 'PRJ-1', projectName: '区域财务项目', code: 'REQ-41',
+    title: '跨区域核算差异支持和特别长的需求标题', description: '需要支持跨区域核算差异', priority: 'P1',
+    status: 'CONFIRMED', confirmedLevel: 'L0', version: 1,
+  }])
   throw new Error(`unexpected request: ${path}`)
 }
 
@@ -57,7 +66,7 @@ function show(fetch = vi.fn((input: RequestInfo | URL) => responseFor(String(inp
   render(<QueryClientProvider client={client}>
     <AuthContext.Provider value={{ ...auth, me: { ...auth.me!, permissions } }}>
       <MemoryRouter initialEntries={['/products/8']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes><Route path="/products/:productId" element={<ProductDetailPage />} /><Route path="/requirements" element={<span>需求工作台</span>} /></Routes>
+        <Routes><Route path="/products/:productId" element={<ProductDetailPage />} /><Route path="/requirements" element={<RequirementWorkshop />} /></Routes>
       </MemoryRouter>
     </AuthContext.Provider>
   </QueryClientProvider>)
@@ -65,6 +74,23 @@ function show(fetch = vi.fn((input: RequestInfo | URL) => responseFor(String(inp
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('构建模块树不修改输入且父级候选排除后代与超三级节点', () => {
+  const hierarchy: ProductModule[] = [
+    { id: 1, productId: 8, code: 'R1', name: '根一', status: 'ACTIVE', sortOrder: 2, version: 0 },
+    { id: 2, productId: 8, parentId: 1, code: 'B1', name: '分支一', status: 'ACTIVE', sortOrder: 1, version: 0 },
+    { id: 3, productId: 8, parentId: 2, code: 'L1', name: '叶一', status: 'ACTIVE', sortOrder: 1, version: 0 },
+    { id: 4, productId: 8, code: 'R2', name: '根二', status: 'ACTIVE', sortOrder: 1, version: 0 },
+    { id: 5, productId: 8, parentId: 4, code: 'B2', name: '分支二', status: 'ACTIVE', sortOrder: 1, version: 0 },
+    { id: 6, productId: 8, parentId: 5, code: 'L2', name: '叶二', status: 'ACTIVE', sortOrder: 1, version: 0 },
+  ]
+  const snapshot = hierarchy.map(item => ({ ...item }))
+  const tree = buildModuleTree(hierarchy)
+
+  expect(hierarchy).toEqual(snapshot)
+  expect(tree.map(item => item.key)).toEqual([4, 1])
+  expect(validParentModules(hierarchy, hierarchy[1]).map(item => item.id)).toEqual([1, 4])
+})
 
 it('按标签懒加载数据并渲染三级模块树和模块功能', async () => {
   const fetch = show()
@@ -113,6 +139,26 @@ it('创建模块并编辑功能时提交所属模块和乐观锁版本', async (
   })))
 })
 
+it('移动模块时提交新父级和当前乐观锁版本', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (init?.method === 'PUT' && path.endsWith('/modules/13')) return json({ ...modules[2], parentId: 11, version: 1 })
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '模块与功能' }))
+  await user.click(await screen.findByText('AR-SETTLE · 对账中心'))
+  await user.click(screen.getByRole('button', { name: /编辑当前模块/ }))
+  const drawer = screen.getByRole('dialog', { name: '编辑模块' })
+  await user.click(within(drawer).getByRole('combobox', { name: '父模块' }))
+  await user.click(await screen.findByRole('option', { name: 'FIN · 财务管理' }))
+  await user.click(within(drawer).getByRole('button', { name: '保存模块' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/modules/13', expect.objectContaining({
+    method: 'PUT', body: expect.stringMatching(/"parentId":11.*"version":0|"version":0.*"parentId":11/),
+  })))
+})
+
 it('编辑版本并以当前版本号全量替换功能清单', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
@@ -137,6 +183,34 @@ it('编辑版本并以当前版本号全量替换功能清单', async () => {
     method: 'PUT', body: JSON.stringify({ version: 3, entries: [
       { featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'INCLUDED' },
     ] }),
+  })))
+})
+
+it('更新版本后保存清单使用服务端返回的新乐观锁版本', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (init?.method === 'PUT' && path.endsWith('/versions/31/features')) {
+      return json({ versionId: 31, version: 5, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+    }
+    if (init?.method === 'PUT' && path.endsWith('/versions/31')) return json({ ...versions[0], releaseDate: '2026-08-02', version: 4 })
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+  await user.click(await screen.findByRole('button', { name: '编辑版本 V5.2' }))
+  const drawer = screen.getByRole('dialog', { name: '编辑版本' })
+  const date = within(drawer).getByLabelText('发布日期')
+  await user.clear(date)
+  await user.type(date, '2026-08-02')
+  await user.click(within(drawer).getByRole('button', { name: '保存版本' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31', expect.objectContaining({
+    method: 'PUT', body: expect.stringMatching(/"releaseDate":"2026-08-02".*"version":3|"version":3.*"releaseDate":"2026-08-02"/),
+  })))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑版本' })).not.toBeInTheDocument())
+  await user.click(screen.getByRole('button', { name: '保存功能清单' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"version":4'),
   })))
 })
 
@@ -174,18 +248,35 @@ it('展示覆盖聚合、需求上下文链接并可从错误状态重试', asyn
   expect(await screen.findByText('总账处理')).toBeVisible()
   expect(screen.getByText('完整 3')).toBeVisible()
   expect(screen.getByText('部分 1')).toBeVisible()
-  expect(screen.getByRole('link', { name: /REQ-41/ })).toHaveAttribute('href', '/requirements?requirementId=41')
+  const link = screen.getByRole('link', { name: /REQ-41/ })
+  expect(link).toHaveAttribute('href', '/requirements?requirementId=41')
+  await user.click(link)
+  const drawer = await screen.findByRole('dialog', { name: 'AI 分类决策树' })
+  expect(within(drawer).getByRole('heading', { name: coverage.uncoveredRequirements[0].title })).toBeVisible()
 })
 
-it('归档产品和无写权限账号的全部编辑入口都只读', async () => {
+it('有写权限的账号仍不能编辑归档产品', async () => {
   const fetch = vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
     if (path === '/api/v1/products/8') return json({ ...product, status: 'ARCHIVED' })
     return responseFor(path)
   })
-  show(fetch, ['product:read'])
+  show(fetch)
   const user = userEvent.setup()
   expect(await screen.findByText('该产品已归档，所有配置仅可查看。')).toBeVisible()
+  await user.click(screen.getByRole('tab', { name: '模块与功能' }))
+  expect(screen.queryByRole('button', { name: '新建模块' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '新建功能' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: '版本' }))
+  expect(screen.queryByRole('button', { name: '新建版本' })).not.toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: '保存功能清单' })).toBeDisabled()
+})
+
+it('启用中的产品对无 product:write 账号保持只读', async () => {
+  show(undefined, ['product:read'])
+  const user = userEvent.setup()
+  expect(await screen.findByRole('heading', { name: product.name })).toBeVisible()
+  expect(screen.queryByText('该产品已归档，所有配置仅可查看。')).not.toBeInTheDocument()
   await user.click(screen.getByRole('tab', { name: '模块与功能' }))
   expect(screen.queryByRole('button', { name: '新建模块' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '新建功能' })).not.toBeInTheDocument()

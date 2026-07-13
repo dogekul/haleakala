@@ -81,7 +81,7 @@ function ModuleEditor({ productId, values, value, readOnly, onClose }: {
     },
     onError: (error: Error) => message.error(error.message),
   })
-  const parentOptions = validParents(values, value ?? undefined).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))
+  const parentOptions = validParentModules(values, value ?? undefined).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))
   const disabled = readOnly || value?.status === 'DEPRECATED'
   return <Drawer open title={readOnly ? '查看模块' : value ? '编辑模块' : '新建模块'} width={520} onClose={onClose}
     extra={!disabled && <Button type="primary" aria-label="保存模块" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
@@ -143,7 +143,7 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
   </Drawer>
 }
 
-function validParents(values: ProductModule[], current?: ProductModule) {
+export function validParentModules(values: ProductModule[], current?: ProductModule) {
   const excluded = new Set<number>()
   if (current) {
     excluded.add(current.id)
