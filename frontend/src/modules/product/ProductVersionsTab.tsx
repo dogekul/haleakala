@@ -116,14 +116,15 @@ function VersionEditor({ productId, value, readOnly, hasIncludedFeature, onClose
   const releaseDate = Form.useWatch('releaseDate', form) as string | undefined
   const releaseBlocked = status === 'RELEASED' && (!releaseDate || !hasIncludedFeature)
   const disabled = readOnly || value?.status === 'ARCHIVED'
+  const manifestKey = value ? ['product-manifest', productId, value.id] as const : undefined
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveVersion(productId, value?.id, { ...input, version: value?.version ?? 0 }),
     onMutate: async () => {
-      if (value) await client.cancelQueries({ queryKey: ['product-manifest', productId, value.id], exact: true })
+      if (manifestKey) await client.cancelQueries({ queryKey: manifestKey, exact: true })
     },
     onSuccess: async saved => {
-      if (value) {
-        const manifestKey = ['product-manifest', productId, value.id] as const
+      if (manifestKey) {
+        await client.cancelQueries({ queryKey: manifestKey, exact: true })
         const current = client.getQueryData<VersionManifest>(manifestKey)
         if (current) client.setQueryData(manifestKey, { ...current, version: saved.version })
         else await client.invalidateQueries({ queryKey: manifestKey, exact: true })
@@ -132,7 +133,12 @@ function VersionEditor({ productId, value, readOnly, hasIncludedFeature, onClose
       message.success(value ? '版本已更新' : '版本已创建')
       onClose()
     },
-    onError: (error: Error) => message.error(error.message),
+    onError: async (error: Error) => {
+      message.error(error.message)
+      if (manifestKey && !client.getQueryData(manifestKey)) {
+        await client.invalidateQueries({ queryKey: manifestKey, exact: true })
+      }
+    },
   })
   return <Drawer open title={readOnly ? '查看版本' : value ? '编辑版本' : '新建版本'} width={480} onClose={onClose}
     extra={<Space><Button aria-label="关闭" onClick={onClose}>关闭</Button>{!disabled && <Button type="primary" aria-label="保存版本"

@@ -60,9 +60,9 @@ function responseFor(path: string) {
   throw new Error(`unexpected request: ${path}`)
 }
 
-function show(fetch = vi.fn((input: RequestInfo | URL) => responseFor(String(input))), permissions = ['product:read', 'product:write']) {
+function show(fetch = vi.fn((input: RequestInfo | URL) => responseFor(String(input))), permissions = ['product:read', 'product:write'],
+  client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   vi.stubGlobal('fetch', fetch)
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(<QueryClientProvider client={client}>
     <AuthContext.Provider value={{ ...auth, me: { ...auth.me!, permissions } }}>
       <MemoryRouter initialEntries={['/products/8']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -257,6 +257,85 @@ it('版本更新会阻止进行中的旧清单请求回填过期版本', async (
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
     method: 'PUT', body: expect.stringContaining('"version":4'),
   })))
+})
+
+it('版本 PUT 期间新启动的旧清单 GET 不会覆盖服务端新版本', async () => {
+  let resolveVersionPut!: (value: Response) => void
+  const versionPut = new Promise<Response>(resolve => { resolveVersionPut = resolve })
+  let resolveStaleManifest!: (value: Response) => void
+  const staleManifest = new Promise<Response>(resolve => { resolveStaleManifest = resolve })
+  let manifestGets = 0
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (!init?.method && path.endsWith('/versions/31/features')) {
+      manifestGets += 1
+      return manifestGets === 1
+        ? json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+        : staleManifest
+    }
+    if (init?.method === 'PUT' && path.endsWith('/versions/31')) return versionPut
+    if (init?.method === 'PUT' && path.endsWith('/versions/31/features')) {
+      return json({ versionId: 31, version: 5, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+    }
+    return responseFor(path)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  show(fetch, ['product:read', 'product:write'], client)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+  await waitFor(() => expect(manifestGets).toBe(1))
+  await user.click(await screen.findByRole('button', { name: '编辑版本 V5.2' }))
+  const drawer = screen.getByRole('dialog', { name: '编辑版本' })
+  const date = within(drawer).getByLabelText('发布日期')
+  await user.clear(date)
+  await user.type(date, '2026-08-04')
+  await user.click(within(drawer).getByRole('button', { name: '保存版本' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31', expect.objectContaining({ method: 'PUT' })))
+
+  const staleRefetch = client.refetchQueries({ queryKey: ['product-manifest', 8, 31], exact: true })
+  await waitFor(() => expect(manifestGets).toBe(2))
+  void json({ ...versions[0], releaseDate: '2026-08-04', version: 4 }).then(resolveVersionPut)
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑版本' })).not.toBeInTheDocument())
+  void json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] }).then(resolveStaleManifest)
+  await staleRefetch
+  await waitFor(() => expect(client.isFetching({ queryKey: ['product-manifest', 8, 31], exact: true })).toBe(0))
+
+  await user.click(screen.getByRole('button', { name: '保存功能清单' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"version":4'),
+  })))
+})
+
+it('初始清单 GET 被取消且版本 PUT 失败时会自动恢复清单', async () => {
+  let resolveInitialManifest!: (value: Response) => void
+  const initialManifest = new Promise<Response>(resolve => { resolveInitialManifest = resolve })
+  let manifestGets = 0
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (!init?.method && path.endsWith('/versions/31/features')) {
+      manifestGets += 1
+      return manifestGets === 1 ? initialManifest
+        : json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+    }
+    if (init?.method === 'PUT' && path.endsWith('/versions/31')) return json({ code: 'CONFLICT', message: '版本保存冲突' }, 409)
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+  await waitFor(() => expect(manifestGets).toBe(1))
+  await user.click(await screen.findByRole('button', { name: '编辑版本 V5.2' }))
+  const drawer = screen.getByRole('dialog', { name: '编辑版本' })
+  const date = within(drawer).getByLabelText('发布日期')
+  await user.clear(date)
+  await user.type(date, '2026-08-05')
+  await user.click(within(drawer).getByRole('button', { name: '保存版本' }))
+
+  expect(await screen.findByText('版本保存冲突')).toBeVisible()
+  await waitFor(() => expect(manifestGets).toBe(2))
+  expect(await screen.findByLabelText('总账处理可用性')).toHaveValue('INCLUDED')
+  expect(screen.getByRole('button', { name: '保存功能清单' })).toBeEnabled()
+  void json({ versionId: 31, version: 3, entries: [] }).then(resolveInitialManifest)
 })
 
 it('编辑非当前版本时按该版本清单执行发布门禁', async () => {
