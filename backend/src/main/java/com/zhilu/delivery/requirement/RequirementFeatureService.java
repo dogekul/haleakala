@@ -122,13 +122,15 @@ public class RequirementFeatureService {
     catalog.product(organizationId, productId);
     List<Map<String, Object>> features = jdbc.query(
         "select f.id feature_id,f.code feature_code,f.name feature_name,m.name module_name,"
-            + "sum(case when rf.coverage_type='FULL' and p.id is not null then 1 else 0 end) full_count,"
-            + "sum(case when rf.coverage_type='PARTIAL' and p.id is not null then 1 else 0 end) partial_count "
+            + "sum(case when rf.coverage_type='FULL' and v.id is not null then 1 else 0 end) full_count,"
+            + "sum(case when rf.coverage_type='PARTIAL' and v.id is not null then 1 else 0 end) partial_count "
             + "from product_feature f join product_module m on m.id=f.module_id "
+            + "join product pr on pr.id=f.product_id and pr.organization_id=? "
             + "left join requirement_product_feature rf on rf.product_feature_id=f.id "
             + "left join requirement_item r on r.id=rf.requirement_id and r.organization_id=? "
             + "left join delivery_project p on p.id=r.project_id and p.product_id=f.product_id "
             + "and p.organization_id=? "
+            + "left join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
             + "where f.product_id=? group by f.id,f.code,f.name,m.name order by f.id",
         (row, index) -> {
           Map<String, Object> feature = new LinkedHashMap<String, Object>();
@@ -139,12 +141,14 @@ public class RequirementFeatureService {
           feature.put("fullCount", row.getLong("full_count"));
           feature.put("partialCount", row.getLong("partial_count"));
           return feature;
-        }, organizationId, organizationId, productId);
+        }, organizationId, organizationId, organizationId, productId);
     List<Map<String, Object>> uncovered = jdbc.query(
         "select r.id requirement_id,r.requirement_code,r.title,p.code project_code,"
             + "case when exists (select 1 from standardization_debt_requirement dr "
             + "where dr.requirement_id=r.id) then true else false end debt_linked "
             + "from requirement_item r join delivery_project p on p.id=r.project_id "
+            + "join product pr on pr.id=p.product_id and pr.organization_id=? "
+            + "join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
             + "where p.product_id=? and r.organization_id=? and p.organization_id=? "
             + "and not exists "
             + "(select 1 from requirement_product_feature rf where rf.requirement_id=r.id "
@@ -157,7 +161,7 @@ public class RequirementFeatureService {
           requirement.put("projectCode", row.getString("project_code"));
           requirement.put("debtLinked", row.getBoolean("debt_linked"));
           return requirement;
-        }, productId, organizationId, organizationId);
+        }, organizationId, productId, organizationId, organizationId);
     Map<String, Object> result = new LinkedHashMap<String, Object>();
     result.put("productId", productId);
     result.put("features", features);
@@ -170,6 +174,7 @@ public class RequirementFeatureService {
         "select p.product_id from requirement_item r "
             + "join delivery_project p on p.id=r.project_id "
             + "join product pr on pr.id=p.product_id "
+            + "join product_version v on v.id=p.product_version_id and v.product_id=pr.id "
             + "where r.id=? and r.organization_id=? and p.organization_id=? "
             + "and pr.organization_id=?",
         requirementId, user.getOrganizationId(), user.getOrganizationId(),

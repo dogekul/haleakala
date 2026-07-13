@@ -376,6 +376,55 @@ class RequirementApiIT {
         Integer.class, contaminatedRequirementId));
   }
 
+  @Test void rejectsHistoricalRequirementBoundToAnotherProductsVersion()
+      throws Exception {
+    long contaminatedRequirementId = 922L;
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
+        + "product_id,product_version_id,manager_user_id,created_by) "
+        + "values (922,910,'PRJ-CONTAMINATED-VERSION','历史版本脏项目','客户',910,912,910,910)");
+    jdbc.update("insert into project_member(project_id,user_id,project_role) "
+        + "values (922,910,'ENGINEER')");
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,"
+        + "title,description,status,created_by) "
+        + "values (?,910,922,'REQ-CONTAMINATED-VERSION','历史版本脏需求',"
+        + "'跨产品版本绑定','CONFIRMED',910)", contaminatedRequirementId);
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+        + "coverage_type,source,created_by) values (?,?,'PARTIAL','MANUAL',910)",
+        contaminatedRequirementId, firstFeature);
+
+    mvc.perform(get("/api/v1/requirements/{id}/product-features", contaminatedRequirementId)
+            .with(reader()))
+        .andExpect(status().isNotFound());
+    mvc.perform(put("/api/v1/requirements/{id}/product-features", contaminatedRequirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"entries\":[{\"featureId\":" + firstFeature
+                + ",\"coverageType\":\"FULL\"}]}"))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"requirementId\":" + contaminatedRequirementId + "}"))
+        .andExpect(status().isNotFound());
+
+    mvc.perform(get("/api/v1/products/{productId}/coverage", 910)
+            .with(actor(user, "product:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.features[0].partialCount").value(0))
+        .andExpect(jsonPath("$.uncoveredRequirements.length()").value(2))
+        .andExpect(jsonPath("$.uncoveredRequirements[0].requirementId").value(requirementId))
+        .andExpect(jsonPath("$.uncoveredRequirements[1].requirementId")
+            .value(uncoveredRequirementId));
+
+    assertEquals("PARTIAL", jdbc.queryForObject(
+        "select coverage_type from requirement_product_feature where requirement_id=? "
+            + "and product_feature_id=?", String.class, contaminatedRequirementId, firstFeature));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where requirement_id=?",
+        Integer.class, contaminatedRequirementId));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from audit_log where resource_id=?",
+        Integer.class, String.valueOf(contaminatedRequirementId)));
+  }
+
   @Test void productCoverageExcludesRequirementsOwnedByAnotherOrganization() throws Exception {
     jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
         + "coverage_type,source,created_by) values (?,?,'PARTIAL','MANUAL',910)",
