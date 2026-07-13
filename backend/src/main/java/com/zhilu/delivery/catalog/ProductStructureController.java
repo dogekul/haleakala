@@ -1,6 +1,7 @@
 package com.zhilu.delivery.catalog;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import javax.validation.Valid;
@@ -22,9 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products/{productId}")
 public class ProductStructureController {
   private final ProductStructureService structures;
+  private final ProductVersionFeatureService manifests;
 
-  public ProductStructureController(ProductStructureService structures) {
+  public ProductStructureController(
+      ProductStructureService structures, ProductVersionFeatureService manifests) {
     this.structures = structures;
+    this.manifests = manifests;
   }
 
   @GetMapping("/modules")
@@ -78,6 +82,21 @@ public class ProductStructureController {
         request.status, request.version);
   }
 
+  @GetMapping("/versions/{versionId}/features")
+  public Map<String, Object> manifest(
+      @PathVariable long productId, @PathVariable long versionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return manifests.manifest(user.getOrganizationId(), productId, versionId);
+  }
+
+  @PutMapping("/versions/{versionId}/features")
+  public Map<String, Object> replaceManifest(
+      @PathVariable long productId, @PathVariable long versionId,
+      @RequestBody ManifestRequest request, @AuthenticationPrincipal CurrentUser user) {
+    return manifests.replaceManifest(user.getOrganizationId(), productId, versionId,
+        request.version, request.entries);
+  }
+
   public static final class ModuleRequest {
     public Long parentId;
     public Long ownerUserId;
@@ -97,5 +116,11 @@ public class ProductStructureController {
     public String description;
     public String status = "PLANNING";
     public long version;
+  }
+
+  public static final class ManifestRequest {
+    public long version;
+    public List<ProductVersionFeatureService.ManifestEntry> entries =
+        Collections.emptyList();
   }
 }

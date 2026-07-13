@@ -27,10 +27,13 @@ public class ProjectService {
   @Transactional
   public ProjectView create(CreateProjectCommand command) {
     Integer validVersion = jdbc.queryForObject(
-        "select count(*) from product_version where id=? and product_id=? and status='ACTIVE'",
-        Integer.class, command.getProductVersionId(), command.getProductId());
+        "select count(*) from product_version pv join product p on p.id=pv.product_id "
+            + "where pv.id=? and pv.product_id=? and pv.status='RELEASED' "
+            + "and p.status='ACTIVE' and p.organization_id=?",
+        Integer.class, command.getProductVersionId(), command.getProductId(),
+        command.getOrganizationId());
     if (validVersion == null || validVersion != 1) {
-      throw new IllegalArgumentException("产品版本不属于所选产品或已停用");
+      throw new IllegalArgumentException("产品或版本不可用于新项目");
     }
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("organization_id", command.getOrganizationId());

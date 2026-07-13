@@ -51,6 +51,10 @@ class ProductCatalogIT {
   @BeforeEach
   void cleanCatalog() {
     jdbc.update("delete from audit_log");
+    jdbc.update("delete from product_version_feature");
+    jdbc.update("delete from requirement_product_feature");
+    jdbc.update("delete from product_feature");
+    jdbc.update("delete from product_module");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
     jdbc.update("delete from user_role");
@@ -188,6 +192,7 @@ class ProductCatalogIT {
   void returnsConflictBeforeValidatingAStaleVersionTransition() throws Exception {
     long productId = createProduct("ERP", "ERP");
     long versionId = createVersion(productId, "V1");
+    addIncludedFeature(productId, versionId);
     mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, versionId)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"versionName\":\"V1\",\"releaseDate\":\"2026-07-01\","
@@ -268,6 +273,7 @@ class ProductCatalogIT {
   void releasesVersionsOnlyWithDatesAndReturnsOnlyBindableVersions() throws Exception {
     long productId = createProduct("ERP", "ERP");
     long released = createVersion(productId, "V1");
+    addIncludedFeature(productId, released);
 
     mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, released)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
@@ -308,6 +314,22 @@ class ProductCatalogIT {
         .andExpect(jsonPath("$.status").value("PLANNING"))
         .andReturn().getResponse().getContentAsString();
     return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).get("id").asLong();
+  }
+
+  private void addIncludedFeature(long productId, long versionId) {
+    String code = "RELEASE-" + versionId;
+    jdbc.update("insert into product_module(product_id,code,name,status) "
+        + "values (?,?,?,'ACTIVE')", productId, code, code);
+    Long moduleId = jdbc.queryForObject(
+        "select id from product_module where product_id=? and code=?",
+        Long.class, productId, code);
+    jdbc.update("insert into product_feature(product_id,module_id,code,name,status) "
+        + "values (?,?,?,?,'ACTIVE')", productId, moduleId, code, code);
+    Long featureId = jdbc.queryForObject(
+        "select id from product_feature where product_id=? and code=?",
+        Long.class, productId, code);
+    jdbc.update("insert into product_version_feature(product_version_id,product_feature_id,"
+        + "availability) values (?,?,'INCLUDED')", versionId, featureId);
   }
 
   private void await(CountDownLatch latch) {

@@ -46,7 +46,7 @@ class ProjectApiIT {
     jdbc.update("insert into product(id,organization_id,code,name,status) "
         + "values (610,610,'CRM','智鹿 CRM','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
-        + "values (610,610,'V3.0','ACTIVE')");
+        + "values (610,610,'V3.0','RELEASED')");
     projects.create(new CreateProjectCommand(610, "PRJ-610", "北方银行 CRM", "北方银行",
         610, 610, 610, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 11, 30), "BLOCK"));
   }

@@ -135,7 +135,7 @@ public class ProductCatalogService {
     requireVersionWritesAllowed(product);
     validateStatus(VERSION_STATUSES, status, "产品版本");
     validateTransition(String.valueOf(current.get("status")), status, VERSION_NEXT, "产品版本");
-    requireReleaseable(releaseDate, status);
+    requireReleaseable(versionId, releaseDate, status);
     int changed = jdbc.update("update product_version set release_date=?,status=?,"
             + "updated_at=current_timestamp,version=version+1 where id=? and product_id=? and version=?",
         releaseDate == null ? null : Date.valueOf(releaseDate), status, versionId, productId, version);
@@ -145,9 +145,18 @@ public class ProductCatalogService {
     return version(organizationId, productId, versionId);
   }
 
-  private void requireReleaseable(LocalDate releaseDate, String status) {
+  private void requireReleaseable(long versionId, LocalDate releaseDate, String status) {
     if ("RELEASED".equals(status) && releaseDate == null) {
       throw new IllegalArgumentException("已发布版本必须填写发布日期");
+    }
+    if ("RELEASED".equals(status)) {
+      Integer included = jdbc.queryForObject(
+          "select count(*) from product_version_feature "
+              + "where product_version_id=? and availability='INCLUDED'",
+          Integer.class, versionId);
+      if (included == null || included == 0) {
+        throw new IllegalArgumentException("已发布版本必须包含至少一个已纳入功能");
+      }
     }
   }
 

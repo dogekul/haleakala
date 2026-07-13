@@ -44,7 +44,7 @@ class ProjectLifecycleTest {
     jdbc.update("insert into product(id,organization_id,code,name,status) "
         + "values (600,600,'ERP','智鹿 ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
-        + "values (600,600,'V5.2','ACTIVE')");
+        + "values (600,600,'V5.2','RELEASED')");
   }
 
   @Test
@@ -73,8 +73,32 @@ class ProjectLifecycleTest {
         Integer.class, project.getId()));
   }
 
+  @Test
+  void rejectsProjectsUnlessProductAndVersionAreBindableInTheirOrganization() {
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (601,600,'V5.3','PLANNING')");
+    IllegalArgumentException planningVersion = assertThrows(
+        IllegalArgumentException.class, () -> projects.create(command("PRJ-602", 600, 601)));
+    assertEquals("产品或版本不可用于新项目", planningVersion.getMessage());
+
+    jdbc.update("insert into product(id,organization_id,code,name,status) "
+        + "values (601,600,'CRM','CRM','PLANNING')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (602,601,'V1','RELEASED')");
+    assertThrows(IllegalArgumentException.class,
+        () -> projects.create(command("PRJ-603", 601, 602)));
+
+    assertThrows(IllegalArgumentException.class,
+        () -> projects.create(new CreateProjectCommand(601, "PRJ-604", "跨组织项目", "客户",
+            600, 600, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK")));
+  }
+
   private CreateProjectCommand command(String code) {
+    return command(code, 600, 600);
+  }
+
+  private CreateProjectCommand command(String code, long productId, long versionId) {
     return new CreateProjectCommand(600, code, "华东银行核心系统交付", "华东银行",
-        600, 600, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
+        productId, versionId, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
   }
 }
