@@ -6,13 +6,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +31,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:catalog;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -34,6 +45,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class ProductCatalogIT {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private ProductCatalogService catalog;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @BeforeEach
   void cleanCatalog() {
@@ -214,6 +227,44 @@ class ProductCatalogIT {
   }
 
   @Test
+  void rejectsVersionCreationThatWaitsBehindConcurrentArchive() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+    CountDownLatch archived = new CountDownLatch(1);
+    CountDownLatch allowArchiveCommit = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Future<?> archive = executor.submit(() -> transaction.execute(status -> {
+      catalog.updateProduct(350L, productId, null, "ERP", null, null, "ARCHIVED", 0L);
+      archived.countDown();
+      await(allowArchiveCommit);
+      return null;
+    }));
+
+    try {
+      assertTrue(archived.await(5, TimeUnit.SECONDS));
+      Future<RuntimeException> creation = executor.submit(() -> {
+        try {
+          catalog.createVersion(350L, productId, "V1", null);
+          return null;
+        } catch (RuntimeException exception) {
+          return exception;
+        }
+      });
+      assertThrows(TimeoutException.class,
+          () -> creation.get(250, TimeUnit.MILLISECONDS));
+
+      allowArchiveCommit.countDown();
+      archive.get(5, TimeUnit.SECONDS);
+      assertTrue(creation.get(5, TimeUnit.SECONDS) instanceof ConflictException);
+      assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+          "select count(*) from product_version where product_id=?", Integer.class, productId));
+    } finally {
+      allowArchiveCommit.countDown();
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
   void releasesVersionsOnlyWithDatesAndReturnsOnlyBindableVersions() throws Exception {
     long productId = createProduct("ERP", "ERP");
     long released = createVersion(productId, "V1");
@@ -257,6 +308,18 @@ class ProductCatalogIT {
         .andExpect(jsonPath("$.status").value("PLANNING"))
         .andReturn().getResponse().getContentAsString();
     return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).get("id").asLong();
+  }
+
+  private void await(CountDownLatch latch) {
+    try {
+      if (!latch.await(5, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for concurrent catalog operation");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while waiting for concurrent catalog operation",
+          interrupted);
+    }
   }
 
   private org.springframework.test.web.servlet.ResultActions updateProductStatus(

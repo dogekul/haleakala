@@ -112,7 +112,7 @@ public class ProductCatalogService {
   @Transactional
   public Map<String, Object> createVersion(
       long organizationId, long productId, String versionName, LocalDate releaseDate) {
-    requireVersionWritesAllowed(product(organizationId, productId));
+    requireVersionWritesAllowed(productForVersionWrite(organizationId, productId));
     try {
       jdbc.update("insert into product_version(product_id,version_name,release_date,status) "
               + "values (?,?,?,'PLANNING')",
@@ -129,9 +129,10 @@ public class ProductCatalogService {
   @Transactional
   public Map<String, Object> updateVersion(long organizationId, long productId, long versionId,
       LocalDate releaseDate, String status, long version) {
+    Map<String, Object> product = productForVersionWrite(organizationId, productId);
     Map<String, Object> current = version(organizationId, productId, versionId);
     requireCurrentVersion(current, version);
-    requireVersionWritesAllowed(product(organizationId, productId));
+    requireVersionWritesAllowed(product);
     validateStatus(VERSION_STATUSES, status, "产品版本");
     validateTransition(String.valueOf(current.get("status")), status, VERSION_NEXT, "产品版本");
     requireReleaseable(releaseDate, status);
@@ -154,6 +155,15 @@ public class ProductCatalogService {
     if (((Number) current.get("version")).longValue() != version) {
       throw new ConflictException("数据已被更新，请刷新后重试");
     }
+  }
+
+  private Map<String, Object> productForVersionWrite(long organizationId, long productId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select id,organization_id,owner_user_id,code,name,category,description,status,version "
+            + "from product where id=? and organization_id=? for update",
+        (row, index) -> productRow(row), productId, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("产品不存在");
+    return values.get(0);
   }
 
   private void requireVersionWritesAllowed(Map<String, Object> product) {
