@@ -331,13 +331,44 @@ async function assertModuleTreeScroll(page: Page) {
 
 async function choose(page: Page, scope: Page | Locator, label: string, option: string, search = false) {
   const select = scope.getByRole('combobox', { name: label }).last()
-  if (search) {
-    await select.fill(option)
-    await page.locator('.ant-select-dropdown:visible').getByText(option, { exact: true }).click()
-    return
+  const selectRoot = select.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " ant-select ")][1]')
+  await expect(select).toBeEnabled()
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (await hasSelectedOption(selectRoot, option)) return
+
+    try {
+      await expect(selectRoot).not.toHaveClass(/ant-select-loading/, { timeout: 2_000 })
+      if (await hasSelectedOption(selectRoot, option)) return
+      if (search) await select.fill(option, { timeout: 2_000 })
+      else await select.press('ArrowDown', { timeout: 2_000 })
+      if (await hasSelectedOption(selectRoot, option)) return
+
+      const optionRow = page.locator('.ant-select-dropdown:visible .ant-select-item-option')
+        .filter({ hasText: new RegExp(`^${escapeRegExp(option)}$`) })
+      await expect(optionRow).toBeVisible({ timeout: 2_000 })
+      if (await hasSelectedOption(selectRoot, option)) return
+      await optionRow.click({ timeout: 2_000 })
+    } catch (error) {
+      if (await hasSelectedOption(selectRoot, option)) return
+      if (attempt === 3) throw error
+      continue
+    }
+
+    if (await hasSelectedOption(selectRoot, option)) return
   }
-  await select.press('ArrowDown')
-  await page.getByRole('option', { name: option, exact: true }).click()
+
+  throw new Error(`Select "${label}" did not settle on option "${option}"`)
+}
+
+async function hasSelectedOption(selectRoot: Locator, option: string) {
+  const selected = selectRoot.locator('.ant-select-selection-item').last()
+  if (!await selected.count()) return false
+  return ((await selected.getAttribute('title')) ?? (await selected.textContent()) ?? '').trim() === option
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 async function assertVisual(page: Page, path: string) {
