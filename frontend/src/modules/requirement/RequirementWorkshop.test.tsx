@@ -19,6 +19,12 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
   status, headers: { 'Content-Type': 'application/json' },
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
 function providers(children: React.ReactNode, permissions = auth.me!.permissions,
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   return <QueryClientProvider client={client}>
@@ -205,4 +211,66 @@ it('只读用户可查看覆盖但不能修改或加入候选', async () => {
   expect(within(drawer).queryByRole('button', { name: '保存覆盖' })).not.toBeInTheDocument()
   expect(within(drawer).queryByRole('button', { name: '添加功能' })).not.toBeInTheDocument()
   expect(within(drawer).queryByRole('button', { name: '加入标准化候选' })).not.toBeInTheDocument()
+})
+
+it('覆盖和功能列表尚未加载完成时禁止保存，不会用空列表覆盖已有数据', async () => {
+  const base = coverageFetch()
+  const coveragePending = deferred<Response>()
+  const featuresPending = deferred<Response>()
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/v1/requirements/1/product-features' && !init?.method) return coveragePending.promise
+    if (path === '/api/v1/products/8/features' && !init?.method) return featuresPending.promise
+    return base.fetch(input, init)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /功能覆盖/ }))
+  const drawer = screen.getByRole('dialog', { name: '功能覆盖' })
+  const save = within(drawer).getByRole('button', { name: '保存覆盖' })
+  expect(save).toBeDisabled()
+  expect(within(drawer).getByRole('button', { name: /添加功能/ })).toBeDisabled()
+  await user.click(save)
+  expect(fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')).toBe(false)
+
+  coveragePending.resolve(new Response(JSON.stringify({
+    requirementId: 1, fullyCovered: false,
+    entries: [{ featureId: 11, featureCode: 'F-11', featureName: '自动对账', moduleName: '对账中心', coverageType: 'PARTIAL' }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  featuresPending.resolve(new Response(JSON.stringify([
+    { id: 11, productId: 8, moduleId: 81, code: 'F-11', name: '自动对账', status: 'ACTIVE', version: 0 },
+  ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  await waitFor(() => expect(save).toBeEnabled())
+})
+
+it('功能列表加载失败时保持禁用并可重试，不提交空覆盖', async () => {
+  const base = coverageFetch([{ featureId: 11, coverageType: 'PARTIAL' }])
+  let featureAttempts = 0
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/v1/products/8/features' && !init?.method) {
+      featureAttempts += 1
+      return featureAttempts === 1
+        ? json({ code: 'REQUEST_FAILED', message: '功能列表加载失败' }, 500)
+        : json([{ id: 11, productId: 8, moduleId: 81, code: 'F-11', name: '自动对账', status: 'ACTIVE', version: 0 }])
+    }
+    return base.fetch(input, init)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /功能覆盖/ }))
+  const drawer = screen.getByRole('dialog', { name: '功能覆盖' })
+  expect(await within(drawer).findByText('功能列表加载失败')).toBeVisible()
+  const save = within(drawer).getByRole('button', { name: '保存覆盖' })
+  expect(save).toBeDisabled()
+  expect(within(drawer).getByRole('button', { name: '加入标准化候选' })).toBeDisabled()
+  await user.click(save)
+  expect(fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')).toBe(false)
+
+  await user.click(within(drawer).getByRole('button', { name: '重新加载' }))
+  await waitFor(() => expect(save).toBeEnabled())
+  expect(featureAttempts).toBe(2)
 })

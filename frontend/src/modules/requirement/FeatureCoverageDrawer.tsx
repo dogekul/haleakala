@@ -53,6 +53,7 @@ export function FeatureCoverageDrawer({ requirement, onClose }: { requirement?: 
   }, [coverage.data, features.data])
   const rows = Form.useWatch('entries', form) ?? []
   const hasFullCoverage = rows.some(item => item?.coverageType === 'FULL')
+  const operational = coverage.isSuccess && features.isSuccess && !coverage.isFetching && !features.isFetching
   const invalidate = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: ['requirements'] }),
@@ -62,12 +63,15 @@ export function FeatureCoverageDrawer({ requirement, onClose }: { requirement?: 
     ])
   }
   const save = useMutation({
-    mutationFn: (values: { entries?: CoverageRow[] }) => requirementApi.replaceCoverage(requirementId!, values.entries ?? []),
+    mutationFn: (values: { entries?: CoverageRow[] }) => operational
+      ? requirementApi.replaceCoverage(requirementId!, values.entries ?? [])
+      : Promise.reject(new Error('功能覆盖数据尚未加载完成')),
     onSuccess: async () => { await invalidate(); message.success('功能覆盖已保存'); onClose() },
     onError: (error: Error) => message.error(error.message),
   })
   const createCandidate = useMutation({
-    mutationFn: () => requirementApi.createStandardizationCandidate(requirementId!),
+    mutationFn: () => operational ? requirementApi.createStandardizationCandidate(requirementId!)
+      : Promise.reject(new Error('功能覆盖数据尚未加载完成')),
     onSuccess: async () => { setCandidateCreated(true); await invalidate(); message.success('已加入标准化候选') },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.status === 409 && error.message.includes('已进入标准化候选')) {
@@ -78,19 +82,23 @@ export function FeatureCoverageDrawer({ requirement, onClose }: { requirement?: 
   })
 
   const candidateButton = coverage.isSuccess && !hasFullCoverage && canCreateCandidate
-    ? <Button disabled={candidateCreated} loading={createCandidate.isPending} onClick={() => createCandidate.mutate()}>
+    ? <Button disabled={!operational || candidateCreated} loading={createCandidate.isPending} onClick={() => createCandidate.mutate()}>
       {candidateCreated ? '已加入标准化候选' : '加入标准化候选'}
     </Button> : null
   return <Drawer width={680} title="功能覆盖" open={Boolean(requirement)} onClose={onClose}
     extra={<Space>{candidateButton}{canEdit && <Button type="primary" loading={save.isPending}
-      onClick={() => form.submit()}>保存覆盖</Button>}</Space>}>
+      disabled={!operational} onClick={() => form.submit()}>保存覆盖</Button>}</Space>}>
     {requirement && <>
       <Typography.Title level={5}>{requirement.code} · {requirement.title}</Typography.Title>
       <Typography.Paragraph type="secondary">一条需求可关联多个产品功能，完全覆盖表示无需额外产品化工作。</Typography.Paragraph>
     </>}
-    {(coverage.error || features.error) && <Alert type="error" showIcon message={(coverage.error || features.error)?.message} />}
+    {(coverage.error || features.error) && <Alert type="error" showIcon message={(coverage.error || features.error)?.message}
+      action={<Button size="small" loading={coverage.isFetching || features.isFetching}
+        onClick={() => void Promise.all([coverage.refetch(), features.refetch()])}>重新加载</Button>} />}
+    {!coverage.error && !features.error && !operational && requirement && canReadProduct
+      && <Alert type="info" showIcon message="正在加载功能覆盖数据……" />}
     {!canEdit && <Alert type="info" showIcon message="当前为只读模式" description="需要需求写权限和产品读权限才能编辑功能覆盖。" />}
-    <Form form={form} layout="vertical" onFinish={save.mutate} disabled={!canEdit}>
+    <Form form={form} layout="vertical" onFinish={save.mutate} disabled={!canEdit || !operational}>
       <Form.List name="entries">
         {(fields, { add, remove }) => <Space direction="vertical" size="small" style={{ width: '100%' }}>
           {fields.map((field, index) => <Space key={field.key} align="start" style={{ display: 'flex' }}>

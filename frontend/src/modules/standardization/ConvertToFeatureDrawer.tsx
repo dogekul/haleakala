@@ -56,6 +56,7 @@ export function ConvertToFeatureDrawer({ debt, defaultProductId, onClose }: {
     onSuccess: async (_, values) => {
       const invalidations = [
         client.invalidateQueries({ queryKey: ['standardization-debts'] }),
+        client.invalidateQueries({ queryKey: ['requirement-coverage'] }),
         client.invalidateQueries({ queryKey: ['product-features', values.productId], exact: true }),
         client.invalidateQueries({ queryKey: ['product-coverage', values.productId], exact: true }),
       ]
