@@ -1,8 +1,7 @@
 package com.zhilu.delivery.iam.api;
 
 import com.zhilu.delivery.iam.service.IamAdminService;
-import com.zhilu.delivery.iam.service.IamService;
-import com.zhilu.delivery.iam.service.UserSummary;
+import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +10,7 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,24 +23,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/admin")
 public class AdminIamController {
-  private final IamService iam;
   private final IamAdminService admin;
 
-  public AdminIamController(IamService iam, IamAdminService admin) {
-    this.iam = iam;
+  public AdminIamController(IamAdminService admin) {
     this.admin = admin;
   }
 
   @GetMapping("/users")
-  public List<UserSummary> users() {
-    return iam.listUsers();
+  public List<Map<String, Object>> users(@AuthenticationPrincipal CurrentUser user) {
+    return admin.users(user.getOrganizationId());
   }
 
   @PostMapping("/users")
   @ResponseStatus(HttpStatus.CREATED)
-  public Map<String, Object> createUser(@Valid @RequestBody CreateUserRequest request) {
+  public Map<String, Object> createUser(
+      @Valid @RequestBody CreateUserRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
     return admin.createLocalUser(
-        request.organizationId,
+        user.getOrganizationId(),
         request.primaryTeamId,
         request.username,
         request.password,
@@ -51,19 +51,42 @@ public class AdminIamController {
 
   @PutMapping("/users/{id}/status")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void updateUserStatus(@PathVariable long id, @Valid @RequestBody StatusRequest request) {
-    admin.updateUserStatus(id, request.status);
+  public void updateUserStatus(
+      @PathVariable long id,
+      @Valid @RequestBody StatusRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    admin.updateUserStatus(user, id, request.status);
+  }
+
+  @PutMapping("/users/{id}")
+  public Map<String, Object> updateUser(
+      @PathVariable long id,
+      @Valid @RequestBody UpdateUserRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    return admin.updateUser(user, id, request.displayName, request.email,
+        request.primaryTeamId, request.roleCodes, request.status);
   }
 
   @GetMapping("/teams")
-  public List<Map<String, Object>> teams() {
-    return admin.teams();
+  public List<Map<String, Object>> teams(@AuthenticationPrincipal CurrentUser user) {
+    return admin.teams(user.getOrganizationId());
   }
 
   @PostMapping("/teams")
   @ResponseStatus(HttpStatus.CREATED)
-  public Map<String, Object> createTeam(@Valid @RequestBody CreateTeamRequest request) {
-    return admin.createTeam(request.organizationId, request.parentId, request.name, request.code);
+  public Map<String, Object> createTeam(
+      @Valid @RequestBody CreateTeamRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    return admin.createTeam(user.getOrganizationId(), request.parentId, request.name, request.code);
+  }
+
+  @PutMapping("/teams/{id}")
+  public Map<String, Object> updateTeam(
+      @PathVariable long id,
+      @Valid @RequestBody UpdateTeamRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    return admin.updateTeam(user.getOrganizationId(), id, request.parentId,
+        request.name, request.code, request.enabled);
   }
 
   @GetMapping("/roles")
@@ -78,7 +101,6 @@ public class AdminIamController {
   }
 
   public static final class CreateUserRequest {
-    @NotNull public Long organizationId;
     public Long primaryTeamId;
     @NotBlank public String username;
     @NotBlank @Size(min = 8, max = 72) public String password;
@@ -87,11 +109,25 @@ public class AdminIamController {
     public List<String> roleCodes;
   }
 
+  public static final class UpdateUserRequest {
+    public Long primaryTeamId;
+    @NotBlank public String displayName;
+    public String email;
+    @NotBlank public String status;
+    @NotNull public List<String> roleCodes;
+  }
+
   public static final class CreateTeamRequest {
-    @NotNull public Long organizationId;
     public Long parentId;
     @NotBlank public String name;
     @NotBlank public String code;
+  }
+
+  public static final class UpdateTeamRequest {
+    public Long parentId;
+    @NotBlank public String name;
+    @NotBlank public String code;
+    @NotNull public Boolean enabled;
   }
 
   public static final class RolePermissionsRequest {

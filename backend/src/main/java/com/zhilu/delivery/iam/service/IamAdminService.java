@@ -1,5 +1,7 @@
 package com.zhilu.delivery.iam.service;
 
+import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.common.error.NotFoundException;
 import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -27,37 +29,43 @@ public class IamAdminService {
   @Transactional
   public Map<String, Object> createTeam(
       long organizationId, Long parentId, String name, String code) {
-    KeyHolder keys = new GeneratedKeyHolder();
-    jdbc.update(connection -> {
-      PreparedStatement statement = connection.prepareStatement(
-          "insert into team(organization_id,parent_id,name,code) values (?,?,?,?)",
-          new String[] {"id"});
-      statement.setLong(1, organizationId);
-      if (parentId == null) {
-        statement.setNull(2, Types.BIGINT);
-      } else {
-        statement.setLong(2, parentId);
-      }
-      statement.setString(3, name);
-      statement.setString(4, code);
-      return statement;
-    }, keys);
-    return team(generatedId(keys));
+    validateTeam(organizationId, parentId, null);
+    try {
+      KeyHolder keys = new GeneratedKeyHolder();
+      jdbc.update(connection -> {
+        PreparedStatement statement = connection.prepareStatement(
+            "insert into team(organization_id,parent_id,name,code) values (?,?,?,?)",
+            new String[] {"id"});
+        statement.setLong(1, organizationId);
+        setNullableLong(statement, 2, parentId);
+        statement.setString(3, name.trim());
+        statement.setString(4, code.trim());
+        return statement;
+      }, keys);
+      return team(organizationId, generatedId(keys));
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("团队编码已存在");
+    }
   }
 
-  public List<Map<String, Object>> teams() {
+  public List<Map<String, Object>> teams(long organizationId) {
     return jdbc.query(
-        "select id,organization_id,parent_id,name,code,enabled from team order by name",
-        (row, index) -> {
-          Map<String, Object> item = new LinkedHashMap<String, Object>();
-          item.put("id", row.getLong("id"));
-          item.put("organizationId", row.getLong("organization_id"));
-          item.put("parentId", row.getObject("parent_id"));
-          item.put("name", row.getString("name"));
-          item.put("code", row.getString("code"));
-          item.put("enabled", row.getBoolean("enabled"));
-          return item;
-        });
+        "select id,organization_id,parent_id,name,code,enabled from team "
+            + "where organization_id=? order by name,id",
+        (row, index) -> teamRow(row), organizationId);
+  }
+
+  public List<Map<String, Object>> users(long organizationId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select u.id,u.organization_id,u.primary_team_id,t.name primary_team_name,"
+            + "u.username,u.display_name,u.email,u.status from app_user u "
+            + "left join team t on t.id=u.primary_team_id "
+            + "where u.organization_id=? order by u.id",
+        (row, index) -> userRow(row), organizationId);
+    for (Map<String, Object> value : values) {
+      value.put("roles", roleCodes(((Number) value.get("id")).longValue()));
+    }
+    return values;
   }
 
   @Transactional
@@ -69,6 +77,7 @@ public class IamAdminService {
       String displayName,
       String email,
       List<String> roleCodes) {
+    validateTeam(organizationId, primaryTeamId, null);
     try {
       KeyHolder keys = new GeneratedKeyHolder();
       jdbc.update(connection -> {
@@ -77,26 +86,56 @@ public class IamAdminService {
                 + "display_name,email,status) values (?,?,?,?,?,?,'ACTIVE')",
             new String[] {"id"});
         statement.setLong(1, organizationId);
-        if (primaryTeamId == null) {
-          statement.setNull(2, Types.BIGINT);
-        } else {
-          statement.setLong(2, primaryTeamId);
-        }
-        statement.setString(3, username);
+        setNullableLong(statement, 2, primaryTeamId);
+        statement.setString(3, username.trim());
         statement.setString(4, passwordEncoder.encode(password));
-        statement.setString(5, displayName);
-        statement.setString(6, email);
+        statement.setString(5, displayName.trim());
+        statement.setString(6, normalize(email));
         return statement;
       }, keys);
       long userId = generatedId(keys);
-      for (String roleCode : roleCodes) {
-        Long roleId = jdbc.queryForObject(
-            "select id from role where code=?", Long.class, roleCode);
-        jdbc.update("insert into user_role(user_id,role_id) values (?,?)", userId, roleId);
-      }
-      return user(userId);
+      replaceUserRoles(userId, roleCodes);
+      return user(organizationId, userId);
     } catch (DuplicateKeyException duplicate) {
-      throw duplicate;
+      throw new ConflictException("用户名或邮箱已存在");
+    }
+  }
+
+  @Transactional
+  public Map<String, Object> updateUser(CurrentUser actor, long userId, String displayName,
+      String email, Long primaryTeamId, List<String> roleCodes, String status) {
+    validateStatus(status);
+    validateTeam(actor.getOrganizationId(), primaryTeamId, null);
+    if (actor.getId() == userId && "DISABLED".equals(status)) {
+      throw new ConflictException("不能停用当前登录用户");
+    }
+    try {
+      int changed = jdbc.update("update app_user set primary_team_id=?,display_name=?,email=?,"
+              + "status=?,updated_at=current_timestamp,version=version+1 "
+              + "where id=? and organization_id=?",
+          primaryTeamId, displayName.trim(), normalize(email), status,
+          userId, actor.getOrganizationId());
+      if (changed == 0) throw new NotFoundException("用户不存在");
+      replaceUserRoles(userId, roleCodes);
+      return user(actor.getOrganizationId(), userId);
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("邮箱已存在");
+    }
+  }
+
+  @Transactional
+  public Map<String, Object> updateTeam(long organizationId, long teamId, Long parentId,
+      String name, String code, boolean enabled) {
+    validateTeam(organizationId, parentId, teamId);
+    try {
+      int changed = jdbc.update("update team set parent_id=?,name=?,code=?,enabled=?,"
+              + "updated_at=current_timestamp,version=version+1 "
+              + "where id=? and organization_id=?",
+          parentId, name.trim(), code.trim(), enabled, teamId, organizationId);
+      if (changed == 0) throw new NotFoundException("团队不存在");
+      return team(organizationId, teamId);
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("团队编码已存在");
     }
   }
 
@@ -123,24 +162,23 @@ public class IamAdminService {
     return role(roleId);
   }
 
-  public void updateUserStatus(long userId, String status) {
-    jdbc.update("update app_user set status=?,version=version+1 where id=?", status, userId);
+  public void updateUserStatus(CurrentUser actor, long userId, String status) {
+    validateStatus(status);
+    if (actor.getId() == userId && "DISABLED".equals(status)) {
+      throw new ConflictException("不能停用当前登录用户");
+    }
+    int changed = jdbc.update("update app_user set status=?,version=version+1 "
+            + "where id=? and organization_id=?", status, userId, actor.getOrganizationId());
+    if (changed == 0) throw new NotFoundException("用户不存在");
   }
 
-  private Map<String, Object> team(long id) {
-    return jdbc.queryForObject(
-        "select id,organization_id,parent_id,name,code,enabled from team where id=?",
-        (row, index) -> {
-          Map<String, Object> item = new LinkedHashMap<String, Object>();
-          item.put("id", row.getLong("id"));
-          item.put("organizationId", row.getLong("organization_id"));
-          item.put("parentId", row.getObject("parent_id"));
-          item.put("name", row.getString("name"));
-          item.put("code", row.getString("code"));
-          item.put("enabled", row.getBoolean("enabled"));
-          return item;
-        },
-        id);
+  private Map<String, Object> team(long organizationId, long id) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select id,organization_id,parent_id,name,code,enabled from team "
+            + "where id=? and organization_id=?",
+        (row, index) -> teamRow(row), id, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("团队不存在");
+    return values.get(0);
   }
 
   private long generatedId(KeyHolder keys) {
@@ -155,22 +193,80 @@ public class IamAdminService {
     return ((Number) value).longValue();
   }
 
-  private Map<String, Object> user(long id) {
-    return jdbc.queryForObject(
-        "select id,organization_id,primary_team_id,username,display_name,email,status "
-            + "from app_user where id=?",
-        (row, index) -> {
-          Map<String, Object> item = new LinkedHashMap<String, Object>();
-          item.put("id", row.getLong("id"));
-          item.put("organizationId", row.getLong("organization_id"));
-          item.put("primaryTeamId", row.getObject("primary_team_id"));
-          item.put("username", row.getString("username"));
-          item.put("displayName", row.getString("display_name"));
-          item.put("email", row.getString("email"));
-          item.put("status", row.getString("status"));
-          return item;
-        },
-        id);
+  private Map<String, Object> user(long organizationId, long id) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select u.id,u.organization_id,u.primary_team_id,t.name primary_team_name,"
+            + "u.username,u.display_name,u.email,u.status from app_user u "
+            + "left join team t on t.id=u.primary_team_id "
+            + "where u.id=? and u.organization_id=?",
+        (row, index) -> userRow(row), id, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("用户不存在");
+    Map<String, Object> value = values.get(0);
+    value.put("roles", roleCodes(id));
+    return value;
+  }
+
+  private Map<String, Object> teamRow(java.sql.ResultSet row) throws java.sql.SQLException {
+    Map<String, Object> item = new LinkedHashMap<String, Object>();
+    item.put("id", row.getLong("id"));
+    item.put("organizationId", row.getLong("organization_id"));
+    item.put("parentId", row.getObject("parent_id"));
+    item.put("name", row.getString("name"));
+    item.put("code", row.getString("code"));
+    item.put("enabled", row.getBoolean("enabled"));
+    return item;
+  }
+
+  private Map<String, Object> userRow(java.sql.ResultSet row) throws java.sql.SQLException {
+    Map<String, Object> item = new LinkedHashMap<String, Object>();
+    item.put("id", row.getLong("id"));
+    item.put("organizationId", row.getLong("organization_id"));
+    item.put("primaryTeamId", row.getObject("primary_team_id"));
+    item.put("primaryTeamName", row.getString("primary_team_name"));
+    item.put("username", row.getString("username"));
+    item.put("displayName", row.getString("display_name"));
+    item.put("email", row.getString("email"));
+    item.put("status", row.getString("status"));
+    return item;
+  }
+
+  private List<String> roleCodes(long userId) {
+    return jdbc.queryForList("select r.code from role r join user_role ur on ur.role_id=r.id "
+        + "where ur.user_id=? order by r.code", String.class, userId);
+  }
+
+  private void replaceUserRoles(long userId, List<String> roleCodes) {
+    jdbc.update("delete from user_role where user_id=?", userId);
+    for (String roleCode : roleCodes) {
+      List<Long> roleIds = jdbc.queryForList("select id from role where code=?", Long.class, roleCode);
+      if (roleIds.isEmpty()) throw new IllegalArgumentException("角色不存在: " + roleCode);
+      jdbc.update("insert into user_role(user_id,role_id) values (?,?)", userId, roleIds.get(0));
+    }
+  }
+
+  private void validateTeam(long organizationId, Long teamId, Long currentTeamId) {
+    if (teamId == null) return;
+    if (teamId.equals(currentTeamId)) throw new IllegalArgumentException("上级团队不能是自身");
+    Integer count = jdbc.queryForObject(
+        "select count(*) from team where id=? and organization_id=?", Integer.class,
+        teamId, organizationId);
+    if (count == null || count == 0) throw new IllegalArgumentException("团队不存在或不属于当前组织");
+  }
+
+  private void validateStatus(String status) {
+    if (!"ACTIVE".equals(status) && !"DISABLED".equals(status)) {
+      throw new IllegalArgumentException("用户状态不受支持");
+    }
+  }
+
+  private void setNullableLong(PreparedStatement statement, int index, Long value)
+      throws java.sql.SQLException {
+    if (value == null) statement.setNull(index, Types.BIGINT);
+    else statement.setLong(index, value);
+  }
+
+  private String normalize(String value) {
+    return value == null || value.trim().isEmpty() ? null : value.trim();
   }
 
   private Map<String, Object> role(long id) {

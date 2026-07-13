@@ -1,12 +1,15 @@
 package com.zhilu.delivery.iam;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import javax.servlet.http.HttpSession;
+import com.zhilu.delivery.iam.service.CurrentUser;
+import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -78,7 +83,11 @@ class SecurityAccessTest {
 
   @Test
   void adminCanReadUserAdministration() throws Exception {
-    mvc.perform(get("/api/v1/admin/users").with(user("admin").authorities(() -> "system:manage")))
+    CurrentUser admin = new CurrentUser(200L, 200L, "admin", "系统管理员",
+        Collections.singletonList("ADMIN"), Collections.singletonList("system:manage"));
+    mvc.perform(get("/api/v1/admin/users").with(authentication(
+            new UsernamePasswordAuthenticationToken(admin, null,
+                Collections.singletonList(new SimpleGrantedAuthority("system:manage"))))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].username").value("admin"));
   }
