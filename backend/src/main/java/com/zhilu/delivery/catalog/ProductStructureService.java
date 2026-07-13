@@ -133,8 +133,11 @@ public class ProductStructureService {
   }
 
   private void requireWritableProduct(long organizationId, long productId) {
-    Map<String, Object> product = catalog.product(organizationId, productId);
-    if ("ARCHIVED".equals(product.get("status"))) {
+    List<String> statuses = jdbc.query(
+        "select status from product where id=? and organization_id=? for update",
+        (row, index) -> row.getString("status"), productId, organizationId);
+    if (statuses.isEmpty()) throw new NotFoundException("产品不存在");
+    if ("ARCHIVED".equals(statuses.get(0))) {
       throw new ConflictException("产品已归档，不能修改模块或功能");
     }
   }
