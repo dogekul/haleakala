@@ -103,8 +103,8 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
   const [form] = Form.useForm()
   const productId = Form.useWatch('productId', form)
   const client = useQueryClient()
-  const products = useQuery({ queryKey: ['products'], queryFn: projectApi.products, enabled: open })
-  const versions = useQuery({ queryKey: ['product-versions', productId], queryFn: () => projectApi.versions(productId), enabled: open && Boolean(productId) })
+  const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
+  const versions = useQuery({ queryKey: ['bindable-product-versions', productId], queryFn: () => projectApi.bindableVersions(productId), enabled: open && Boolean(productId) })
   const create = useMutation({ mutationFn: async (values: Record<string, unknown>) => {
     const initialize = Boolean(values.initializeAgent)
     const project = await projectApi.create({ ...values, initializeAgent: undefined, startDate: formatDate(values.startDate), plannedEndDate: formatDate(values.plannedEndDate), gateMode: 'BLOCK' })
@@ -116,7 +116,8 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
     <Form form={form} layout="vertical" initialValues={{ initializeAgent: true }} onFinish={values => create.mutate(values)}>
       <Row gutter={12}><Col span={9}><Form.Item label="项目编号" name="code" rules={[{ required: true }]}><Input placeholder="PRJ-2026-001" /></Form.Item></Col><Col span={15}><Form.Item label="项目名称" name="name" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
       <Form.Item label="客户名称" name="customerName" rules={[{ required: true }]}><Input /></Form.Item>
-      <Row gutter={12}><Col span={12}><Form.Item label="产品" name="productId" rules={[{ required: true }]}><Select loading={products.isLoading} options={products.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item></Col><Col span={12}><Form.Item label="版本" name="productVersionId" rules={[{ required: true }]}><Select disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item label="产品" name="productId" rules={[{ required: true }]}><Select loading={products.isLoading}
+        onChange={(value) => form.setFieldsValue({ productId: value, productVersionId: undefined })} options={products.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item></Col><Col span={12}><Form.Item label="版本" name="productVersionId" rules={[{ required: true }]}><Select disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
       <Row gutter={12}><Col span={12}><Form.Item label="计划开始" name="startDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item name="initializeAgent" valuePropName="checked"><Checkbox>创建后执行项目初始化 Skill</Checkbox></Form.Item>
     </Form>

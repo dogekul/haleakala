@@ -94,11 +94,11 @@ function ProjectCard({ project }: { project: Project }) {
 
 function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
-  const [productId, setProductId] = useState<number>()
+  const productId = Form.useWatch<number>('productId', form)
   const client = useQueryClient()
-  const products = useQuery({ queryKey: ['products'], queryFn: projectApi.products, enabled: open })
-  const versions = useQuery({ queryKey: ['product-versions', productId],
-    queryFn: () => projectApi.versions(productId!), enabled: !!productId && open })
+  const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
+  const versions = useQuery({ queryKey: ['bindable-product-versions', productId],
+    queryFn: () => projectApi.bindableVersions(productId!), enabled: !!productId && open })
   const create = useMutation({ mutationFn: projectApi.create, onSuccess: async () => {
     await client.invalidateQueries({ queryKey: ['projects'] })
     message.success('项目创建成功，七阶段已初始化')
@@ -114,7 +114,7 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
         <Col span={14}><Form.Item label="项目名称" name="name" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
       <Form.Item label="客户名称" name="customerName" rules={[{ required: true }]}><Input /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="产品" name="productId" rules={[{ required: true }]}>
-        <Select loading={products.isLoading} onChange={(value) => { setProductId(value); form.setFieldValue('productVersionId', undefined) }}
+        <Select loading={products.isLoading} onChange={(value) => form.setFieldsValue({ productId: value, productVersionId: undefined })}
           options={products.data?.map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
         <Col span={12}><Form.Item label="标品版本" name="productVersionId" rules={[{ required: true }]}>
           <Select disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>

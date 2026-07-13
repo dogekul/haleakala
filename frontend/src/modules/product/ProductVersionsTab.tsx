@@ -45,6 +45,7 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
     const term = keyword.trim().toLowerCase()
     return (features.data ?? []).filter(item => !term || `${item.code}${item.name}`.toLowerCase().includes(term))
   }, [features.data, keyword])
+  const manifestReadOnly = readOnly || selected?.status !== 'PLANNING'
   const saveManifest = useMutation({
     mutationFn: ({ versionId, payload }: ManifestSaveVariables) => productApi.replaceManifest(productId, versionId, payload),
     onSuccess: async (data, variables) => {
@@ -73,7 +74,7 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
           ]} />
       </Card>
       <Card className="version-manifest-card" title={selected ? `${selected.versionName} · 功能清单` : '功能清单'}
-        extra={<Button type="primary" size="small" aria-label="保存功能清单" disabled={readOnly || !selected || !manifest.data}
+        extra={<Button type="primary" size="small" aria-label="保存功能清单" disabled={manifestReadOnly || !manifest.data}
           loading={saveManifest.isPending} onClick={() => selected && manifest.data && saveManifest.mutate({
             versionId: selected.id,
             payload: {
@@ -87,7 +88,7 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
             onChange={event => setKeyword(event.target.value)} />
           <div className="version-manifest-list">
             {visibleFeatures.map(feature => <ManifestRow key={feature.id} feature={feature} value={rows[feature.id] ?? 'REMOVED'}
-              disabled={readOnly} onChange={value => setRows(current => ({ ...current, [feature.id]: value }))} />)}
+              disabled={manifestReadOnly} onChange={value => setRows(current => ({ ...current, [feature.id]: value }))} />)}
           </div>
         </PageState>}
       </Card>

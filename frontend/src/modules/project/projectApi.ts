@@ -29,4 +29,8 @@ export const projectApi = {
   }),
   products: () => api<Product[]>('/api/v1/products'),
   versions: (productId: number) => api<ProductVersion[]>(`/api/v1/products/${productId}/versions`),
+  bindableProducts: () => api<Product[]>('/api/v1/products?bindable=true')
+    .then(items => items.filter(item => item.status === 'ACTIVE')),
+  bindableVersions: (productId: number) => api<ProductVersion[]>(`/api/v1/products/${productId}/versions?bindable=true`)
+    .then(items => items.filter(item => item.status === 'RELEASED')),
 }

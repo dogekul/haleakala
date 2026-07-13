@@ -197,6 +197,48 @@ it('编辑版本并以当前版本号全量替换功能清单', async () => {
   })))
 })
 
+it('只有规划版本可编辑功能清单且切换版本会同步只读状态', async () => {
+  const sunset = { id: 33, productId: 8, versionName: 'V5.0', releaseDate: '2026-05-01', status: 'SUNSET', version: 6 }
+  const archived = { id: 34, productId: 8, versionName: 'V4.9', releaseDate: '2026-04-01', status: 'ARCHIVED', version: 7 }
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/products/8/versions') return json([...versions, sunset, archived])
+    if (path === '/api/v1/products/8/versions/33/features') return json({ versionId: 33, version: 6, entries: [] })
+    if (path === '/api/v1/products/8/versions/34/features') return json({ versionId: 34, version: 7, entries: [] })
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+
+  const save = await screen.findByRole('button', { name: '保存功能清单' })
+  expect(save).toBeEnabled()
+  expect(screen.getByLabelText('总账处理可用性')).toBeEnabled()
+
+  await user.click(screen.getByText('V5.1'))
+  await waitFor(() => expect(screen.getByLabelText('总账处理可用性')).toBeDisabled())
+  expect(save).toBeDisabled()
+  await user.selectOptions(screen.getByLabelText('总账处理可用性'), 'PLANNED')
+  expect(fetch).not.toHaveBeenCalledWith('/api/v1/products/8/versions/32/features', expect.objectContaining({ method: 'PUT' }))
+  await user.click(screen.getByRole('button', { name: '编辑版本 V5.1' }))
+  const drawer = screen.getByRole('dialog', { name: '编辑版本' })
+  expect(within(drawer).getByRole('button', { name: '保存版本' })).toBeEnabled()
+  await user.click(within(drawer).getByRole('combobox', { name: '状态' }))
+  expect(await screen.findByRole('option', { name: '停止维护' })).toBeVisible()
+  expect(screen.queryByRole('option', { name: '规划中' })).not.toBeInTheDocument()
+  await user.click(within(drawer).getByRole('button', { name: '关闭' }))
+
+  for (const versionName of ['V5.0', 'V4.9']) {
+    await user.click(screen.getByRole('cell', { name: versionName }))
+    await waitFor(() => expect(screen.getByLabelText('总账处理可用性')).toBeDisabled())
+    expect(save).toBeDisabled()
+  }
+
+  await user.click(screen.getByRole('cell', { name: 'V5.2' }))
+  await waitFor(() => expect(screen.getByLabelText('总账处理可用性')).toBeEnabled())
+  expect(save).toBeEnabled()
+})
+
 it('清单保存 pending 时切换版本不会污染另一版本缓存', async () => {
   let resolveVersionA!: (value: Response) => void
   const pendingVersionA = new Promise<Response>(resolve => { resolveVersionA = resolve })
@@ -207,6 +249,9 @@ it('清单保存 pending 时切换版本不会污染另一版本缓存', async (
   ] }
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
+    if (!init?.method && path === '/api/v1/products/8/versions') {
+      return json([versions[0], { ...versions[1], status: 'PLANNING' }])
+    }
     if (path.endsWith('/versions/31/features') && init?.method === 'PUT') return pendingVersionA
     if (path.endsWith('/versions/32/features') && init?.method === 'PUT') return json({ ...manifestB, version: 6 })
     if (!init?.method && path.endsWith('/versions/31/features')) return json(manifestA)
