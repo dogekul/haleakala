@@ -126,8 +126,9 @@ public class StandardizationController {
   }
 
   @PostMapping("/flywheel")
-  public Map<String, Object> flywheel(@RequestParam long productVersionId) {
-    return standardization.flywheel(productVersionId);
+  public Map<String, Object> flywheel(@RequestParam long productVersionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.flywheel(productVersionId, user.getId());
   }
 
   public static final class BaselineRequest {

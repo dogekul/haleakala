@@ -45,8 +45,8 @@ export function StandardizationPage() {
   return <div className="standardization-page">
     <div className="workshop-heading"><div><span className="eyebrow dark">PRODUCT STANDARDIZATION</span><Typography.Title level={2}>标准化中心</Typography.Title>
       <Typography.Paragraph>把项目偏离转化为产品能力，让每次交付都降低下一次的成本。</Typography.Paragraph></div>
-      <Space><Select aria-label="产品" value={productId} loading={products.isLoading} onChange={value => { setProductId(value); setVersionId(undefined) }} style={{ width: 170 }} options={products.data?.map(item => ({ value: item.id, label: item.name }))} />
-        <Select aria-label="版本" value={versionId} loading={versions.isLoading} onChange={setVersionId} style={{ width: 130 }} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Space></div>
+      <Space><Select aria-label="产品" showSearch optionFilterProp="label" value={productId} loading={products.isLoading} onChange={value => { setProductId(value); setVersionId(undefined) }} style={{ width: 170 }} options={products.data?.map(item => ({ value: item.id, label: item.name }))} />
+        <Select aria-label="版本" showSearch optionFilterProp="label" value={versionId} loading={versions.isLoading} onChange={setVersionId} style={{ width: 130 }} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Space></div>
     <div className="standardization-context"><div><ApiOutlined /><span>当前基线</span><strong>{currentProduct?.name ?? '请选择产品'} / {currentVersion?.versionName ?? '-'}</strong></div>
       <div><span>评估周期</span><strong>{assessment.data?.period ?? '-'}</strong></div><div><span>标准覆盖</span><strong>{assessment.data?.standardCoverage ?? 0}%</strong></div><div><span>二开实际成本</span><strong>{currency(costs.data?.actualCost)}</strong></div></div>
     {!versionId ? <Card><Empty description="请先选择产品版本" /></Card> : <Tabs className="standardization-tabs" items={[

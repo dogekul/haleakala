@@ -94,7 +94,8 @@ INSERT IGNORE INTO product_baseline(id,product_version_id,capability_code,capabi
   (3001,100,'FIN-WF-001','财务审批流','CONFIGURATION','覆盖按组织、金额和业务类型的标准审批','审批人、会签、条件分支','workflow.listener','ACTIVE',105),
   (3002,100,'FIN-EXT-001','受控业务扩展','EXTENSION','通过统一上下文、幂等键和审计日志提供扩展能力','超时、重试、降级','reconciliation.retry\nworkflow.listener\nreport.transformer','ACTIVE',105);
 INSERT IGNORE INTO standardization_debt(id,product_version_id,pattern_key,title,occurrence_count,distinct_projects,status,owner_user_id,target_version,verification_note) VALUES
-  (3100,100,'reconciliation.retry','统一幂等重试框架',6,6,'INCLUDED',105,'V5.1','已完成方案评审，待版本验证');
+  (3100,100,'reconciliation.retry','统一幂等重试框架',6,6,'CANDIDATE',105,NULL,NULL);
+INSERT IGNORE INTO standardization_debt_requirement(standardization_debt_id,requirement_id) VALUES (3100,2000);
 
 INSERT IGNORE INTO knowledge_item(id,organization_id,type,title,summary,content_text,tags_text,product_id,product_version_id,visibility,status,owner_user_id,published_at) VALUES
   (4000,100,'CASE','月末关账从三天缩短到一天','通过差异前置、并行核对和责任到人缩短关账周期','先将往来差异检查前置到 T-2，再把账务核对拆分为可并行任务，最后用门禁固化每个责任人的交付物。','财务,关账,最佳实践',100,100,'ORGANIZATION','PUBLISHED',105,current_timestamp),

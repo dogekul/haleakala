@@ -129,7 +129,10 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveProduct(value?.id, { ...input, version: value?.version ?? 0 }),
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ['products'] })
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['products'] }),
+        ...(value ? [client.invalidateQueries({ queryKey: ['product', value.id], exact: true })] : []),
+      ])
       message.success(value ? '产品已更新' : '产品已创建')
       onClose()
     },

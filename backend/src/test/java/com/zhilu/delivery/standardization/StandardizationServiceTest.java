@@ -83,6 +83,19 @@ class StandardizationServiceTest {
     assertEquals(100000.0,((Number)standardization.costs(1000).get("actualCost")).doubleValue(),0.01);
   }
 
+  @Test void flywheelUsesAuthenticatedActorBeforeFirstDeliveryProject() {
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (1001,1000,'V6','RELEASED')");
+
+    Map<String, Object> flywheel = standardization.flywheel(1001, 1000);
+
+    assertEquals(0, ((Number) flywheel.get("confirmedRequirements")).intValue());
+    assertEquals(0, ((Number) flywheel.get("reuseRate")).intValue());
+    assertEquals(Long.valueOf(1000), jdbc.queryForObject(
+        "select assessed_by from maturity_assessment where product_version_id=1001",
+        Long.class));
+  }
+
   @Test void uncoveredRequirementCreatesOneCandidateWhileFullCoverageIsRejected() {
     jdbc.update("insert into product_module(id,product_id,code,name,status) "
         + "values (1000,1000,'FIN','财务','ACTIVE')");
