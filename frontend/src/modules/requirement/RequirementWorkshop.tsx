@@ -7,7 +7,7 @@ import {
   Alert, Button, Card, Col, Drawer, Empty, Form, Input, List, Modal, Progress,
   Radio, Row, Segmented, Select, Space, Table, Tag, Typography, message,
 } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../services/api'
 import { projectApi } from '../project/projectApi'
@@ -27,17 +27,19 @@ export function RequirementWorkshop() {
   const [createOpen, setCreateOpen] = useState(false)
   const [decision, setDecision] = useState<Requirement>()
   const [duplicateOf, setDuplicateOf] = useState<Requirement>()
+  const handledRequirementId = useRef<number>()
   const requirements = useQuery({ queryKey: ['requirements'], queryFn: requirementApi.list })
   const funnel = useQuery({ queryKey: ['requirement-funnel'], queryFn: requirementApi.funnel })
   const focused = Number.isInteger(focusedRequirementId) && focusedRequirementId > 0
     ? requirements.data?.find(item => item.id === focusedRequirementId) : undefined
   const visibleRequirements = focused ? [focused] : requirements.data ?? []
   useEffect(() => {
-    if (focused) {
+    if (focused && handledRequirementId.current !== focusedRequirementId) {
+      handledRequirementId.current = focusedRequirementId
       setView('list')
       setDecision(focused)
     }
-  }, [focused])
+  }, [focused, focusedRequirementId])
   return <div className="requirement-workshop">
     <div className="workshop-heading"><div><span className="eyebrow dark">REQUIREMENT WORKSHOP</span><Typography.Title level={2}>需求工坊</Typography.Title>
       <Typography.Paragraph>AI 提建议，交付工程师做最终判断；只有已确认结论进入漏斗。</Typography.Paragraph></div>

@@ -118,9 +118,16 @@ function VersionEditor({ productId, value, readOnly, hasIncludedFeature, onClose
   const disabled = readOnly || value?.status === 'ARCHIVED'
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveVersion(productId, value?.id, { ...input, version: value?.version ?? 0 }),
+    onMutate: async () => {
+      if (value) await client.cancelQueries({ queryKey: ['product-manifest', productId, value.id], exact: true })
+    },
     onSuccess: async saved => {
-      if (value) client.setQueryData<VersionManifest>(['product-manifest', productId, value.id], current =>
-        current ? { ...current, version: saved.version } : current)
+      if (value) {
+        const manifestKey = ['product-manifest', productId, value.id] as const
+        const current = client.getQueryData<VersionManifest>(manifestKey)
+        if (current) client.setQueryData(manifestKey, { ...current, version: saved.version })
+        else await client.invalidateQueries({ queryKey: manifestKey, exact: true })
+      }
       await Promise.all([client.invalidateQueries({ queryKey: ['product-versions', productId] }), client.invalidateQueries({ queryKey: ['product', productId] })])
       message.success(value ? '版本已更新' : '版本已创建')
       onClose()

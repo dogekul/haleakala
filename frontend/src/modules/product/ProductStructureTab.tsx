@@ -75,7 +75,11 @@ function ModuleEditor({ productId, values, value, readOnly, onClose }: {
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveModule(productId, value?.id, { ...input, version: value?.version ?? 0 }),
     onSuccess: async () => {
-      await Promise.all([client.invalidateQueries({ queryKey: ['product-modules', productId] }), client.invalidateQueries({ queryKey: ['product', productId] })])
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['product-modules', productId] }),
+        client.invalidateQueries({ queryKey: ['product-coverage', productId] }),
+        client.invalidateQueries({ queryKey: ['product', productId] }),
+      ])
       message.success(value ? '模块已更新' : '模块已创建')
       onClose()
     },
@@ -117,7 +121,11 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => productApi.saveFeature(productId, value?.id, { ...input, version: value?.version ?? 0 }),
     onSuccess: async () => {
-      await Promise.all([client.invalidateQueries({ queryKey: ['product-features', productId] }), client.invalidateQueries({ queryKey: ['product', productId] })])
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['product-features', productId] }),
+        client.invalidateQueries({ queryKey: ['product-coverage', productId] }),
+        client.invalidateQueries({ queryKey: ['product', productId] }),
+      ])
       message.success(value ? '功能已更新' : '功能已创建')
       onClose()
     },

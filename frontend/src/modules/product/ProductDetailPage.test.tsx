@@ -107,15 +107,23 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   expect(screen.queryByText('总账处理')).not.toBeInTheDocument()
 })
 
-it('创建模块并编辑功能时提交所属模块和乐观锁版本', async () => {
+it('创建模块并编辑功能时提交乐观锁版本并刷新覆盖度', async () => {
+  let coverageGets = 0
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
+    if (!init?.method && path.endsWith('/coverage')) {
+      coverageGets += 1
+      return json(coverage)
+    }
     if (init?.method === 'POST' && path.endsWith('/modules')) return json({ ...modules[0], id: 14 }, 201)
     if (init?.method === 'PUT' && path.endsWith('/features/22')) return json({ ...features[1], name: '应收智能对账', version: 1 })
     return responseFor(path)
   })
   show(fetch)
   const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '覆盖度' }))
+  expect(await screen.findByText('完整 3')).toBeVisible()
+  expect(coverageGets).toBe(1)
   await user.click(await screen.findByRole('tab', { name: '模块与功能' }))
 
   await user.click(await screen.findByRole('button', { name: '新建模块' }))
@@ -126,6 +134,7 @@ it('创建模块并编辑功能时提交所属模块和乐观锁版本', async (
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/modules', expect.objectContaining({
     method: 'POST', body: expect.stringContaining('"version":0'),
   })))
+  await waitFor(() => expect(coverageGets).toBe(2))
 
   await user.click(screen.getByText('AR · 应收管理'))
   await user.click(await screen.findByRole('button', { name: '编辑应收对账' }))
@@ -137,6 +146,7 @@ it('创建模块并编辑功能时提交所属模块和乐观锁版本', async (
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/features/22', expect.objectContaining({
     method: 'PUT', body: expect.stringMatching(/"moduleId":12.*"version":0|"version":0.*"moduleId":12/),
   })))
+  await waitFor(() => expect(coverageGets).toBe(3))
 })
 
 it('移动模块时提交新父级和当前乐观锁版本', async () => {
@@ -208,6 +218,41 @@ it('更新版本后保存清单使用服务端返回的新乐观锁版本', asyn
     method: 'PUT', body: expect.stringMatching(/"releaseDate":"2026-08-02".*"version":3|"version":3.*"releaseDate":"2026-08-02"/),
   })))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑版本' })).not.toBeInTheDocument())
+  await user.click(screen.getByRole('button', { name: '保存功能清单' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"version":4'),
+  })))
+})
+
+it('版本更新会阻止进行中的旧清单请求回填过期版本', async () => {
+  let resolveOldManifest!: (value: Response) => void
+  const oldManifest = new Promise<Response>(resolve => { resolveOldManifest = resolve })
+  let manifestGets = 0
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (!init?.method && path.endsWith('/versions/31/features')) {
+      manifestGets += 1
+      return manifestGets === 1 ? oldManifest
+        : json({ versionId: 31, version: 4, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+    }
+    if (init?.method === 'PUT' && path.endsWith('/versions/31')) return json({ ...versions[0], releaseDate: '2026-08-03', version: 4 })
+    if (init?.method === 'PUT' && path.endsWith('/versions/31/features')) {
+      return json({ versionId: 31, version: 5, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
+    }
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+  await user.click(await screen.findByRole('button', { name: '编辑版本 V5.2' }))
+  const drawer = screen.getByRole('dialog', { name: '编辑版本' })
+  const date = within(drawer).getByLabelText('发布日期')
+  await user.clear(date)
+  await user.type(date, '2026-08-03')
+  await user.click(within(drawer).getByRole('button', { name: '保存版本' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑版本' })).not.toBeInTheDocument())
+  void json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] }).then(resolveOldManifest)
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存功能清单' })).toBeEnabled())
   await user.click(screen.getByRole('button', { name: '保存功能清单' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
     method: 'PUT', body: expect.stringContaining('"version":4'),
