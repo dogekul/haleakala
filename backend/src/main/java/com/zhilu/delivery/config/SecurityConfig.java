@@ -86,6 +86,8 @@ public class SecurityConfig {
         .antMatchers("/api/v1/standardization/**").hasAuthority("standardization:write")
         .antMatchers(HttpMethod.GET, "/api/v1/knowledge/**").hasAuthority("knowledge:read")
         .antMatchers("/api/v1/knowledge/**").hasAuthority("knowledge:write")
+        .antMatchers(HttpMethod.GET, "/api/v1/resources/**").hasAuthority("resource:read")
+        .antMatchers("/api/v1/resources/**").hasAuthority("resource:write")
         .antMatchers("/api/v1/integrations/agent/events").permitAll()
         .antMatchers(HttpMethod.GET, "/api/v1/agent-jobs/**").hasAuthority("project:read")
         .antMatchers("/api/v1/agent-jobs/**").hasAuthority("project:write")

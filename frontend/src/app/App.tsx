@@ -12,9 +12,9 @@ const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage').th
 const RequirementWorkshop = lazy(() => import('../modules/requirement/RequirementWorkshop').then(module => ({ default: module.RequirementWorkshop })))
 const StandardizationPage = lazy(() => import('../modules/standardization/StandardizationPage').then(module => ({ default: module.StandardizationPage })))
 const KnowledgePage = lazy(() => import('../modules/knowledge/KnowledgePage').then(module => ({ default: module.KnowledgePage })))
+const ResourcePage = lazy(() => import('../modules/resource/ResourcePage').then(module => ({ default: module.ResourcePage })))
 
 const routes = [
-  ['/resources', 'resources', 'resource:read'],
   ['/admin', 'admin', 'system:manage'],
 ] as const
 
@@ -33,6 +33,9 @@ export function App() {
     </RequirePermission></RequireAuth>} />
     <Route path="/knowledge/*" element={<RequireAuth><RequirePermission code="knowledge:read">
       <AppShell><LazyPage><KnowledgePage /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
+    <Route path="/resources/*" element={<RequireAuth><RequirePermission code="resource:read">
+      <AppShell><LazyPage><ResourcePage /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
     <Route path="/projects" element={<RequireAuth><RequirePermission code="project:read">
       <AppShell><LazyPage><ProjectWorkspace /></LazyPage></AppShell>
