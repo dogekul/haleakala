@@ -1,0 +1,85 @@
+import { spawnSync } from 'node:child_process'
+import http from 'node:http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const root = path.resolve(frontend, '..')
+if (process.env.E2E_BASE_URL) {
+  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...process.argv.slice(2)], {
+    cwd: frontend,
+    env: process.env,
+    stdio: 'inherit',
+  })
+  process.exit(test.status ?? 1)
+}
+
+const project = `zhilu-delivery-e2e-${process.pid}`
+const composeEnv = {
+  ...process.env,
+  WEB_PORT: '0',
+  BACKEND_PORT: '0',
+  MYSQL_PORT: '0',
+  REDIS_PORT: '0',
+  MINIO_PORT: '0',
+  MINIO_CONSOLE_PORT: '0',
+  AGENT_PORT: '0',
+}
+
+function compose(args, options = {}) {
+  return spawnSync('docker', ['compose', '-p', project, ...args], {
+    cwd: root,
+    env: composeEnv,
+    stdio: 'inherit',
+    ...options,
+  })
+}
+
+function waitForHttp(url, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve, reject) => {
+    const probe = () => {
+      const request = http.get(url, response => {
+        response.resume()
+        if (response.statusCode && response.statusCode < 500) return resolve()
+        retry()
+      })
+      request.on('error', retry)
+      request.setTimeout(1_000, () => request.destroy())
+    }
+    const retry = () => {
+      if (Date.now() >= deadline) return reject(new Error(`Timed out waiting for ${url}`))
+      setTimeout(probe, 500)
+    }
+    probe()
+  })
+}
+
+let exitCode = 1
+try {
+  const started = compose(['up', '-d', '--build'])
+  if (started.status !== 0) throw new Error('Failed to start disposable E2E stack')
+
+  const published = compose(['port', 'frontend', '80'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  if (published.status !== 0) throw new Error('Failed to resolve disposable frontend port')
+  const match = published.stdout.trim().split(/\r?\n/).find(Boolean)?.match(/:(\d+)$/)
+  if (!match) throw new Error(`Unexpected frontend port output: ${published.stdout}`)
+  const baseURL = `http://127.0.0.1:${match[1]}`
+  await waitForHttp(baseURL)
+
+  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...process.argv.slice(2)], {
+    cwd: frontend,
+    env: { ...process.env, E2E_BASE_URL: baseURL },
+    stdio: 'inherit',
+  })
+  exitCode = test.status ?? 1
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error)
+} finally {
+  compose(['down', '-v'])
+}
+
+process.exit(exitCode)

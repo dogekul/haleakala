@@ -95,6 +95,11 @@ INSERT IGNORE INTO product_baseline(id,product_version_id,capability_code,capabi
   (3002,100,'FIN-EXT-001','受控业务扩展','EXTENSION','通过统一上下文、幂等键和审计日志提供扩展能力','超时、重试、降级','reconciliation.retry\nworkflow.listener\nreport.transformer','ACTIVE',105);
 INSERT IGNORE INTO standardization_debt(id,product_version_id,pattern_key,title,occurrence_count,distinct_projects,status,owner_user_id,target_version,verification_note) VALUES
   (3100,100,'reconciliation.retry','统一幂等重试框架',6,6,'CANDIDATE',105,NULL,NULL);
+UPDATE standardization_debt
+SET status='CANDIDATE',target_version=NULL,verification_note=NULL
+WHERE id=3100 AND product_version_id=100 AND pattern_key='reconciliation.retry'
+  AND status='INCLUDED' AND converted_feature_id IS NULL AND version=0
+  AND target_version='V5.1' AND verification_note='已完成方案评审，待版本验证';
 INSERT IGNORE INTO standardization_debt_requirement(standardization_debt_id,requirement_id) VALUES (3100,2000);
 
 INSERT IGNORE INTO knowledge_item(id,organization_id,type,title,summary,content_text,tags_text,product_id,product_version_id,visibility,status,owner_user_id,published_at) VALUES
