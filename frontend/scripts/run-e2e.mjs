@@ -101,7 +101,7 @@ try {
 } finally {
   exitCode = finishDisposableRun({
     exitCode,
-    cleanup: () => compose(['down', '-v']),
+    cleanup: compose,
   })
 }
 

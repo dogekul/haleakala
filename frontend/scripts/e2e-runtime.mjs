@@ -11,10 +11,10 @@ export function createComposeProjectName({
 export function finishDisposableRun({ exitCode, cleanup, report = console.error }) {
   let result
   try {
-    result = cleanup()
+    result = cleanup(['down', '-v', '--rmi', 'local'])
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    report(`Disposable E2E cleanup failed: docker compose down -v threw: ${detail}`)
+    report(`Disposable E2E cleanup failed: docker compose down -v --rmi local threw: ${detail}`)
     return exitCode === 0 ? 1 : exitCode
   }
 
@@ -27,12 +27,12 @@ export function finishDisposableRun({ exitCode, cleanup, report = console.error 
 function cleanupFailure(result) {
   if (result?.error) {
     const detail = result.error instanceof Error ? result.error.message : String(result.error)
-    return `docker compose down -v spawn error: ${detail}`
+    return `docker compose down -v --rmi local spawn error: ${detail}`
   }
-  if (result?.signal) return `docker compose down -v terminated by signal ${result.signal}`
+  if (result?.signal) return `docker compose down -v --rmi local terminated by signal ${result.signal}`
   if (result?.status !== 0) {
     const status = result?.status == null ? 'unavailable' : result.status
-    return `docker compose down -v exited with status ${status}`
+    return `docker compose down -v --rmi local exited with status ${status}`
   }
   return undefined
 }

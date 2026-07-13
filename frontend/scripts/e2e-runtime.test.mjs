@@ -14,11 +14,13 @@ describe('createComposeProjectName', () => {
 describe('finishDisposableRun', () => {
   it('keeps a successful test run successful after successful cleanup', () => {
     const report = vi.fn()
+    const cleanup = vi.fn(() => ({ status: 0, signal: null }))
     expect(finishDisposableRun({
       exitCode: 0,
-      cleanup: () => ({ status: 0, signal: null }),
+      cleanup,
       report,
     })).toBe(0)
+    expect(cleanup).toHaveBeenCalledWith(['down', '-v', '--rmi', 'local'])
     expect(report).not.toHaveBeenCalled()
   })
 
