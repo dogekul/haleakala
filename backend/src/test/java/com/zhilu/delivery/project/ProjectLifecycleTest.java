@@ -41,7 +41,8 @@ class ProjectLifecycleTest {
     jdbc.update("insert into organization(id,name,code) values (600,'智鹿科技','ZHILU-PROJECT')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (600,600,'manager','交付负责人','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (600,'ERP','智鹿 ERP','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) "
+        + "values (600,600,'ERP','智鹿 ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (600,600,'V5.2','ACTIVE')");
   }

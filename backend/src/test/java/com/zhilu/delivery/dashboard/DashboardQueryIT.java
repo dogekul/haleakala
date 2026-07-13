@@ -30,8 +30,8 @@ class DashboardQueryIT {
     jdbc.update("delete from organization");
     jdbc.update("insert into organization(id,name,code) values (800,'智鹿','ZHILU-DASH')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (800,800,'one','成员一','ACTIVE'),(801,800,'two','成员二','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (800,'ERP','ERP','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (800,800,'V1','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (800,800,'ERP','ERP','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (800,800,'V1','RELEASED')");
     project(800, "P-GREEN", "绿色项目", 800, "GREEN", "START");
     project(801, "P-RED", "红色项目", 801, "RED", "CUSTOM_DEV");
     jdbc.update("insert into project_risk(project_id,title,category,probability,impact,risk_level) values (801,'上线延期','进度',5,5,'RED')");

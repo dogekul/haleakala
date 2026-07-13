@@ -32,8 +32,8 @@ class ResourceServiceTest {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (1200,'智鹿','ZHILU-RES'),(1201,'其他','OTHER-RES')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (1200,1200,'manager','交付经理','ACTIVE'),(1201,1200,'engineer','王工程师','ACTIVE'),(1299,1201,'outsider','外部人员','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (1200,'ERP','企业财务','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1200,1200,'V5','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (1200,1200,'ERP','企业财务','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1200,1200,'V5','RELEASED')");
     for(int i=0;i<2;i++)jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (?,1200,?,?,?,1200,1200,1200,1200)",1200+i,"P-"+i,"项目"+i,"客户");
     manager=new CurrentUser(1200L,1200L,"manager","交付经理",Collections.<String>emptyList(),Arrays.asList("resource:read","resource:write"));
   }

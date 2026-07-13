@@ -30,4 +30,18 @@ class SchemaBaselineTest {
 
     assertEquals(12, count);
   }
+
+  @Test
+  void flywayCreatesProductCenterTablesAndPermissions() {
+    Integer tables = jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name in ('product_module','product_feature','product_version_feature',"
+            + "'requirement_product_feature','standardization_debt_requirement')",
+        Integer.class);
+    Integer permissions = jdbc.queryForObject(
+        "select count(*) from permission where code in ('product:read','product:write')",
+        Integer.class);
+    assertEquals(5, tables);
+    assertEquals(2, permissions);
+  }
 }

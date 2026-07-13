@@ -36,8 +36,8 @@ class RequirementApiIT {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (910,'智鹿','ZHILU-REQ-API')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (910,910,'engineer','工程师','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (910,'CRM','CRM','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (910,910,'V1','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (910,910,'CRM','CRM','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (910,910,'V1','RELEASED')");
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (910,910,'PRJ-910','CRM 交付','客户',910,910,910,910)");
     jdbc.update("insert into project_member(project_id,user_id,project_role) values (910,910,'ENGINEER')");
     requirements.create(910,"客户主数据校验规则配置","支持按客户类型配置不同校验规则","访谈","P1",910);

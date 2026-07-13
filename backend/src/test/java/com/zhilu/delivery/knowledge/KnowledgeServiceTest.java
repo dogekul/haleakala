@@ -30,8 +30,8 @@ class KnowledgeServiceTest {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (1100,'智鹿','ZHILU-KB')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (1100,1100,'expert','方案专家','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (1100,'ERP','企业财务','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1100,1100,'V5','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (1100,1100,'ERP','企业财务','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1100,1100,'V5','RELEASED')");
     user = new CurrentUser(1100L,1100L,"expert","方案专家",Collections.<String>emptyList(),Arrays.asList("knowledge:read","knowledge:write"));
   }
 

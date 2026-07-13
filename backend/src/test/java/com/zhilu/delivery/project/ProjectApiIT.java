@@ -43,7 +43,8 @@ class ProjectApiIT {
     jdbc.update("insert into organization(id,name,code) values (610,'智鹿科技','ZHILU-API')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (610,610,'manager','交付负责人','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (610,'CRM','智鹿 CRM','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) "
+        + "values (610,610,'CRM','智鹿 CRM','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (610,610,'V3.0','ACTIVE')");
     projects.create(new CreateProjectCommand(610, "PRJ-610", "北方银行 CRM", "北方银行",

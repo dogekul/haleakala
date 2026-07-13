@@ -27,8 +27,8 @@ class StandardizationServiceTest {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (1000,'智鹿','ZHILU-STD')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (1000,1000,'product','产品经理','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (1000,'ERP','ERP','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1000,1000,'V5','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (1000,1000,'ERP','ERP','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (1000,1000,'V5','RELEASED')");
     for (int i=0;i<5;i++) {
       long id=1000+i;
       jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (?,1000,?,?,?,1000,1000,1000,1000)",id,"P-"+id,"项目"+id,"客户");

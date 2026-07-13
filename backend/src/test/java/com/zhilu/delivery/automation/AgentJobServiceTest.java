@@ -46,8 +46,8 @@ class AgentJobServiceTest {
     jdbc.update("delete from organization");
     jdbc.update("insert into organization(id,name,code) values (700,'智鹿科技','ZHILU-AGENT')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (700,700,'agent-user','交付工程师','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (700,'AGENT','Agent 产品','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (700,700,'V1','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (700,700,'AGENT','Agent 产品','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (700,700,'V1','RELEASED')");
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (700,700,'PRJ-700','Agent 项目','客户',700,700,700,700)");
     jdbc.update("insert into project_member(project_id,user_id,project_role) values (700,700,'ENGINEER')");
   }

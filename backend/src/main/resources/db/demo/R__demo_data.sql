@@ -15,11 +15,13 @@ INSERT IGNORE INTO app_user(id,organization_id,primary_team_id,username,password
 INSERT IGNORE INTO user_team(user_id,team_id) VALUES (100,100),(101,100),(102,100),(103,102),(104,102),(105,101);
 INSERT IGNORE INTO user_role(user_id,role_id) VALUES (100,1),(101,2),(102,3),(103,4),(104,5),(105,6);
 
-INSERT IGNORE INTO product(id,owner_user_id,code,name,category,status) VALUES
-  (100,105,'FIN-CLOUD','企业财务云','财务管理','ACTIVE'),
-  (101,105,'SCM-CLOUD','智能供应链','供应链','ACTIVE');
+INSERT IGNORE INTO product(id,organization_id,owner_user_id,code,name,category,status) VALUES
+  (100,100,105,'FIN-CLOUD','企业财务云','财务管理','ACTIVE'),
+  (101,100,105,'SCM-CLOUD','智能供应链','供应链','ACTIVE');
 INSERT IGNORE INTO product_version(id,product_id,version_name,release_date,status) VALUES
-  (100,100,'V5.0','2026-03-31','ACTIVE'),(101,100,'V4.8','2025-11-30','MAINTENANCE'),(102,101,'V3.2','2026-05-15','ACTIVE');
+  (100,100,'V5.0','2026-03-31','RELEASED'),
+  (101,100,'V4.8','2025-11-30','SUNSET'),
+  (102,101,'V3.2','2026-05-15','RELEASED');
 
 INSERT IGNORE INTO delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,status,current_stage,risk_level,gate_mode,start_date,planned_end_date,description,created_by) VALUES
   (1000,100,'PRJ-26001','华东银行财务中台','华东银行',100,100,102,'ACTIVE','CUSTOM_DEV','RED','BLOCK','2026-04-01','2026-09-30','银行级财务中台与对账能力建设',100),

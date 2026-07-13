@@ -31,8 +31,8 @@ class ClassificationServiceTest {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (900,'智鹿','ZHILU-REQ')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (900,900,'engineer','工程师','ACTIVE')");
-    jdbc.update("insert into product(id,code,name,status) values (900,'ERP','ERP','ACTIVE')");
-    jdbc.update("insert into product_version(id,product_id,version_name,status) values (900,900,'V1','ACTIVE')");
+    jdbc.update("insert into product(id,organization_id,code,name,status) values (900,900,'ERP','ERP','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) values (900,900,'V1','RELEASED')");
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (900,900,'PRJ-900','需求项目','客户',900,900,900,900)");
   }
 
