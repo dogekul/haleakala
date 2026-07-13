@@ -196,6 +196,46 @@ it('编辑版本并以当前版本号全量替换功能清单', async () => {
   })))
 })
 
+it('清单保存 pending 时切换版本不会污染另一版本缓存', async () => {
+  let resolveVersionA!: (value: Response) => void
+  const pendingVersionA = new Promise<Response>(resolve => { resolveVersionA = resolve })
+  const manifestA = { versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] }
+  const savedManifestA = { ...manifestA, version: 4 }
+  const manifestB = { versionId: 32, version: 5, entries: [
+    { featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'INCLUDED' },
+  ] }
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path.endsWith('/versions/31/features') && init?.method === 'PUT') return pendingVersionA
+    if (path.endsWith('/versions/32/features') && init?.method === 'PUT') return json({ ...manifestB, version: 6 })
+    if (!init?.method && path.endsWith('/versions/31/features')) return json(manifestA)
+    if (!init?.method && path.endsWith('/versions/32/features')) return json(manifestB)
+    return responseFor(path)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  show(fetch, ['product:read', 'product:write'], client)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '版本' }))
+  expect(await screen.findByLabelText('总账处理可用性')).toHaveValue('INCLUDED')
+  await user.click(screen.getByRole('button', { name: '保存功能清单' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"version":3'),
+  })))
+
+  await user.click(screen.getByText('V5.1'))
+  expect(await screen.findByLabelText('总账处理可用性')).toHaveValue('PLANNED')
+  void json(savedManifestA).then(resolveVersionA)
+
+  await waitFor(() => expect(client.getQueryData(['product-manifest', 8, 31])).toEqual(savedManifestA))
+  expect(client.getQueryData(['product-manifest', 8, 32])).toEqual(manifestB)
+  expect(screen.getByLabelText('总账处理可用性')).toHaveValue('PLANNED')
+
+  await user.click(screen.getByRole('button', { name: '保存功能清单' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/32/features', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"version":5'),
+  })))
+})
+
 it('更新版本后保存清单使用服务端返回的新乐观锁版本', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)

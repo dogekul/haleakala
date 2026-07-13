@@ -12,6 +12,10 @@ const nextStatuses: Record<VersionStatus, VersionStatus[]> = {
   SUNSET: ['SUNSET', 'ARCHIVED'], ARCHIVED: ['ARCHIVED'],
 }
 const availabilityLabels: Record<Availability, string> = { INCLUDED: '已纳入', PLANNED: '计划中', REMOVED: '已移除' }
+type ManifestSaveVariables = {
+  versionId: number
+  payload: { version: number; entries: { featureId: number; availability: Availability }[] }
+}
 
 export function ProductVersionsTab({ productId, readOnly }: { productId: number; readOnly: boolean }) {
   const client = useQueryClient()
@@ -42,16 +46,16 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
     return (features.data ?? []).filter(item => !term || `${item.code}${item.name}`.toLowerCase().includes(term))
   }, [features.data, keyword])
   const saveManifest = useMutation({
-    mutationFn: () => productApi.replaceManifest(productId, selected!.id, {
-      version: manifest.data!.version,
-      entries: (features.data ?? []).map(item => ({ featureId: item.id, availability: rows[item.id] ?? 'REMOVED' })),
-    }),
-    onSuccess: async data => {
-      client.setQueryData(['product-manifest', productId, selectedId], data)
+    mutationFn: ({ versionId, payload }: ManifestSaveVariables) => productApi.replaceManifest(productId, versionId, payload),
+    onSuccess: async (data, variables) => {
+      client.setQueryData(['product-manifest', productId, variables.versionId], data)
       await client.invalidateQueries({ queryKey: ['product-versions', productId] })
       message.success('版本功能清单已保存')
     },
-    onError: (error: Error) => message.error(error.message),
+    onError: async (error: Error, variables) => {
+      message.error(error.message)
+      await client.invalidateQueries({ queryKey: ['product-manifest', productId, variables.versionId], exact: true })
+    },
   })
   return <PageState loading={versions.isLoading || features.isLoading} error={(versions.error || features.error) as Error | null}
     onRetry={() => void Promise.all([versions.refetch(), features.refetch()])}>
@@ -70,7 +74,13 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
       </Card>
       <Card className="version-manifest-card" title={selected ? `${selected.versionName} · 功能清单` : '功能清单'}
         extra={<Button type="primary" size="small" aria-label="保存功能清单" disabled={readOnly || !selected || !manifest.data}
-          loading={saveManifest.isPending} onClick={() => saveManifest.mutate()}>保存功能清单</Button>}>
+          loading={saveManifest.isPending} onClick={() => selected && manifest.data && saveManifest.mutate({
+            versionId: selected.id,
+            payload: {
+              version: manifest.data.version,
+              entries: (features.data ?? []).map(item => ({ featureId: item.id, availability: rows[item.id] ?? 'REMOVED' })),
+            },
+          })}>保存功能清单</Button>}>
         {!selected ? <div className="product-empty-copy">请选择版本</div> : <PageState loading={manifest.isLoading} error={manifest.error}
           onRetry={() => void manifest.refetch()}>
           <Input className="version-manifest-search" allowClear prefix={<SearchOutlined />} placeholder="搜索功能" value={keyword}
