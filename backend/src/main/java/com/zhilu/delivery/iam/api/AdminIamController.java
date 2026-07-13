@@ -94,6 +94,11 @@ public class AdminIamController {
     return admin.roles();
   }
 
+  @GetMapping("/permissions")
+  public List<Map<String, Object>> permissions() {
+    return admin.permissions();
+  }
+
   @PutMapping("/roles/{id}/permissions")
   public Map<String, Object> replacePermissions(
       @PathVariable long id, @Valid @RequestBody RolePermissionsRequest request) {

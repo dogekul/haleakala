@@ -120,6 +120,23 @@ class AdminIamControllerTest {
         .andExpect(jsonPath("$.permissions.length()").value(2));
   }
 
+  @Test
+  void adminCanReadPermissionCatalogButCannotRemoveOwnManagementPermission() throws Exception {
+    mvc.perform(get("/api/v1/admin/permissions").with(admin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].code").isNotEmpty())
+        .andExpect(jsonPath("$[0].name").isNotEmpty())
+        .andExpect(jsonPath("$[0].module").isNotEmpty());
+
+    mvc.perform(put("/api/v1/admin/roles/1/permissions")
+            .with(admin())
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"permissionCodes\":[\"dashboard:read\"]}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CONFLICT"));
+  }
+
   private RequestPostProcessor admin() {
     CurrentUser principal = new CurrentUser(300L, 300L, "admin", "系统管理员",
         Collections.singletonList("ADMIN"), Collections.singletonList("system:manage"));

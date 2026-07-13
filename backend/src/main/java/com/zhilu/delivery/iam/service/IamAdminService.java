@@ -5,6 +5,7 @@ import com.zhilu.delivery.common.error.NotFoundException;
 import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -148,10 +149,33 @@ public class IamAdminService {
     return result;
   }
 
+  public List<Map<String, Object>> permissions() {
+    return jdbc.query("select code,name,module from permission order by module,code",
+        (row, index) -> {
+          Map<String, Object> item = new LinkedHashMap<String, Object>();
+          item.put("code", row.getString("code"));
+          item.put("name", row.getString("name"));
+          item.put("module", row.getString("module"));
+          return item;
+        });
+  }
+
   @Transactional
   public Map<String, Object> replacePermissions(long roleId, List<String> permissionCodes) {
+    List<String> roleCodes = jdbc.queryForList("select code from role where id=?",
+        String.class, roleId);
+    if (roleCodes.isEmpty()) throw new NotFoundException("角色不存在");
+    LinkedHashSet<String> uniqueCodes = new LinkedHashSet<String>(permissionCodes);
+    if ("ADMIN".equals(roleCodes.get(0)) && !uniqueCodes.contains("system:manage")) {
+      throw new ConflictException("系统管理员必须保留系统管理权限");
+    }
+    for (String code : uniqueCodes) {
+      Integer count = jdbc.queryForObject("select count(*) from permission where code=?",
+          Integer.class, code);
+      if (count == null || count == 0) throw new IllegalArgumentException("权限不存在: " + code);
+    }
     jdbc.update("delete from role_permission where role_id=?", roleId);
-    for (String code : permissionCodes) {
+    for (String code : uniqueCodes) {
       Long permissionId = jdbc.queryForObject(
           "select id from permission where code=?", Long.class, code);
       jdbc.update(
