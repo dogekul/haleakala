@@ -105,6 +105,10 @@ if ! docker exec rainier-frontend nginx -t; then
   exit 1
 fi
 docker exec rainier-frontend nginx -s reload
+for _ in $(seq 1 10); do
+  curl -fsS http://127.0.0.1/zhilu/actuator/health | grep -q '"status":"UP"' && break
+  sleep 1
+done
 REMOTE_SCRIPT
 
 echo "Checking the public demo..."
