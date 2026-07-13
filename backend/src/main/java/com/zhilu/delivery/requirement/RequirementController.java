@@ -24,8 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class RequirementController {
   private final RequirementService requirements;
   private final ProjectService projects;
-  public RequirementController(RequirementService requirements, ProjectService projects) {
-    this.requirements = requirements; this.projects = projects;
+  private final RequirementFeatureService features;
+  public RequirementController(RequirementService requirements, ProjectService projects,
+      RequirementFeatureService features) {
+    this.requirements = requirements; this.projects = projects; this.features = features;
   }
 
   @GetMapping public List<Map<String, Object>> list(
@@ -45,7 +47,11 @@ public class RequirementController {
   @PostMapping("/{id}/confirm") public Map<String,Object> confirm(@PathVariable long id,@Valid @RequestBody ConfirmRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.confirm(id,request.level,request.overrideReason,user.getId()); }
   @PostMapping("/{id}/duplicates") public List<Map<String,Object>> duplicates(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.findDuplicates(id); }
   @PostMapping("/{sourceId}/merge/{targetId}") public Map<String,Object> merge(@PathVariable long sourceId,@PathVariable long targetId,@AuthenticationPrincipal CurrentUser user){ get(sourceId,user); get(targetId,user); return requirements.merge(sourceId,targetId,user.getId()); }
+  @GetMapping("/{id}/product-features") public Map<String,Object> coverage(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return features.coverage(id,user); }
+  @PutMapping("/{id}/product-features") public Map<String,Object> replaceCoverage(@PathVariable long id,@Valid @RequestBody CoverageRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); java.util.ArrayList<RequirementFeatureService.CoverageEntry> entries=new java.util.ArrayList<RequirementFeatureService.CoverageEntry>(); for(CoverageItem item:request.entries)entries.add(new RequirementFeatureService.CoverageEntry(item.featureId,item.coverageType)); return features.replaceCoverage(id,user,entries); }
 
   public static final class SaveRequest { @NotNull public Long projectId; @NotBlank public String title; @NotBlank public String description; public String source; public String priority="P2"; public long version; }
   public static final class ConfirmRequest { @NotBlank public String level; public String overrideReason; }
+  public static final class CoverageRequest { @Valid @NotNull public List<CoverageItem> entries; }
+  public static final class CoverageItem { @NotNull public Long featureId; @NotBlank public String coverageType; }
 }

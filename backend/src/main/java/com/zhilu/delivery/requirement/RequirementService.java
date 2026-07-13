@@ -53,7 +53,7 @@ public class RequirementService {
   }
 
   public List<Map<String, Object>> list(CurrentUser user, Long projectId, String keyword, String status) {
-    StringBuilder sql = new StringBuilder("select r.*,p.code project_code,p.name project_name,d.confirmed_level,s.suggested_level,s.confidence,s.reason suggestion_reason "
+    StringBuilder sql = new StringBuilder("select r.*,p.product_id,p.code project_code,p.name project_name,d.confirmed_level,s.suggested_level,s.confidence,s.reason suggestion_reason "
         + "from requirement_item r join delivery_project p on p.id=r.project_id "
         + "left join classification_decision d on d.requirement_id=r.id "
         + "left join classification_suggestion s on s.id=(select max(s2.id) from classification_suggestion s2 where s2.requirement_id=r.id) "
@@ -81,7 +81,7 @@ public class RequirementService {
   }
 
   public Map<String, Object> get(long id) {
-    List<Map<String, Object>> values = jdbc.query("select r.*,p.code project_code,p.name project_name,d.confirmed_level,d.suggestion_level decision_suggestion_level,d.override_reason,"
+    List<Map<String, Object>> values = jdbc.query("select r.*,p.product_id,p.code project_code,p.name project_name,d.confirmed_level,d.suggestion_level decision_suggestion_level,d.override_reason,"
         + "s.suggested_level,s.confidence,s.reason suggestion_reason from requirement_item r join delivery_project p on p.id=r.project_id "
         + "left join classification_decision d on d.requirement_id=r.id left join classification_suggestion s on s.id=(select max(s2.id) from classification_suggestion s2 where s2.requirement_id=r.id) where r.id=?",
         (row, index) -> map(row), id);
@@ -194,7 +194,7 @@ public class RequirementService {
   }
   private Map<String, Object> map(java.sql.ResultSet row) throws java.sql.SQLException {
     Map<String, Object> value = new LinkedHashMap<String, Object>();
-    value.put("id", row.getLong("id")); value.put("organizationId", row.getLong("organization_id")); value.put("projectId", row.getLong("project_id"));
+    value.put("id", row.getLong("id")); value.put("organizationId", row.getLong("organization_id")); value.put("projectId", row.getLong("project_id")); value.put("productId", row.getLong("product_id"));
     value.put("projectCode", row.getString("project_code")); value.put("projectName", row.getString("project_name")); value.put("code", row.getString("requirement_code"));
     value.put("title", row.getString("title")); value.put("description", row.getString("description")); value.put("source", row.getString("source"));
     value.put("priority", row.getString("priority")); value.put("status", row.getString("status")); value.put("validationWarning", row.getString("validation_warning"));
