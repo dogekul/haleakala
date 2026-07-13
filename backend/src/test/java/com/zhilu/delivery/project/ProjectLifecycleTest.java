@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.iam.service.CurrentUser;
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,14 +59,15 @@ class ProjectLifecycleTest {
   }
 
   @Test
-  void blockingGateStopsAdvanceWhileWarningModeRecordsAndAdvances() {
+  void persistedGateModeControlsWhetherBlockingGateStopsAdvance() {
     ProjectView project = projects.create(command("PRJ-601"));
-    projects.setGate(project.getId(), "START", "BLOCKING", "启动检查单未完成", 600);
+    projects.setGate(project.getId(), "START", "BLOCKING", "启动检查单未完成", manager());
 
     assertThrows(ConflictException.class, () -> projects.advanceStage(
-        project.getId(), DeliveryStage.REQUIREMENT, GateMode.BLOCK, 600));
+        project.getId(), DeliveryStage.REQUIREMENT, manager()));
+    jdbc.update("update delivery_project set gate_mode='WARNING' where id=?", project.getId());
     ProjectView advanced = projects.advanceStage(
-        project.getId(), DeliveryStage.REQUIREMENT, GateMode.WARNING, 600);
+        project.getId(), DeliveryStage.REQUIREMENT, manager());
 
     assertEquals("REQUIREMENT", advanced.getCurrentStage());
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
@@ -72,8 +75,33 @@ class ProjectLifecycleTest {
         Integer.class, project.getId()));
   }
 
+  @Test
+  void closedProjectCannotBeReopenedAndUnknownStatusIsRejected() {
+    ProjectView project = projects.create(command("PRJ-602"));
+
+    ProjectView closing = projects.updateSettings(project.getId(), project.getName(), "CLOSING",
+        project.getRiskLevel(), project.getGateMode(), project.getPlannedEndDate(),
+        project.getVersion(), manager());
+    ProjectView closed = projects.updateSettings(project.getId(), closing.getName(), "CLOSED",
+        closing.getRiskLevel(), closing.getGateMode(), closing.getPlannedEndDate(),
+        closing.getVersion(), manager());
+
+    assertThrows(ConflictException.class, () -> projects.updateSettings(closed.getId(),
+        closed.getName(), "ACTIVE", closed.getRiskLevel(), closed.getGateMode(),
+        closed.getPlannedEndDate(), closed.getVersion(), manager()));
+    assertThrows(IllegalArgumentException.class, () -> projects.updateSettings(closed.getId(),
+        closed.getName(), "HACKED", closed.getRiskLevel(), closed.getGateMode(),
+        closed.getPlannedEndDate(), closed.getVersion(), manager()));
+  }
+
   private CreateProjectCommand command(String code) {
     return new CreateProjectCommand(600, code, "华东银行核心系统交付", "华东银行",
         600, 600, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
+  }
+
+  private CurrentUser manager() {
+    return new CurrentUser(600L, 600L, "manager", "交付负责人",
+        Collections.singletonList("DELIVERY_MANAGER"),
+        Collections.singletonList("project:write"));
   }
 }

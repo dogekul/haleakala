@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,10 +21,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class StandardizationServiceTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private StandardizationService standardization;
+  @Autowired private StandardizationController controller;
 
   @BeforeEach void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-    for (String table : new String[]{"flywheel_metric","cost_attribution","standardization_debt","maturity_assessment","product_baseline","custom_dev_task","classification_decision","requirement_item","delivery_project","product_version","product","app_user","organization"}) jdbc.update("delete from " + table);
+    for (String table : new String[]{"audit_log","flywheel_metric","cost_attribution","standardization_debt","maturity_assessment","product_baseline","custom_dev_task","classification_decision","requirement_item","delivery_project","product_version","product","app_user","organization"}) jdbc.update("delete from " + table);
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (1000,'智鹿','ZHILU-STD')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (1000,1000,'product','产品经理','ACTIVE')");
@@ -56,5 +58,28 @@ class StandardizationServiceTest {
     assertEquals(0,((Number)assessment.get("standardCoverage")).intValue());
     assertEquals(50,((Number)assessment.get("maturityScore")).intValue());
     assertEquals(100000.0,((Number)standardization.costs(1000).get("actualCost")).doubleValue(),0.01);
+  }
+
+  @Test void taskCostWorkflowIsOrganizationScopedAndEditable() {
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,title,description,status,created_by) values (1200,1000,1000,'R-NEW','新二开任务','需要受控扩展','CONFIRMED',1000)");
+    jdbc.update("insert into classification_decision(requirement_id,confirmed_level,confirmed_by) values (1200,'L1',1000)");
+
+    StandardizationController.TaskRequest request=new StandardizationController.TaskRequest();
+    request.requirementId=1200L;request.projectId=1000L;request.title="新二开任务";request.status="BACKLOG";
+    request.technicalOwnerId=1000L;request.estimatedPersonDays=new java.math.BigDecimal("4");
+    request.actualPersonDays=java.math.BigDecimal.ZERO;request.estimatedCost=new java.math.BigDecimal("8000");
+    request.actualCost=java.math.BigDecimal.ZERO;request.extensionPoint="payment.export";
+    CurrentUser actor=new CurrentUser(1000L,1000L,"product","产品经理",java.util.Collections.<String>emptyList(),java.util.Arrays.asList("standardization:read","standardization:write"));
+    Map<String,Object> created=controller.createTask(request,actor);
+    assertEquals(6,standardization.tasks(1000,1000).size());
+    assertEquals(0,standardization.tasks(9999,1000).size());
+    assertEquals(1,jdbc.queryForObject("select count(*) from audit_log where resource_type='CUSTOM_DEV_TASK' and action='CREATE'",Integer.class));
+
+    long id=((Number)created.get("id")).longValue();
+    Map<String,Object> updated=standardization.saveTask(id,1000,1200,1000,"新二开任务","DONE",1000L,
+        new java.math.BigDecimal("4"),new java.math.BigDecimal("5"),new java.math.BigDecimal("8000"),
+        new java.math.BigDecimal("10000"),"payment.export",0);
+    assertEquals("DONE",updated.get("status"));
+    assertEquals(110000.0,((Number)standardization.costs(1000).get("actualCost")).doubleValue(),0.01);
   }
 }

@@ -6,6 +6,7 @@ import com.zhilu.delivery.iam.service.CurrentUser;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -18,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ProjectService {
+  private static final List<String> PROJECT_STATUSES =
+      Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
 
   public ProjectService(JdbcTemplate jdbc) {
@@ -79,11 +82,17 @@ public class ProjectService {
   }
 
   public List<ProjectView> list(CurrentUser user) {
-    if (user == null || hasCrossProjectScope(user)) return list();
-    List<Long> ids = jdbc.queryForList(
-        "select p.id from delivery_project p join project_member m on m.project_id=p.id "
-            + "where p.organization_id=? and m.user_id=? order by p.updated_at desc",
-        Long.class, user.getOrganizationId(), user.getId());
+    if (user == null) return list();
+    String sql = "select p.id from delivery_project p";
+    List<Long> ids;
+    if (hasCrossProjectScope(user)) {
+      ids = jdbc.queryForList(sql + " where p.organization_id=? order by p.updated_at desc",
+          Long.class, user.getOrganizationId());
+    } else {
+      ids = jdbc.queryForList(sql + " join project_member m on m.project_id=p.id "
+              + "where p.organization_id=? and m.user_id=? order by p.updated_at desc",
+          Long.class, user.getOrganizationId(), user.getId());
+    }
     List<ProjectView> result = new ArrayList<ProjectView>();
     for (Long id : ids) result.add(get(id));
     return result;
@@ -110,15 +119,17 @@ public class ProjectService {
   }
 
   public ProjectView get(long projectId, CurrentUser user) {
-    ProjectView project = get(projectId);
-    if (user != null && !hasCrossProjectScope(user)) assertMember(projectId, user.getId());
-    return project;
+    if (user != null) assertProjectAccess(projectId, user);
+    return get(projectId);
   }
 
   @Transactional
   public ProjectView advanceStage(
-      long projectId, DeliveryStage target, GateMode mode, long actorUserId) {
-    ProjectView project = get(projectId);
+      long projectId, DeliveryStage target, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    if (!"ACTIVE".equals(project.getStatus())) {
+      throw new ConflictException("只有进行中的项目可以推进阶段");
+    }
     DeliveryStage current = DeliveryStage.valueOf(project.getCurrentStage());
     if (target.ordinal() != current.ordinal() + 1) {
       throw new ConflictException("只能推进到下一个交付阶段");
@@ -127,7 +138,7 @@ public class ProjectService {
         "select gate_status,gate_message from stage_instance where project_id=? and stage_code=?",
         projectId, current.name());
     boolean blocked = "BLOCKING".equals(gate.get("gate_status"));
-    if (blocked && mode == GateMode.BLOCK) {
+    if (blocked && GateMode.BLOCK.name().equals(project.getGateMode())) {
       throw new ConflictException(String.valueOf(gate.get("gate_message")));
     }
     jdbc.update("update stage_instance set status='COMPLETED',completed_at=current_timestamp,"
@@ -138,7 +149,7 @@ public class ProjectService {
         projectId, target.name());
     jdbc.update("update delivery_project set current_stage=?,updated_at=current_timestamp,"
             + "version=version+1 where id=?", target.name(), projectId);
-    activity(projectId, actorUserId,
+    activity(projectId, user.getId(),
         blocked ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
         "项目阶段推进至" + target.getDisplayName(),
         blocked ? String.valueOf(gate.get("gate_message")) : null);
@@ -147,21 +158,26 @@ public class ProjectService {
 
   @Transactional
   public void setGate(
-      long projectId, String stageCode, String status, String message, long actorUserId) {
+      long projectId, String stageCode, String status, String message, CurrentUser user) {
+    assertProjectAccess(projectId, user);
     int changed = jdbc.update("update stage_instance set gate_status=?,gate_message=?,"
             + "updated_at=current_timestamp,version=version+1 where project_id=? and stage_code=?",
         status, message, projectId, stageCode);
     if (changed == 0) throw new NotFoundException("项目阶段不存在");
-    activity(projectId, actorUserId, "GATE_UPDATED", "更新阶段门禁：" + stageCode, message);
+    activity(projectId, user.getId(), "GATE_UPDATED", "更新阶段门禁：" + stageCode, message);
   }
 
   @Transactional
   public Map<String, Object> addMember(
-      long projectId, long userId, String projectRole, int allocation, long actorUserId) {
-    get(projectId);
+      long projectId, long userId, String projectRole, int allocation, CurrentUser user) {
+    assertProjectAccess(projectId, user);
+    Integer localUser = jdbc.queryForObject(
+        "select count(*) from app_user where id=? and organization_id=?",
+        Integer.class, userId, user.getOrganizationId());
+    if (localUser == null || localUser == 0) throw new NotFoundException("用户不存在");
     jdbc.update("insert into project_member(project_id,user_id,project_role,allocation_percent) "
         + "values (?,?,?,?)", projectId, userId, projectRole, allocation);
-    activity(projectId, actorUserId, "MEMBER_ADDED", "添加项目成员", String.valueOf(userId));
+    activity(projectId, user.getId(), "MEMBER_ADDED", "添加项目成员", String.valueOf(userId));
     return members(projectId).stream().filter(item -> ((Number) item.get("userId")).longValue() == userId)
         .findFirst().orElse(Collections.emptyMap());
   }
@@ -169,8 +185,8 @@ public class ProjectService {
   @Transactional
   public Map<String, Object> addRisk(
       long projectId, String title, String category, int probability, int impact,
-      Long ownerUserId, String mitigation, LocalDate dueDate, long actorUserId) {
-    get(projectId);
+      Long ownerUserId, String mitigation, LocalDate dueDate, CurrentUser user) {
+    assertProjectAccess(projectId, user);
     String level = riskLevel(probability, impact);
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("project_id", projectId);
@@ -185,26 +201,27 @@ public class ProjectService {
     values.put("due_date", date(dueDate));
     long id = insert("project_risk", values);
     refreshProjectRisk(projectId);
-    activity(projectId, actorUserId, "RISK_CREATED", "登记风险：" + title, level);
+    activity(projectId, user.getId(), "RISK_CREATED", "登记风险：" + title, level);
     return findById(risks(projectId), id);
   }
 
   @Transactional
   public Map<String, Object> updateRisk(
-      long projectId, long riskId, String status, String mitigation, long actorUserId) {
+      long projectId, long riskId, String status, String mitigation, CurrentUser user) {
+    assertProjectAccess(projectId, user);
     int changed = jdbc.update("update project_risk set status=?,mitigation=?,"
             + "updated_at=current_timestamp,version=version+1 where id=? and project_id=?",
         status, mitigation, riskId, projectId);
     if (changed == 0) throw new NotFoundException("项目风险不存在");
     refreshProjectRisk(projectId);
-    activity(projectId, actorUserId, "RISK_UPDATED", "更新风险状态：" + status, String.valueOf(riskId));
+    activity(projectId, user.getId(), "RISK_UPDATED", "更新风险状态：" + status, String.valueOf(riskId));
     return findById(risks(projectId), riskId);
   }
 
   @Transactional
   public Map<String, Object> addMilestone(
-      long projectId, String name, LocalDate dueDate, Long ownerUserId, long actorUserId) {
-    get(projectId);
+      long projectId, String name, LocalDate dueDate, Long ownerUserId, CurrentUser user) {
+    assertProjectAccess(projectId, user);
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("project_id", projectId);
     values.put("name", name);
@@ -213,15 +230,15 @@ public class ProjectService {
     values.put("progress", 0);
     values.put("owner_user_id", ownerUserId);
     long id = insert("milestone", values);
-    activity(projectId, actorUserId, "MILESTONE_CREATED", "新增里程碑：" + name, null);
+    activity(projectId, user.getId(), "MILESTONE_CREATED", "新增里程碑：" + name, null);
     return findById(milestones(projectId), id);
   }
 
   @Transactional
   public Map<String, Object> saveTemplate(
       long projectId, Long id, String key, String title, String markdown,
-      String status, long expectedVersion, long actorUserId) {
-    get(projectId);
+      String status, long expectedVersion, CurrentUser user) {
+    assertProjectAccess(projectId, user);
     long templateId;
     if (id == null) {
       Map<String, Object> values = new HashMap<String, Object>();
@@ -230,31 +247,33 @@ public class ProjectService {
       values.put("title", title);
       values.put("content_markdown", markdown);
       values.put("status", status);
-      values.put("updated_by", actorUserId);
+      values.put("updated_by", user.getId());
       templateId = insert("template_instance", values);
     } else {
       int changed = jdbc.update("update template_instance set title=?,content_markdown=?,status=?,"
               + "updated_by=?,updated_at=current_timestamp,version=version+1 "
               + "where id=? and project_id=? and version=?",
-          title, markdown, status, actorUserId, id, projectId, expectedVersion);
+          title, markdown, status, user.getId(), id, projectId, expectedVersion);
       if (changed == 0) throw new ConflictException("模板已被其他人更新，请刷新后重试");
       templateId = id;
     }
-    activity(projectId, actorUserId, "TEMPLATE_SAVED", "保存模板：" + title, key);
+    activity(projectId, user.getId(), "TEMPLATE_SAVED", "保存模板：" + title, key);
     return findById(templates(projectId), templateId);
   }
 
   @Transactional
   public ProjectView updateSettings(
       long projectId, String name, String status, String riskLevel, String gateMode,
-      LocalDate plannedEndDate, long expectedVersion, long actorUserId) {
+      LocalDate plannedEndDate, long expectedVersion, CurrentUser user) {
+    ProjectView current = get(projectId, user);
+    validateStatusTransition(current.getStatus(), status);
     int changed = jdbc.update("update delivery_project set name=?,status=?,risk_level=?,gate_mode=?,"
             + "planned_end_date=?,updated_at=current_timestamp,version=version+1 "
             + "where id=? and version=?",
         name, status, riskLevel, normalizeGateMode(gateMode), date(plannedEndDate),
         projectId, expectedVersion);
     if (changed == 0) throw new ConflictException("项目已被其他人更新，请刷新后重试");
-    activity(projectId, actorUserId, "PROJECT_SETTINGS_UPDATED", "更新项目信息与设置", null);
+    activity(projectId, user.getId(), "PROJECT_SETTINGS_UPDATED", "更新项目信息与设置", null);
     return get(projectId);
   }
 
@@ -321,15 +340,33 @@ public class ProjectService {
             "createdAt", row.getTimestamp("created_at").toLocalDateTime()), projectId);
   }
 
-  private void assertMember(long projectId, long userId) {
+  private void assertProjectAccess(long projectId, CurrentUser user) {
+    Integer project = jdbc.queryForObject(
+        "select count(*) from delivery_project where id=? and organization_id=?",
+        Integer.class, projectId, user.getOrganizationId());
+    if (project == null || project == 0) throw new NotFoundException("项目不存在或无权访问");
+    if (hasCrossProjectScope(user)) return;
     Integer count = jdbc.queryForObject(
         "select count(*) from project_member where project_id=? and user_id=?",
-        Integer.class, projectId, userId);
+        Integer.class, projectId, user.getId());
     if (count == null || count == 0) throw new NotFoundException("项目不存在或无权访问");
   }
 
   private boolean hasCrossProjectScope(CurrentUser user) {
     return user.getRoles().contains("ADMIN") || user.getRoles().contains("PMO");
+  }
+
+  private void validateStatusTransition(String current, String target) {
+    if (!PROJECT_STATUSES.contains(target)) {
+      throw new IllegalArgumentException("项目状态不受支持");
+    }
+    if (current.equals(target)) return;
+    boolean legal = "ACTIVE".equals(current)
+        && ("SUSPENDED".equals(target) || "CLOSING".equals(target));
+    legal = legal || "SUSPENDED".equals(current)
+        && ("ACTIVE".equals(target) || "CLOSING".equals(target));
+    legal = legal || "CLOSING".equals(current) && "CLOSED".equals(target);
+    if (!legal) throw new ConflictException("非法的项目状态转换");
   }
 
   private void refreshProjectRisk(long projectId) {

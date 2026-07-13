@@ -52,6 +52,27 @@ export interface CostSummary {
   byExtensionPoint: Array<{ extension_point: string; task_count: number; person_days: number; amount: number }>
 }
 
+export interface CustomDevTask {
+  id: number
+  requirementId: number
+  requirementCode: string
+  requirementTitle?: string
+  projectId: number
+  projectCode?: string
+  projectName: string
+  productVersionId: number
+  title: string
+  status: 'BACKLOG' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED'
+  technicalOwnerId?: number
+  technicalOwnerName?: string
+  estimatedPersonDays?: number
+  actualPersonDays?: number
+  estimatedCost?: number
+  actualCost?: number
+  extensionPoint?: string
+  version: number
+}
+
 export interface FlywheelMetric {
   period: string
   confirmedRequirements: number

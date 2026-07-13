@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import javax.servlet.http.HttpSession;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.storage.ObjectStorage;
 import java.util.Collections;
 import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -24,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.mock.web.MockMultipartFile;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:security;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -37,9 +40,12 @@ class SecurityAccessTest {
 
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @MockBean private ObjectStorage objects;
 
   @BeforeEach
   void seedLoginUser() {
+    jdbc.update("delete from file_version");
+    jdbc.update("delete from file_object");
     jdbc.update("delete from user_role");
     jdbc.update("delete from role_permission");
     jdbc.update("delete from app_user");
@@ -152,6 +158,74 @@ class SecurityAccessTest {
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"NO-WRITE\",\"name\":\"不可写产品\"}"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void classificationActionsUseClassifyPermissionInsteadOfRequirementWrite() throws Exception {
+    mvc.perform(post("/api/v1/requirements/999/classify")
+            .with(actor("requirement:write")).with(csrf()))
+        .andExpect(status().isForbidden());
+    mvc.perform(post("/api/v1/requirements/999/confirm")
+            .with(actor("requirement:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"level\":\"L1\",\"overrideReason\":\"reviewed\"}"))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(post("/api/v1/requirements/999/classify")
+            .with(actor("requirement:classify")).with(csrf()))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/requirements/999/confirm")
+            .with(actor("requirement:classify")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"level\":\"L1\",\"overrideReason\":\"reviewed\"}"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void agentPostAndCancelUseExecutePermissionWhileGetKeepsProjectRead() throws Exception {
+    mvc.perform(post("/api/v1/projects/999/agent-jobs")
+            .with(actor("project:write")).with(csrf())
+            .header("Idempotency-Key", "security-test")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"skill\":\"requirement-classify\"}"))
+        .andExpect(status().isForbidden());
+    mvc.perform(post("/api/v1/agent-jobs/999/cancel")
+            .with(actor("project:write")).with(csrf()))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(post("/api/v1/projects/999/agent-jobs")
+            .with(actor("agent:execute")).with(csrf())
+            .header("Idempotency-Key", "security-test")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"skill\":\"requirement-classify\"}"))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/agent-jobs/999/cancel")
+            .with(actor("agent:execute")).with(csrf()))
+        .andExpect(status().isNotFound());
+    mvc.perform(get("/api/v1/agent-jobs/999").with(actor("project:read")))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void auditReadDoesNotGrantOtherAdministrationAccess() throws Exception {
+    mvc.perform(get("/api/v1/admin/audit-logs").with(actor("audit:read")))
+        .andExpect(status().isOk());
+    mvc.perform(get("/api/v1/admin/settings").with(actor("audit:read")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void fileWritesRequireFileWritePermission() throws Exception {
+    MockMultipartFile file = new MockMultipartFile(
+        "file", "security.txt", "text/plain", "security".getBytes("UTF-8"));
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+            .multipart("/api/v1/files").file(file)
+            .with(actor("project:write")).with(csrf()))
+        .andExpect(status().isForbidden());
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+            .multipart("/api/v1/files/999/versions").file(file)
+            .with(actor("project:write")).with(csrf()))
         .andExpect(status().isForbidden());
   }
 

@@ -88,6 +88,9 @@ public class SecurityConfig {
         .antMatchers(HttpMethod.GET, "/api/v1/products/**").authenticated()
         .antMatchers("/api/v1/products/**").hasAuthority("system:manage")
         .antMatchers("/api/v1/dashboard/**").hasAuthority("dashboard:read")
+        .antMatchers(HttpMethod.POST,
+            "/api/v1/requirements/*/classify",
+            "/api/v1/requirements/*/confirm").hasAuthority("requirement:classify")
         .antMatchers(HttpMethod.GET, "/api/v1/requirements/**").hasAuthority("requirement:read")
         .antMatchers("/api/v1/requirements/**").hasAuthority("requirement:write")
         .antMatchers(HttpMethod.GET, "/api/v1/standardization/**").hasAuthority("standardization:read")
@@ -97,8 +100,14 @@ public class SecurityConfig {
         .antMatchers(HttpMethod.GET, "/api/v1/resources/**").hasAuthority("resource:read")
         .antMatchers("/api/v1/resources/**").hasAuthority("resource:write")
         .antMatchers("/api/v1/integrations/agent/events").permitAll()
-        .antMatchers(HttpMethod.GET, "/api/v1/agent-jobs/**").hasAuthority("project:read")
-        .antMatchers("/api/v1/agent-jobs/**").hasAuthority("project:write")
+        .antMatchers(HttpMethod.POST,
+            "/api/v1/projects/*/agent-jobs",
+            "/api/v1/agent-jobs/*/cancel").hasAuthority("agent:execute")
+        .antMatchers(HttpMethod.GET,
+            "/api/v1/projects/*/agent-jobs",
+            "/api/v1/agent-jobs/**").hasAuthority("project:read")
+        .antMatchers(HttpMethod.POST, "/api/v1/files/**").hasAuthority("file:write")
+        .antMatchers(HttpMethod.GET, "/api/v1/files/**").authenticated()
         .antMatchers(HttpMethod.GET, "/api/v1/projects/**").hasAuthority("project:read")
         .antMatchers("/api/v1/projects/**").hasAuthority("project:write")
         .anyRequest().authenticated()

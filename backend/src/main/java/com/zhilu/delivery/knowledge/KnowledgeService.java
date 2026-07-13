@@ -33,12 +33,14 @@ public class KnowledgeService {
       CurrentUser user, String keyword, String type, String tag, boolean publishedOnly) {
     StringBuilder sql = new StringBuilder(
         "select k.*,p.name product_name,v.version_name,u.display_name owner_name,"
-            + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id "
+            + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id,"
+            + "f.original_name file_original_name,f.file_version,f.size_bytes file_size_bytes "
             + "from knowledge_item k left join product p on p.id=k.product_id "
             + "left join product_version v on v.id=k.product_version_id "
             + "join app_user u on u.id=k.owner_user_id "
             + "left join code_snippet c on c.knowledge_item_id=k.id "
-            + "left join training_material t on t.knowledge_item_id=k.id where k.organization_id=?");
+            + "left join training_material t on t.knowledge_item_id=k.id "
+            + "left join file_object f on f.id=t.file_object_id and f.organization_id=k.organization_id where k.organization_id=?");
     List<Object> args = new ArrayList<Object>();
     args.add(user.getOrganizationId());
     if (publishedOnly) {
@@ -61,11 +63,13 @@ public class KnowledgeService {
   public Map<String, Object> get(long id, CurrentUser user) {
     List<Map<String, Object>> values = jdbc.query(
         "select k.*,p.name product_name,v.version_name,u.display_name owner_name,"
-            + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id "
+            + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id,"
+            + "f.original_name file_original_name,f.file_version,f.size_bytes file_size_bytes "
             + "from knowledge_item k left join product p on p.id=k.product_id "
             + "left join product_version v on v.id=k.product_version_id join app_user u on u.id=k.owner_user_id "
             + "left join code_snippet c on c.knowledge_item_id=k.id "
-            + "left join training_material t on t.knowledge_item_id=k.id where k.id=? and k.organization_id=?",
+            + "left join training_material t on t.knowledge_item_id=k.id "
+            + "left join file_object f on f.id=t.file_object_id and f.organization_id=k.organization_id where k.id=? and k.organization_id=?",
         (row, index) -> detail(row), id, user.getOrganizationId());
     if (values.isEmpty()) throw new NotFoundException("知识条目不存在");
     Map<String, Object> value = values.get(0);
@@ -81,7 +85,8 @@ public class KnowledgeService {
   public Map<String, Object> create(
       CurrentUser user, String type, String title, String summary, String content,
       String tags, Long productId, Long productVersionId, String visibility,
-      String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes) {
+      String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes,
+      Long fileObjectId) {
     validate(type, title, summary, content);
     Map<String, Object> values = new LinkedHashMap<String, Object>();
     values.put("organization_id", user.getOrganizationId()); values.put("type", type);
@@ -91,7 +96,7 @@ public class KnowledgeService {
     values.put("visibility", blank(visibility) ? "ORGANIZATION" : visibility);
     values.put("owner_user_id", user.getId());
     long id = insert.executeAndReturnKey(values).longValue();
-    saveDetail(id, type, language, codeText, audienceOrUsageNotes, durationMinutes, null);
+    saveDetail(id, type, language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId);
     return get(id, user);
   }
 
@@ -162,6 +167,8 @@ public class KnowledgeService {
     value.put("language", row.getString("language")); value.put("codeText", row.getString("code_text"));
     value.put("usageNotes", row.getString("usage_notes")); value.put("audience", row.getString("audience"));
     value.put("durationMinutes", row.getObject("duration_minutes")); value.put("fileObjectId", row.getObject("file_object_id"));
+    value.put("fileOriginalName", row.getString("file_original_name")); value.put("fileVersion", row.getObject("file_version"));
+    value.put("fileSizeBytes", row.getObject("file_size_bytes"));
     return value;
   }
 

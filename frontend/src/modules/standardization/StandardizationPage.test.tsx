@@ -27,3 +27,35 @@ it('同时提供六个标准化视图和可核对的数字口径', async () => {
   expect(screen.getByRole('table')).toBeVisible()
   vi.unstubAllGlobals()
 })
+
+it('在成本归集视图创建并编辑二开任务成本', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => {
+    requests.push({ path: input, init })
+    let body: unknown = []
+    if (input.endsWith('/api/v1/products')) body = [{ id: 1, code: 'ERP', name: '企业财务', status: 'ACTIVE' }]
+    else if (input.includes('/versions')) body = [{ id: 11, productId: 1, versionName: 'V5.0', status: 'ACTIVE' }]
+    else if (input.includes('/tasks') && init?.method === 'PUT') body = { id: 31 }
+    else if (input.includes('/tasks')) body = [{ id: 31, requirementId: 201, projectId: 101, projectName: '银行项目', requirementCode: 'REQ-1', title: '对账幂等重跑', status: 'IN_PROGRESS', estimatedPersonDays: 18, actualPersonDays: 12, estimatedCost: 36000, actualCost: 26000, extensionPoint: 'reconciliation.retry', version: 0 }]
+    else if (input.includes('/costs')) body = { estimatedPersonDays: 18, actualPersonDays: 12, estimatedCost: 36000, actualCost: 26000, byExtensionPoint: [] }
+    else if (input.includes('/assessments')) body = { period: '2026-07', standardCoverage: 72, reuseRate: 64, documentationScore: 80, extensionReadiness: 56, deliveryStability: 90, maturityScore: 71 }
+    else if (input.includes('/flywheel')) body = { period: '2026-07', confirmedRequirements: 1, l0Count: 0, l1Count: 1, reuseRate: 0, debtClosedCount: 0, customCost: 26000, standardCoverage: 0 }
+    return Promise.resolve({ ok: true, status: 200, json: async () => body })
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><StandardizationPage /></MemoryRouter></QueryClientProvider>)
+
+  await userEvent.click(await screen.findByRole('tab', { name: /成本归集/ }))
+  expect(await screen.findByText('对账幂等重跑')).toBeVisible()
+  expect(screen.getByRole('button', { name: /新建二开任务/ })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: /编\s*辑/ }))
+  const actualCost = screen.getByLabelText('实际成本（元）')
+  await userEvent.clear(actualCost)
+  await userEvent.type(actualCost, '28000')
+  await userEvent.click(screen.getByRole('button', { name: '保存任务' }))
+
+  await waitFor(() => expect(requests.some(request => request.path === '/api/v1/standardization/tasks/31' && request.init?.method === 'PUT')).toBe(true))
+  const saved = requests.find(request => request.path === '/api/v1/standardization/tasks/31' && request.init?.method === 'PUT')
+  expect(JSON.parse(String(saved?.init?.body))).toMatchObject({ actualCost: 28000, version: 0 })
+  vi.unstubAllGlobals()
+})

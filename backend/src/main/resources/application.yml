@@ -45,6 +45,7 @@ delivery:
     api-key: ${AI_API_KEY:}
   storage:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${MINIO_PUBLIC_ENDPOINT:${MINIO_ENDPOINT:http://localhost:9000}}
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:delivery}

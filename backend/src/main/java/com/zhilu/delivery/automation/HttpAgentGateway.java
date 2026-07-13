@@ -35,17 +35,18 @@ public class HttpAgentGateway implements AgentGateway {
     this.http = new RestTemplate(factory);
   }
 
-  @Override public AgentSubmission submit(AgentRequest request) {
-    return call(HttpMethod.POST, "/v1/jobs", request, AgentSubmission.class);
+  @Override public AgentSubmission submit(String idempotencyKey, AgentRequest request) {
+    return call(HttpMethod.POST, "/v1/jobs", request, AgentSubmission.class, idempotencyKey);
   }
   @Override public AgentEvent status(String externalJobId) {
-    return call(HttpMethod.GET, "/v1/jobs/" + externalJobId, null, AgentEvent.class);
+    return call(HttpMethod.GET, "/v1/jobs/" + externalJobId, null, AgentEvent.class, null);
   }
   @Override public void cancel(String externalJobId) {
-    call(HttpMethod.POST, "/v1/jobs/" + externalJobId + "/cancel", null, Object.class);
+    call(HttpMethod.POST, "/v1/jobs/" + externalJobId + "/cancel", null, Object.class, null);
   }
 
-  private <T> T call(HttpMethod method, String path, Object body, Class<T> type) {
+  private <T> T call(HttpMethod method, String path, Object body, Class<T> type,
+      String idempotencyKey) {
     RuntimeException last = null;
     long[] backoff = {1000L, 3000L, 9000L};
     for (int attempt = 0; attempt < 3; attempt++) {
@@ -56,6 +57,9 @@ public class HttpAgentGateway implements AgentGateway {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-Agent-Timestamp", Long.toString(timestamp));
         headers.set("X-Agent-Signature", sign(timestamp + "." + payload));
+        if (idempotencyKey != null && !idempotencyKey.trim().isEmpty()) {
+          headers.set("Idempotency-Key", idempotencyKey);
+        }
         ResponseEntity<T> response = http.exchange(baseUrl + path, method,
             new HttpEntity<String>(payload, headers), type);
         return response.getBody();

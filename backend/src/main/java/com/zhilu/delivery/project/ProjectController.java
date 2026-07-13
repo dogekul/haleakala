@@ -57,7 +57,7 @@ public class ProjectController {
       @Valid @RequestBody AdvanceRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.advanceStage(id, DeliveryStage.valueOf(request.targetStage),
-        GateMode.valueOf(request.mode), user.getId());
+        user);
   }
 
   @PutMapping("/{id}/stages/{stageCode}/gate")
@@ -67,7 +67,7 @@ public class ProjectController {
       @PathVariable String stageCode,
       @Valid @RequestBody GateRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    projects.setGate(id, stageCode, request.status, request.message, user.getId());
+    projects.setGate(id, stageCode, request.status, request.message, user);
   }
 
   @PostMapping("/{id}/members")
@@ -77,7 +77,7 @@ public class ProjectController {
       @Valid @RequestBody MemberRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.addMember(id, request.userId, request.projectRole,
-        request.allocationPercent, user.getId());
+        request.allocationPercent, user);
   }
 
   @PostMapping("/{id}/risks")
@@ -87,7 +87,7 @@ public class ProjectController {
       @Valid @RequestBody RiskRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.addRisk(id, request.title, request.category, request.probability,
-        request.impact, request.ownerUserId, request.mitigation, request.dueDate, user.getId());
+        request.impact, request.ownerUserId, request.mitigation, request.dueDate, user);
   }
 
   @PutMapping("/{id}/risks/{riskId}")
@@ -96,7 +96,7 @@ public class ProjectController {
       @PathVariable long riskId,
       @Valid @RequestBody RiskUpdateRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return projects.updateRisk(id, riskId, request.status, request.mitigation, user.getId());
+    return projects.updateRisk(id, riskId, request.status, request.mitigation, user);
   }
 
   @PostMapping("/{id}/milestones")
@@ -106,7 +106,7 @@ public class ProjectController {
       @Valid @RequestBody MilestoneRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.addMilestone(
-        id, request.name, request.dueDate, request.ownerUserId, user.getId());
+        id, request.name, request.dueDate, request.ownerUserId, user);
   }
 
   @PostMapping("/{id}/templates")
@@ -116,7 +116,7 @@ public class ProjectController {
       @Valid @RequestBody TemplateRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.saveTemplate(id, null, request.templateKey, request.title,
-        request.contentMarkdown, request.status, 0, user.getId());
+        request.contentMarkdown, request.status, 0, user);
   }
 
   @PutMapping("/{id}/templates/{templateId}")
@@ -126,7 +126,7 @@ public class ProjectController {
       @Valid @RequestBody TemplateRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.saveTemplate(id, templateId, request.templateKey, request.title,
-        request.contentMarkdown, request.status, request.version, user.getId());
+        request.contentMarkdown, request.status, request.version, user);
   }
 
   @PutMapping("/{id}/settings")
@@ -135,7 +135,7 @@ public class ProjectController {
       @Valid @RequestBody SettingsRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     return projects.updateSettings(id, request.name, request.status, request.riskLevel,
-        request.gateMode, request.plannedEndDate, request.version, user.getId());
+        request.gateMode, request.plannedEndDate, request.version, user);
   }
 
   public static final class CreateRequest {

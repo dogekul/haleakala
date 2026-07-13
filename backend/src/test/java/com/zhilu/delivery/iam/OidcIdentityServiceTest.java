@@ -55,4 +55,13 @@ class OidcIdentityServiceTest {
     assertThrows(BadCredentialsException.class, () -> identities.authenticate(
         "feishu", "missing", "missing@example.com", true));
   }
+
+  @Test
+  void linkedIdentityCannotLoginAfterAccountIsDisabled() {
+    identities.authenticate("feishu", "disabled-subject", "sso@example.com", true);
+    jdbc.update("update app_user set status='DISABLED' where id=400");
+
+    assertThrows(BadCredentialsException.class, () -> identities.authenticate(
+        "feishu", "disabled-subject", null, false));
+  }
 }

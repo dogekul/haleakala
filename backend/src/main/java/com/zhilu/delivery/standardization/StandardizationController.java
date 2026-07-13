@@ -2,6 +2,7 @@ package com.zhilu.delivery.standardization;
 
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import javax.validation.Valid;
@@ -105,6 +106,39 @@ public class StandardizationController {
     return standardization.costs(productVersionId);
   }
 
+  @GetMapping("/tasks")
+  public List<Map<String, Object>> tasks(
+      @RequestParam long productVersionId, @AuthenticationPrincipal CurrentUser user) {
+    return standardization.tasks(user.getOrganizationId(), productVersionId);
+  }
+
+  @PostMapping("/tasks")
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> createTask(
+      @Valid @RequestBody TaskRequest request, @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = saveTask(null, request, user);
+    audit.record(user.getOrganizationId(), user.getId(), "CREATE", "CUSTOM_DEV_TASK",
+        String.valueOf(value.get("id")), request.title);
+    return value;
+  }
+
+  @PutMapping("/tasks/{id}")
+  public Map<String, Object> updateTask(
+      @PathVariable long id, @Valid @RequestBody TaskRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = saveTask(id, request, user);
+    audit.record(user.getOrganizationId(), user.getId(), "UPDATE", "CUSTOM_DEV_TASK",
+        String.valueOf(id), request.title);
+    return value;
+  }
+
+  private Map<String, Object> saveTask(Long id, TaskRequest request, CurrentUser user) {
+    return standardization.saveTask(id, user.getOrganizationId(), request.requirementId,
+        request.projectId, request.title, request.status, request.technicalOwnerId,
+        request.estimatedPersonDays, request.actualPersonDays, request.estimatedCost,
+        request.actualCost, request.extensionPoint, request.version);
+  }
+
   @PostMapping("/flywheel")
   public Map<String, Object> flywheel(@RequestParam long productVersionId) {
     return standardization.flywheel(productVersionId);
@@ -125,5 +159,19 @@ public class StandardizationController {
   public static final class TransitionRequest {
     @NotBlank public String targetStatus;
     public String verificationNote;
+  }
+
+  public static final class TaskRequest {
+    @NotNull public Long requirementId;
+    @NotNull public Long projectId;
+    @NotBlank public String title;
+    @NotBlank public String status;
+    public Long technicalOwnerId;
+    public BigDecimal estimatedPersonDays;
+    public BigDecimal actualPersonDays;
+    public BigDecimal estimatedCost;
+    public BigDecimal actualCost;
+    public String extensionPoint;
+    public long version;
   }
 }
