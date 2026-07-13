@@ -18,13 +18,13 @@ export function AdminPage() {
   return <div className="admin-page">
     <nav className="admin-nav" aria-label="系统管理导航">{sections.map(item => <NavLink key={item.path} to={`/admin/${item.path}`} aria-label={item.label} className={({ isActive }) => isActive ? 'active' : ''}>{item.icon}<span>{item.label}</span></NavLink>)}</nav>
     <Routes>
-      <Route index element={<Navigate to="users" replace />} />
+      <Route index element={<Navigate to="/admin/users" replace />} />
       <Route path="users" element={<UsersTeamsPage />} />
       <Route path="roles" element={<RolesPage />} />
       <Route path="products" element={<ProductsPage />} />
       <Route path="audit-logs" element={<AuditLogsPage />} />
       <Route path="settings" element={<SettingsPage />} />
-      <Route path="*" element={<Navigate to="users" replace />} />
+      <Route path="*" element={<Navigate to="/admin/users" replace />} />
     </Routes>
   </div>
 }
