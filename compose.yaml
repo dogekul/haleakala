@@ -1,0 +1,110 @@
+name: zhilu-delivery
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: delivery
+      MYSQL_USER: delivery
+      MYSQL_PASSWORD: ${DB_PASSWORD:-delivery}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-delivery}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "${MYSQL_PORT:-3309}:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "${MINIO_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock-agent:
+    build: ./mock-agent
+    environment:
+      PORT: 8090
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-local-agent-secret}
+    ports:
+      - "${AGENT_PORT:-8091}:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/delivery?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      DB_USERNAME: delivery
+      DB_PASSWORD: ${DB_PASSWORD:-delivery}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: delivery
+      AGENT_BASE_URL: http://mock-agent:8090
+      AGENT_CALLBACK_URL: http://backend:8080/api/v1/integrations/agent/events
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-local-agent-secret}
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/demo
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      TZ: Asia/Shanghai
+    ports:
+      - "${BACKEND_PORT:-8082}:8080"
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      mock-agent: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 8s
+      timeout: 4s
+      retries: 30
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${WEB_PORT:-53990}:80"
+    depends_on:
+      backend: { condition: service_healthy }
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:

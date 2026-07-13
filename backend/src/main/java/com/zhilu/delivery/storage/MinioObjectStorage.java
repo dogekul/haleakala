@@ -1,6 +1,8 @@
 package com.zhilu.delivery.storage;
 
+import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.http.Method;
@@ -21,9 +23,21 @@ public class MinioObjectStorage implements ObjectStorage {
     this.bucket = bucket;
   }
 
+  private void ensureBucket() {
+    try {
+      BucketExistsArgs exists = BucketExistsArgs.builder().bucket(bucket).build();
+      if (!client.bucketExists(exists)) {
+        client.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+      }
+    } catch (Exception error) {
+      throw new IllegalStateException("初始化对象存储失败", error);
+    }
+  }
+
   @Override
   public void put(String objectKey, InputStream content, long size, String mimeType) {
     try {
+      ensureBucket();
       client.putObject(PutObjectArgs.builder()
           .bucket(bucket)
           .object(objectKey)

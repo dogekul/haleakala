@@ -1,11 +1,14 @@
 package com.zhilu.delivery.iam;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.zhilu.delivery.iam.service.CurrentUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +17,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:iam;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -48,14 +55,22 @@ class AuthControllerTest {
 
   @Test
   void localLoginReturnsCurrentUserRolesAndPermissions() throws Exception {
-    mvc.perform(post("/api/v1/auth/login")
+    MvcResult result = mvc.perform(post("/api/v1/auth/login")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"username\":\"admin\",\"password\":\"secret123\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.username").value("admin"))
         .andExpect(jsonPath("$.displayName").value("系统管理员"))
         .andExpect(jsonPath("$.roles", hasItem("ADMIN")))
-        .andExpect(jsonPath("$.permissions", hasItem("system:manage")));
+        .andExpect(jsonPath("$.permissions", hasItem("system:manage")))
+        .andReturn();
+
+    MockHttpSession session = (MockHttpSession) result.getRequest().getSession(false);
+    SecurityContext context = (SecurityContext) session.getAttribute(
+        HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+    assertNotNull(context, "login must establish the security context in the same session");
+    CurrentUser principal = (CurrentUser) context.getAuthentication().getPrincipal();
+    assertEquals("admin", principal.getUsername());
   }
 
   @Test

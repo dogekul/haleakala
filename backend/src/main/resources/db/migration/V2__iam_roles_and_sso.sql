@@ -4,7 +4,7 @@ CREATE TABLE sso_identity (
   provider VARCHAR(64) NOT NULL,
   subject VARCHAR(191) NOT NULL,
   email VARCHAR(160) NULL,
-  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (id),
   CONSTRAINT fk_sso_user FOREIGN KEY (user_id) REFERENCES app_user(id),
   CONSTRAINT uk_sso_provider_subject UNIQUE (provider, subject)

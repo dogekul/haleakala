@@ -2,9 +2,17 @@ package com.zhilu.delivery.iam.api;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.iam.service.IamService;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.http.HttpSession;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,7 +32,24 @@ public class AuthController {
   public CurrentUser login(@Valid @RequestBody LoginRequest request, HttpSession session) {
     CurrentUser user = iam.authenticate(request.getUsername(), request.getPassword());
     session.setAttribute(CurrentUser.SESSION_KEY, user);
+    establishSecurityContext(user, session);
     return user;
+  }
+
+  private void establishSecurityContext(CurrentUser user, HttpSession session) {
+    List<GrantedAuthority> authorities = new ArrayList<GrantedAuthority>();
+    for (String permission : user.getPermissions()) {
+      authorities.add(new SimpleGrantedAuthority(permission));
+    }
+    for (String role : user.getRoles()) {
+      authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+    }
+    SecurityContext context = SecurityContextHolder.createEmptyContext();
+    context.setAuthentication(
+        new UsernamePasswordAuthenticationToken(user, null, authorities));
+    SecurityContextHolder.setContext(context);
+    session.setAttribute(
+        HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
   }
 
   @GetMapping("/me")
@@ -62,4 +87,3 @@ public class AuthController {
     }
   }
 }
-

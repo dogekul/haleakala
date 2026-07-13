@@ -5,7 +5,7 @@ CREATE TABLE engineer_profile (
   location VARCHAR(120) NULL,
   weekly_capacity_hours INT NOT NULL DEFAULT 40,
   resource_status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
-  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (user_id),
   CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES app_user(id),
   CONSTRAINT fk_profile_org FOREIGN KEY (organization_id) REFERENCES organization(id)
@@ -29,7 +29,7 @@ CREATE TABLE engineer_skill (
   proficiency INT NOT NULL,
   certified BOOLEAN NOT NULL DEFAULT FALSE,
   experience_months INT NOT NULL DEFAULT 0,
-  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (user_id, skill_id),
   CONSTRAINT fk_engineer_skill_user FOREIGN KEY (user_id) REFERENCES app_user(id),
   CONSTRAINT fk_engineer_skill_skill FOREIGN KEY (skill_id) REFERENCES skill_catalog(id)
@@ -46,8 +46,8 @@ CREATE TABLE resource_assignment (
   allocation_percent INT NOT NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
   created_by BIGINT NOT NULL,
-  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   version BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   CONSTRAINT fk_assignment_org FOREIGN KEY (organization_id) REFERENCES organization(id),

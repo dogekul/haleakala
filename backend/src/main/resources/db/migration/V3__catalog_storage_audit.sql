@@ -7,7 +7,7 @@ CREATE TABLE file_version (
   size_bytes BIGINT NOT NULL,
   checksum_sha256 CHAR(64) NOT NULL,
   created_by BIGINT NOT NULL,
-  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (id),
   CONSTRAINT fk_file_version_file FOREIGN KEY (file_id) REFERENCES file_object(id),
   CONSTRAINT fk_file_version_creator FOREIGN KEY (created_by) REFERENCES app_user(id),
