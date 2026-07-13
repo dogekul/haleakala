@@ -40,6 +40,9 @@ class SecurityAccessTest {
 
   @BeforeEach
   void seedLoginUser() {
+    jdbc.update("delete from audit_log");
+    jdbc.update("delete from product_version");
+    jdbc.update("delete from product");
     jdbc.update("delete from user_role");
     jdbc.update("delete from role_permission");
     jdbc.update("delete from app_user");
@@ -142,16 +145,26 @@ class SecurityAccessTest {
   }
 
   @Test
-  void businessUserCanReadProductsButCannotWriteCatalog() throws Exception {
+  void separatesProductReadAndWritePermissions() throws Exception {
     mvc.perform(get("/api/v1/products")
-            .with(user("engineer").authorities(() -> "project:read")))
+            .with(actor("product:read")))
         .andExpect(status().isOk());
 
     mvc.perform(post("/api/v1/products")
-            .with(user("engineer").authorities(() -> "project:read"))
+            .with(actor("product:read"))
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"NO-WRITE\",\"name\":\"不可写产品\"}"))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(post("/api/v1/products")
+            .with(actor("product:write"))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"WRITE\",\"name\":\"可写产品\"}"))
+        .andExpect(status().isCreated());
+
+    mvc.perform(get("/api/v1/products").with(actor("project:read")))
         .andExpect(status().isForbidden());
   }
 

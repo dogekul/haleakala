@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,13 +33,16 @@ public class ProductCatalogController {
   }
 
   @GetMapping
-  public List<Map<String, Object>> products() {
-    return catalog.products();
+  public List<Map<String, Object>> products(
+      @RequestParam(defaultValue = "false") boolean bindable,
+      @AuthenticationPrincipal CurrentUser user) {
+    return catalog.products(user.getOrganizationId(), bindable);
   }
 
   @GetMapping("/{id}")
-  public Map<String, Object> product(@PathVariable long id) {
-    return catalog.product(id);
+  public Map<String, Object> product(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    return catalog.product(user.getOrganizationId(), id);
   }
 
   @PostMapping
@@ -48,7 +52,7 @@ public class ProductCatalogController {
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> product =
         catalog.createProduct(user.getOrganizationId(), request.ownerUserId,
-            request.code, request.name, request.category);
+            request.code, request.name, request.category, request.description);
     audit(user, "CREATE", "PRODUCT", product.get("id"), request.name);
     return product;
   }
@@ -60,20 +64,24 @@ public class ProductCatalogController {
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> product =
         catalog.updateProduct(user.getOrganizationId(), id, request.ownerUserId,
-            request.name, request.category, request.status);
+            request.name, request.category, request.description, request.status, request.version);
     audit(user, "UPDATE", "PRODUCT", id, request.name);
     return product;
   }
 
   @GetMapping("/{productId}/versions")
-  public List<Map<String, Object>> versions(@PathVariable long productId) {
-    return catalog.versions(productId);
+  public List<Map<String, Object>> versions(
+      @PathVariable long productId,
+      @RequestParam(defaultValue = "false") boolean bindable,
+      @AuthenticationPrincipal CurrentUser user) {
+    return catalog.versions(user.getOrganizationId(), productId, bindable);
   }
 
   @GetMapping("/{productId}/versions/{versionId}")
   public Map<String, Object> version(
-      @PathVariable long productId, @PathVariable long versionId) {
-    return catalog.version(productId, versionId);
+      @PathVariable long productId, @PathVariable long versionId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return catalog.version(user.getOrganizationId(), productId, versionId);
   }
 
   @PostMapping("/{productId}/versions")
@@ -83,7 +91,8 @@ public class ProductCatalogController {
       @PathVariable long productId, @Valid @RequestBody VersionRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> version =
-        catalog.createVersion(productId, request.versionName, request.releaseDate);
+        catalog.createVersion(
+            user.getOrganizationId(), productId, request.versionName, request.releaseDate);
     audit(user, "CREATE", "PRODUCT_VERSION", version.get("id"), request.versionName);
     return version;
   }
@@ -96,7 +105,8 @@ public class ProductCatalogController {
       @Valid @RequestBody VersionRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> version =
-        catalog.updateVersion(productId, versionId, request.releaseDate, request.status);
+        catalog.updateVersion(user.getOrganizationId(), productId, versionId,
+            request.releaseDate, request.status, request.version);
     audit(user, "UPDATE", "PRODUCT_VERSION", versionId, request.versionName);
     return version;
   }
@@ -112,13 +122,16 @@ public class ProductCatalogController {
     @NotBlank public String code;
     @NotBlank public String name;
     public String category;
-    public String status = "ACTIVE";
+    public String description;
+    public String status = "PLANNING";
+    public long version;
   }
 
   public static final class VersionRequest {
     @NotBlank public String versionName;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     public LocalDate releaseDate;
-    public String status = "ACTIVE";
+    public String status = "PLANNING";
+    public long version;
   }
 }

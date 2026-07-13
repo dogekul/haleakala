@@ -57,7 +57,7 @@ class ProductCatalogIT {
     long secondProduct = createProduct("CRM", "智鹿 CRM");
 
     String versionJson = mvc.perform(post("/api/v1/products/{id}/versions", firstProduct)
-            .with(admin()).with(csrf())
+            .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"versionName\":\"V5.2\",\"releaseDate\":\"2026-07-01\"}"))
         .andExpect(status().isCreated())
@@ -68,7 +68,7 @@ class ProductCatalogIT {
         .readTree(versionJson).get("id").asLong();
 
     mvc.perform(get("/api/v1/products/{productId}/versions/{versionId}",
-            secondProduct, versionId).with(admin()))
+            secondProduct, versionId).with(reader()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("NOT_FOUND"));
 
@@ -82,14 +82,14 @@ class ProductCatalogIT {
     long productId = createProduct("ERP", "智鹿 ERP");
 
     mvc.perform(put("/api/v1/products/{id}", productId)
-            .with(admin()).with(csrf())
+            .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"ERP\",\"name\":\"智鹿 ERP\",\"status\":\"BROKEN\"}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
 
     mvc.perform(post("/api/v1/products")
-            .with(admin()).with(csrf())
+            .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"ownerUserId\":351,\"code\":\"CRM\",\"name\":\"智鹿 CRM\"}"))
         .andExpect(status().isBadRequest())
@@ -101,7 +101,7 @@ class ProductCatalogIT {
     long productId = createProduct("ERP", "智鹿 ERP");
 
     mvc.perform(post("/api/v1/products")
-            .with(admin()).with(csrf())
+            .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"ERP\",\"name\":\"重复产品\"}"))
         .andExpect(status().isConflict())
@@ -109,17 +109,86 @@ class ProductCatalogIT {
 
     String version = "{\"versionName\":\"V5.2\",\"releaseDate\":\"2026-07-01\"}";
     mvc.perform(post("/api/v1/products/{id}/versions", productId)
-            .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
         .andExpect(status().isCreated());
     mvc.perform(post("/api/v1/products/{id}/versions", productId)
-            .with(admin()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(version))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("CONFLICT"));
   }
 
+  @Test
+  void scopesProductsAndReturnsOnlyBindableCatalog() throws Exception {
+    long active = createProduct("ERP", "ERP");
+    mvc.perform(put("/api/v1/products/{id}", active).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"ERP\",\"status\":\"ACTIVE\",\"version\":0}"))
+        .andExpect(status().isOk());
+    mvc.perform(post("/api/v1/products").with(actor(351L, "product:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"OTHER\",\"name\":\"Other\"}"))
+        .andExpect(status().isCreated());
+    mvc.perform(get("/api/v1/products").param("bindable", "true").with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].id").value(active))
+        .andExpect(jsonPath("$.length()").value(1));
+    mvc.perform(get("/api/v1/products/{id}", active + 1).with(reader()))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void enforcesProductLifecycleAndOptimisticLocking() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+
+    mvc.perform(put("/api/v1/products/{id}", productId).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"ERP\",\"status\":\"SUNSET\",\"version\":0}"))
+        .andExpect(status().isBadRequest());
+    mvc.perform(put("/api/v1/products/{id}", productId).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"ERP\",\"description\":\"Core\","
+                + "\"status\":\"ACTIVE\",\"version\":0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.description").value("Core"))
+        .andExpect(jsonPath("$.version").value(1));
+    mvc.perform(put("/api/v1/products/{id}", productId).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"ERP\",\"name\":\"Stale\",\"status\":\"ACTIVE\",\"version\":0}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("数据已被更新，请刷新后重试"));
+    updateProductStatus(productId, "SUNSET", 1).andExpect(status().isOk());
+    updateProductStatus(productId, "ARCHIVED", 2).andExpect(status().isOk());
+    updateProductStatus(productId, "ARCHIVED", 3).andExpect(status().isConflict());
+  }
+
+  @Test
+  void releasesVersionsOnlyWithDatesAndReturnsOnlyBindableVersions() throws Exception {
+    long productId = createProduct("ERP", "ERP");
+    long released = createVersion(productId, "V1");
+
+    mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, released)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\",\"status\":\"RELEASED\",\"version\":0}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("已发布版本必须填写发布日期"));
+    mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, released)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"V1\",\"releaseDate\":\"2026-07-01\","
+                + "\"status\":\"RELEASED\",\"version\":0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.version").value(1));
+    createVersion(productId, "V2");
+
+    mvc.perform(get("/api/v1/products/{productId}/versions", productId)
+            .param("bindable", "true").with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].id").value(released))
+        .andExpect(jsonPath("$.length()").value(1));
+  }
+
   private long createProduct(String code, String name) throws Exception {
     String json = mvc.perform(post("/api/v1/products")
-            .with(admin()).with(csrf())
+            .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"" + code + "\",\"name\":\"" + name
                 + "\",\"category\":\"企业应用\"}"))
@@ -128,10 +197,36 @@ class ProductCatalogIT {
     return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).get("id").asLong();
   }
 
-  private RequestPostProcessor admin() {
-    CurrentUser principal = new CurrentUser(350L, 350L, "admin", "系统管理员",
-        Collections.singletonList("ADMIN"), Collections.singletonList("system:manage"));
+  private long createVersion(long productId, String versionName) throws Exception {
+    String json = mvc.perform(post("/api/v1/products/{id}/versions", productId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"versionName\":\"" + versionName + "\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.status").value("PLANNING"))
+        .andReturn().getResponse().getContentAsString();
+    return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).get("id").asLong();
+  }
+
+  private org.springframework.test.web.servlet.ResultActions updateProductStatus(
+      long productId, String status, long version) throws Exception {
+    return mvc.perform(put("/api/v1/products/{id}", productId).with(writer()).with(csrf())
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"code\":\"ERP\",\"name\":\"ERP\",\"status\":\"" + status
+            + "\",\"version\":" + version + "}"));
+  }
+
+  private RequestPostProcessor reader() {
+    return actor(350L, "product:read");
+  }
+
+  private RequestPostProcessor writer() {
+    return actor(350L, "product:write");
+  }
+
+  private RequestPostProcessor actor(long organizationId, String permission) {
+    CurrentUser principal = new CurrentUser(organizationId, organizationId, "admin", "系统管理员",
+        Collections.singletonList("ADMIN"), Collections.singletonList(permission));
     return authentication(new UsernamePasswordAuthenticationToken(principal, null,
-        Collections.singletonList(new SimpleGrantedAuthority("system:manage"))));
+        Collections.singletonList(new SimpleGrantedAuthority(permission))));
   }
 }
