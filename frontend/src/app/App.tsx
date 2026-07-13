@@ -9,6 +9,7 @@ import { homeRoute } from './homeRoute'
 
 const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then(module => ({ default: module.ProjectDetail })))
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
+const ProductCenterRoutes = lazy(() => import('../modules/product/ProductCenterRoutes').then(module => ({ default: module.ProductCenterRoutes })))
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage').then(module => ({ default: module.DashboardPage })))
 const RequirementWorkshop = lazy(() => import('../modules/requirement/RequirementWorkshop').then(module => ({ default: module.RequirementWorkshop })))
 const StandardizationPage = lazy(() => import('../modules/standardization/StandardizationPage').then(module => ({ default: module.StandardizationPage })))
@@ -41,6 +42,9 @@ export function App() {
     </RequirePermission></RequireAuth>} />
     <Route path="/projects/:id/*" element={<RequireAuth><RequirePermission code="project:read">
       <AppShell><LazyPage><ProjectDetail /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
+    <Route path="/products/*" element={<RequireAuth><RequirePermission code="product:read">
+      <AppShell><LazyPage><ProductCenterRoutes /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
     <Route path="/admin/*" element={<RequireAuth><RequirePermission code="system:manage">
       <AppShell><LazyPage><AdminPage /></LazyPage></AppShell>

@@ -1,6 +1,7 @@
 const destinations = [
   { path: '/dashboard', permission: 'dashboard:read' },
   { path: '/projects', permission: 'project:read' },
+  { path: '/products', permission: 'product:read' },
   { path: '/requirements', permission: 'requirement:read' },
   { path: '/standardization', permission: 'standardization:read' },
   { path: '/knowledge', permission: 'knowledge:read' },

@@ -14,7 +14,7 @@ function LocationProbe() {
   return <span data-testid="location">{useLocation().pathname}</span>
 }
 
-it('提供五个可用的系统管理入口并默认进入用户团队', async () => {
+it('提供四个可用的系统管理入口并默认进入用户团队', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes('/settings')) return json({
@@ -32,12 +32,30 @@ it('提供五个可用的系统管理入口并默认进入用户团队', async (
 
   expect(await screen.findByRole('heading', { name: '用户与团队' })).toBeVisible()
   expect(screen.getByRole('link', { name: '用户与团队' })).toHaveClass('active')
-  for (const name of ['用户与团队', '角色权限', '产品目录', '审计日志', '系统设置']) {
+  for (const name of ['用户与团队', '角色权限', '审计日志', '系统设置']) {
     expect(screen.getByRole('link', { name })).toBeVisible()
   }
+  expect(screen.queryByRole('link', { name: '产品目录' })).not.toBeInTheDocument()
 
   await userEvent.click(screen.getByRole('link', { name: '系统设置' }))
   expect(await screen.findByRole('heading', { name: '系统设置' })).toBeVisible()
+})
+
+it('旧产品目录地址单向重定向到产品中心', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => json([])))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}>
+    <MemoryRouter initialEntries={['/admin/products']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <LocationProbe />
+      <Routes>
+        <Route path="/admin/*" element={<AdminPage />} />
+        <Route path="/products" element={<span>产品中心页面</span>} />
+      </Routes>
+    </MemoryRouter>
+  </QueryClientProvider>)
+
+  expect(await screen.findByText('产品中心页面')).toBeVisible()
+  expect(screen.getByTestId('location')).toHaveTextContent('/products')
 })
 
 it('数据请求失败时显示可重试的错误态', async () => {

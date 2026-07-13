@@ -48,8 +48,11 @@ public class ProductCatalogService {
 
   public Map<String, Object> product(long organizationId, long id) {
     List<Map<String, Object>> values = jdbc.query(
-        "select id,organization_id,owner_user_id,code,name,category,description,status,version "
-            + "from product where id=? and organization_id=?",
+        "select p.id,p.organization_id,p.owner_user_id,p.code,p.name,p.category,p.description,p.status,"
+            + "p.updated_at,p.version,(select count(*) from product_module m where m.product_id=p.id) module_count,"
+            + "(select count(*) from product_feature f where f.product_id=p.id) feature_count,"
+            + "(select pv.version_name from product_version pv where pv.product_id=p.id order by pv.release_date desc,pv.id desc limit 1) latest_version_name "
+            + "from product p where p.id=? and p.organization_id=?",
         (row, index) -> productRow(row), id, organizationId);
     if (values.isEmpty()) throw new NotFoundException("产品不存在");
     return values.get(0);

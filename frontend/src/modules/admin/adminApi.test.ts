@@ -11,8 +11,6 @@ it('用正确的方法和载荷调用系统管理写接口', async () => {
 
   await adminApi.saveUser(42, { displayName: '王工', roleCodes: ['TECH_MANAGER'] })
   await adminApi.saveRolePermissions(6, ['dashboard:read'])
-  await adminApi.saveProduct(undefined, { code: 'ERP', name: '智鹿 ERP' })
-  await adminApi.saveVersion(8, 9, { versionName: 'V2.1', status: 'ACTIVE' })
   await adminApi.saveSettings({ platformName: '智鹿中台', environmentLabel: '验收', timezone: 'UTC', supportEmail: '', agentTimeoutMinutes: 45 })
 
   expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/admin/users/42', expect.objectContaining({
@@ -21,9 +19,7 @@ it('用正确的方法和载荷调用系统管理写接口', async () => {
   expect(fetch).toHaveBeenNthCalledWith(2, '/api/v1/admin/roles/6/permissions', expect.objectContaining({
     method: 'PUT', body: JSON.stringify({ permissionCodes: ['dashboard:read'] }),
   }))
-  expect(fetch).toHaveBeenNthCalledWith(3, '/api/v1/products', expect.objectContaining({ method: 'POST' }))
-  expect(fetch).toHaveBeenNthCalledWith(4, '/api/v1/products/8/versions/9', expect.objectContaining({ method: 'PUT' }))
-  expect(fetch).toHaveBeenNthCalledWith(5, '/api/v1/admin/settings', expect.objectContaining({
+  expect(fetch).toHaveBeenNthCalledWith(3, '/api/v1/admin/settings', expect.objectContaining({
     method: 'PUT', body: expect.stringContaining('"agentTimeoutMinutes":45'),
   }))
 })

@@ -1,6 +1,6 @@
 import { api } from '../../services/api'
 import type {
-  AdminUser, AuditResult, Permission, Product, ProductVersion, Role, SystemSettings, Team,
+  AdminUser, AuditResult, Permission, Role, SystemSettings, Team,
 } from './types'
 
 export const adminApi = {
@@ -22,16 +22,6 @@ export const adminApi = {
   saveRolePermissions: (id: number, permissionCodes: string[]) => api<Role>(
     `/api/v1/admin/roles/${id}/permissions`,
     { method: 'PUT', body: JSON.stringify({ permissionCodes }) },
-  ),
-  products: () => api<Product[]>('/api/v1/products'),
-  saveProduct: (id: number | undefined, input: Record<string, unknown>) => api<Product>(
-    `/api/v1/products${id ? `/${id}` : ''}`,
-    { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) },
-  ),
-  versions: (productId: number) => api<ProductVersion[]>(`/api/v1/products/${productId}/versions`),
-  saveVersion: (productId: number, id: number | undefined, input: Record<string, unknown>) => api<ProductVersion>(
-    `/api/v1/products/${productId}/versions${id ? `/${id}` : ''}`,
-    { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) },
   ),
   audits: (query: Record<string, string | number | undefined>) => {
     const params = new URLSearchParams()

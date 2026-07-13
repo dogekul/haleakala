@@ -34,25 +34,6 @@ export interface Permission {
   module: string
 }
 
-export interface Product {
-  id: number
-  ownerUserId: number | null
-  code: string
-  name: string
-  category: string | null
-  status: 'ACTIVE' | 'DISABLED'
-  version: number
-}
-
-export interface ProductVersion {
-  id: number
-  productId: number
-  versionName: string
-  releaseDate: string | null
-  status: 'ACTIVE' | 'DISABLED'
-  version: number
-}
-
 export interface AuditLog {
   id: number
   actorUserId: number | null

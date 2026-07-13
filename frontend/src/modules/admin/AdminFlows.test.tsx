@@ -3,7 +3,6 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AuditLogsPage } from './AuditLogsPage'
-import { ProductsPage } from './ProductsPage'
 import { RolesPage } from './RolesPage'
 import { SettingsPage } from './SettingsPage'
 
@@ -35,38 +34,6 @@ it('从角色抽屉保存权限并刷新角色', async () => {
 
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/admin/roles/6/permissions', expect.objectContaining({
     method: 'PUT', body: JSON.stringify({ permissionCodes: ['dashboard:read'] }),
-  })))
-})
-
-it('从产品页新建产品和版本', async () => {
-  const products = [{ id: 8, ownerUserId: null, code: 'ERP', name: '智鹿 ERP', category: '企业应用', status: 'ACTIVE', version: 0 }]
-  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    if (init?.method === 'POST' && url === '/api/v1/products') return json({ ...products[0], id: 9, code: 'CRM', name: '智鹿 CRM' }, 201)
-    if (init?.method === 'POST' && url.endsWith('/versions')) return json({ id: 10, productId: 8, versionName: 'V2.1', releaseDate: null, status: 'ACTIVE', version: 0 }, 201)
-    if (url.endsWith('/admin/users')) return json([])
-    if (url.endsWith('/versions')) return json([])
-    return json(products)
-  })
-  vi.stubGlobal('fetch', fetch)
-  const user = userEvent.setup()
-  show(<ProductsPage />)
-
-  await user.click(await screen.findByRole('button', { name: /新建产品/ }))
-  let dialog = screen.getByRole('dialog', { name: '新建产品' })
-  await user.type(within(dialog).getByLabelText('产品编码'), 'CRM')
-  await user.type(within(dialog).getByLabelText('产品名称'), '智鹿 CRM')
-  await user.click(within(dialog).getByRole('button', { name: /保\s*存/ }))
-  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products', expect.objectContaining({
-    method: 'POST', body: expect.stringContaining('"code":"CRM"'),
-  })))
-
-  await user.click(await screen.findByRole('button', { name: /新建版本/ }))
-  dialog = screen.getByRole('dialog', { name: /新建版本/ })
-  await user.type(within(dialog).getByLabelText('版本名称'), 'V2.1')
-  await user.click(within(dialog).getByRole('button', { name: /保\s*存/ }))
-  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions', expect.objectContaining({
-    method: 'POST', body: expect.stringContaining('"versionName":"V2.1"'),
   })))
 })
 

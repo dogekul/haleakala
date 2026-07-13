@@ -13,7 +13,7 @@ const auth: AuthState = {
     username: 'engineer',
     displayName: '交付工程师',
     roles: ['DELIVERY_ENGINEER'],
-    permissions: ['project:read', 'requirement:read'],
+    permissions: ['project:read', 'product:read', 'requirement:read'],
   },
   login: async () => undefined,
   logout: async () => undefined,
@@ -40,7 +40,11 @@ it('只显示当前用户有权访问的模块入口', () => {
   )
 
   expect(screen.getByRole('link', { name: /项目空间/ })).toBeVisible()
+  expect(screen.getByRole('link', { name: /产品中心/ })).toBeVisible()
   expect(screen.getByRole('link', { name: /需求工坊/ })).toBeVisible()
+  const links = screen.getAllByRole('link').map(link => link.textContent)
+  expect(links.indexOf('产品中心')).toBeGreaterThan(links.indexOf('项目空间'))
+  expect(links.indexOf('产品中心')).toBeLessThan(links.indexOf('需求工坊'))
   expect(screen.queryByRole('link', { name: /资源中心/ })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: /系统管理/ })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /项目列表/ })).not.toBeInTheDocument()

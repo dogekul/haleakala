@@ -6,6 +6,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   ProductOutlined,
+  ShoppingOutlined,
   SettingOutlined,
   TeamOutlined,
   ToolOutlined,
@@ -27,6 +28,7 @@ interface ModuleNav {
 const modules: ModuleNav[] = [
   { path: '/dashboard', label: '驾驶舱', permission: 'dashboard:read', icon: <DashboardOutlined /> },
   { path: '/projects', label: '项目空间', permission: 'project:read', icon: <FolderOpenOutlined /> },
+  { path: '/products', label: '产品中心', permission: 'product:read', icon: <ShoppingOutlined /> },
   { path: '/requirements', label: '需求工坊', permission: 'requirement:read', icon: <ToolOutlined /> },
   { path: '/standardization', label: '标准化中心', permission: 'standardization:read', icon: <ProductOutlined /> },
   { path: '/knowledge', label: '知识库', permission: 'knowledge:read', icon: <BookOutlined /> },

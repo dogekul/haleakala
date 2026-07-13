@@ -95,6 +95,32 @@ class ProductCatalogIT {
   }
 
   @Test
+  void returnsProductSummaryCountsOnListAndDetail() throws Exception {
+    long productId = createProduct("ERP", "智鹿 ERP");
+    jdbc.update("insert into product_module(product_id,code,name,status,sort_order) "
+        + "values (?,'CORE','核心模块','ACTIVE',0)", productId);
+    Long moduleId = jdbc.queryForObject(
+        "select id from product_module where product_id=?", Long.class, productId);
+    jdbc.update("insert into product_feature(product_id,module_id,code,name,status) "
+        + "values (?,?,'ORDER','订单管理','ACTIVE')", productId, moduleId);
+    jdbc.update("insert into product_version(product_id,version_name,release_date,status) "
+        + "values (?,'V2.1','2026-07-01','RELEASED')", productId);
+
+    mvc.perform(get("/api/v1/products").with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].moduleCount").value(1))
+        .andExpect(jsonPath("$[0].featureCount").value(1))
+        .andExpect(jsonPath("$[0].latestVersionName").value("V2.1"))
+        .andExpect(jsonPath("$[0].updatedAt").exists());
+    mvc.perform(get("/api/v1/products/{id}", productId).with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.moduleCount").value(1))
+        .andExpect(jsonPath("$.featureCount").value(1))
+        .andExpect(jsonPath("$.latestVersionName").value("V2.1"))
+        .andExpect(jsonPath("$.updatedAt").exists());
+  }
+
+  @Test
   void rejectsUnsupportedProductStatusAndCrossOrganizationOwner() throws Exception {
     long productId = createProduct("ERP", "智鹿 ERP");
 

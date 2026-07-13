@@ -1,7 +1,6 @@
-import { AuditOutlined, LockOutlined, ProductOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { AuditOutlined, LockOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { AuditLogsPage } from './AuditLogsPage'
-import { ProductsPage } from './ProductsPage'
 import { RolesPage } from './RolesPage'
 import { SettingsPage } from './SettingsPage'
 import { UsersTeamsPage } from './UsersTeamsPage'
@@ -9,7 +8,6 @@ import { UsersTeamsPage } from './UsersTeamsPage'
 const sections = [
   { path: 'users', label: '用户与团队', icon: <TeamOutlined /> },
   { path: 'roles', label: '角色权限', icon: <LockOutlined /> },
-  { path: 'products', label: '产品目录', icon: <ProductOutlined /> },
   { path: 'audit-logs', label: '审计日志', icon: <AuditOutlined /> },
   { path: 'settings', label: '系统设置', icon: <SettingOutlined /> },
 ]
@@ -21,7 +19,7 @@ export function AdminPage() {
       <Route index element={<Navigate to="/admin/users" replace />} />
       <Route path="users" element={<UsersTeamsPage />} />
       <Route path="roles" element={<RolesPage />} />
-      <Route path="products" element={<ProductsPage />} />
+      <Route path="products" element={<Navigate to="/products" replace />} />
       <Route path="audit-logs" element={<AuditLogsPage />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/admin/users" replace />} />
