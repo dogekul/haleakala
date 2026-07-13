@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach } from 'vitest'
@@ -128,22 +128,22 @@ it('将标准化候选转为产品功能并可选加入规划版本', async () =
 it('转换抽屉切换产品时清空已选模块和版本且只显示新产品选项', async () => {
   const { fetch } = conversionFetch()
   vi.stubGlobal('fetch', fetch)
-  const user = userEvent.setup()
   show()
 
-  await user.click(await screen.findByRole('tab', { name: /标准化债务/ }))
-  await user.click(await screen.findByRole('button', { name: '转为产品功能' }))
+  fireEvent.click(await screen.findByRole('tab', { name: /标准化债务/ }))
+  fireEvent.click(await screen.findByRole('button', { name: '转为产品功能' }))
   const drawer = screen.getByRole('dialog', { name: '转为产品功能' })
-  await user.click(within(drawer).getByRole('combobox', { name: '目标模块' }))
-  await user.click(await screen.findByRole('option', { name: 'AR · 应收管理' }))
-  await user.click(within(drawer).getByRole('combobox', { name: '加入规划版本' }))
-  await user.click(await screen.findByRole('option', { name: 'V5.0' }))
-  await user.click(within(drawer).getByRole('combobox', { name: '目标产品' }))
-  await user.click(await screen.findByRole('option', { name: '客户经营' }))
+  const select = async (label: string, option: string) => {
+    fireEvent.mouseDown(within(drawer).getByRole('combobox', { name: label }))
+    fireEvent.click(await screen.findByRole('option', { name: option }))
+  }
+  await select('目标模块', 'AR · 应收管理')
+  await select('加入规划版本', 'V5.0')
+  await select('目标产品', '客户经营')
 
   expect(within(drawer).getByRole('combobox', { name: '目标模块' })).toHaveValue('')
   expect(within(drawer).getByRole('combobox', { name: '加入规划版本' })).toHaveValue('')
-  await user.click(within(drawer).getByRole('combobox', { name: '目标模块' }))
+  fireEvent.mouseDown(within(drawer).getByRole('combobox', { name: '目标模块' }))
   await waitFor(() => expect(screen.getByRole('option', { name: 'CRM · 客户管理' })).toBeVisible())
   expect(screen.queryByRole('option', { name: 'AR · 应收管理' })).not.toBeInTheDocument()
 })
