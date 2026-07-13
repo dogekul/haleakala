@@ -2,9 +2,9 @@
 
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Publish the current Zhilu Delivery workspace snapshot to the Rainier Alibaba Cloud ECS at `http://8.166.121.138:53990` without disrupting Rainier.
+**Goal:** Publish the current Zhilu Delivery workspace snapshot to the Rainier Alibaba Cloud ECS at `http://zhilu.8.166.121.138.nip.io` without disrupting Rainier.
 
-**Architecture:** Add a deployment-specific Docker Compose stack under `deploy/aliyun` and a local orchestration script that validates the workspace, rsyncs the current snapshot to `/opt/zhilu-delivery`, creates a persistent remote secret file when absent, builds images sequentially, starts the stack, and runs both remote and public smoke tests. Only the frontend is public; the backend is loopback-bound and MySQL, Redis, MinIO, and the mock agent remain on the Compose network.
+**Architecture:** Add a deployment-specific Docker Compose stack under `deploy/aliyun` and a local orchestration script that validates the workspace, rsyncs the current snapshot to `/opt/zhilu-delivery`, creates a persistent remote secret file when absent, builds images sequentially, starts the stack, and runs both remote and public smoke tests. Rainier's Nginx keeps serving the IP root and routes only the dedicated Zhilu hostname to port `53990`; the backend is loopback-bound and MySQL, Redis, MinIO, and the mock agent remain on the Compose network.
 
 **Tech Stack:** Bash, rsync, SSH, Docker Compose, Spring Boot, React/Vite, MySQL 8, Redis 7, MinIO, Nginx
 
@@ -72,7 +72,7 @@ The script must:
 4. Preserve the remote `.env`; create it with random secrets and mode `600` only when absent.
 5. Validate Compose, build backend/frontend/mock-agent sequentially, then start the stack.
 6. Poll health and print diagnostics on failure without printing secrets.
-7. Run the repository smoke test locally on the ECS and again through the public endpoint.
+7. Install the dedicated Host route in Rainier's Nginx without changing its default server, then run the repository smoke test locally on the ECS and again through the public endpoint.
 8. Re-check Rainier after deployment.
 
 **Step 3: Make the script executable and validate its syntax**
@@ -156,14 +156,14 @@ Run:
 ```bash
 ssh -i /Users/dogekul/Downloads/codex.pem -o IdentitiesOnly=yes root@8.166.121.138 \
   'cd /opt/zhilu-delivery && docker compose --env-file .env -f deploy/aliyun/docker-compose.ecs.yml ps && ss -lnt'
-curl -fsS http://8.166.121.138:53990/actuator/health
+curl -fsS http://zhilu.8.166.121.138.nip.io/actuator/health
 curl -fsS http://8.166.121.138/api/health
 ```
 
-Expected: Zhilu frontend is public on `53990`, its backend is loopback-only on `8082`, dependencies are not host-published, and Rainier remains healthy on port `80`.
+Expected: Zhilu is public through its dedicated hostname on port `80`, its frontend listens on host port `53990`, its backend is loopback-only on `8082`, dependencies are not host-published, and Rainier remains healthy on its unchanged IP-root route.
 
 **Step 3: Verify login and a core UI route**
 
-Open `http://8.166.121.138:53990`, sign in with the demo account, confirm the dashboard renders, and leave the public dashboard open for review.
+Open `http://zhilu.8.166.121.138.nip.io`, sign in with the demo account, confirm the dashboard renders, and leave the public dashboard open for review.
 
 Expected: login succeeds and the dashboard is usable.

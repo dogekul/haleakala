@@ -2,13 +2,14 @@
 
 ## 目标
 
-将当前智鹿交付工作区快照部署到 Rainier 所在的阿里云 ECS，提供独立的公网演示入口 `http://8.166.121.138:53990`，同时不改变或中断 Rainier。
+将当前智鹿交付工作区快照部署到 Rainier 所在的阿里云 ECS，提供独立的公网演示入口 `http://zhilu.8.166.121.138.nip.io`，同时不改变或中断 Rainier。
 
 ## 部署架构
 
 - 远端目录为 `/opt/zhilu-delivery`。
 - 使用独立的 Docker Compose 项目名、容器、网络和持久化数据卷。
-- 前端 Nginx 仅通过主机端口 `53990` 对公网提供页面、`/api` 和 `/actuator`。
+- 智鹿前端 Nginx 监听主机端口 `53990`；由于 ECS 安全组只开放现有的 `80` 端口，由 Rainier 前端 Nginx 按独立 Host 转发页面、`/api` 和 `/actuator`。
+- IP 根地址继续进入 Rainier，只有 `zhilu.8.166.121.138.nip.io` 进入智鹿，避免两套应用的路由相互覆盖。
 - 后端仅绑定到主机回环地址，MySQL、Redis、MinIO 和 Mock Agent 不发布主机端口。
 - Compose 加载正式迁移和演示数据，保留测试账号 `admin / Admin@123`。
 
@@ -24,7 +25,7 @@
 - 本地执行后端测试、前端测试与构建、Mock Agent 语法检查和 Compose 配置校验。
 - 远端确认所有容器为 `healthy` 或正常运行。
 - 通过 ECS 本机和公网分别检查 `/actuator/health`。
-- 通过公网入口执行登录烟测，并检查驾驶舱和至少一个业务模块可访问。
+- 通过独立公网域名执行登录烟测，并检查驾驶舱和至少一个业务模块可访问。
 - 验证 Rainier 的首页和 `/api/health` 在部署前后均保持可用。
 
 ## 故障与回滚
