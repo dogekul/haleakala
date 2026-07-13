@@ -112,25 +112,39 @@ class RequirementApiIT {
         .andExpect(jsonPath("$.entries.length()").value(2));
   }
 
-  @Test void rejectsDuplicateCrossProductAndCrossOrganizationFeatures() throws Exception {
+  @Test void invalidCoverageReplacementsPreserveExistingCoverage() throws Exception {
+    jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+        + "coverage_type,source,created_by) values (?,?,'PARTIAL','MANUAL',910)",
+        requirementId, firstFeature);
+
+    mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"entries\":[null]}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+    assertOriginalCoverageRemains();
+
     mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
             .with(writer()).with(csrf()).contentType("application/json")
             .content("{\"entries\":[{\"featureId\":" + firstFeature
                 + ",\"coverageType\":\"FULL\"},{\"featureId\":" + firstFeature
                 + ",\"coverageType\":\"PARTIAL\"}]}"))
         .andExpect(status().isBadRequest());
+    assertOriginalCoverageRemains();
 
     mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
             .with(writer()).with(csrf()).contentType("application/json")
             .content("{\"entries\":[{\"featureId\":" + otherProductFeature
                 + ",\"coverageType\":\"FULL\"}]}"))
         .andExpect(status().isNotFound());
+    assertOriginalCoverageRemains();
 
     mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
             .with(writer()).with(csrf()).contentType("application/json")
             .content("{\"entries\":[{\"featureId\":" + otherOrganizationFeature
                 + ",\"coverageType\":\"FULL\"}]}"))
         .andExpect(status().isNotFound());
+    assertOriginalCoverageRemains();
   }
 
   @Test void preservesRequirementProjectDataScopeForCoverage() throws Exception {
@@ -175,6 +189,16 @@ class RequirementApiIT {
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor reader() {
     return actor(user, "requirement:read");
+  }
+
+  private void assertOriginalCoverageRemains() throws Exception {
+    mvc.perform(get("/api/v1/requirements/{id}/product-features", requirementId)
+            .with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.fullyCovered").value(false))
+        .andExpect(jsonPath("$.entries.length()").value(1))
+        .andExpect(jsonPath("$.entries[0].featureId").value(firstFeature))
+        .andExpect(jsonPath("$.entries[0].coverageType").value("PARTIAL"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor writer() {
