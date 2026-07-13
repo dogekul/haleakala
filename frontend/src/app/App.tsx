@@ -4,7 +4,6 @@ import { Route, Routes } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { ForbiddenPage, RequireAuth, RequirePermission } from './AccessPages'
 import { LoginPage } from './LoginPage'
-import { PlaceholderPage } from './PlaceholderPage'
 
 const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then(module => ({ default: module.ProjectDetail })))
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
@@ -13,10 +12,7 @@ const RequirementWorkshop = lazy(() => import('../modules/requirement/Requiremen
 const StandardizationPage = lazy(() => import('../modules/standardization/StandardizationPage').then(module => ({ default: module.StandardizationPage })))
 const KnowledgePage = lazy(() => import('../modules/knowledge/KnowledgePage').then(module => ({ default: module.KnowledgePage })))
 const ResourcePage = lazy(() => import('../modules/resource/ResourcePage').then(module => ({ default: module.ResourcePage })))
-
-const routes = [
-  ['/admin', 'admin', 'system:manage'],
-] as const
+const AdminPage = lazy(() => import('../modules/admin/AdminPage').then(module => ({ default: module.AdminPage })))
 
 export function App() {
   return <Routes>
@@ -43,11 +39,9 @@ export function App() {
     <Route path="/projects/:id/*" element={<RequireAuth><RequirePermission code="project:read">
       <AppShell><LazyPage><ProjectDetail /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
-    {routes.map(([path, module, permission]) => <Route key={path} path={`${path}/*`} element={
-      <RequireAuth><RequirePermission code={permission}>
-        <AppShell><PlaceholderPage module={module} /></AppShell>
-      </RequirePermission></RequireAuth>
-    } />)}
+    <Route path="/admin/*" element={<RequireAuth><RequirePermission code="system:manage">
+      <AppShell><LazyPage><AdminPage /></LazyPage></AppShell>
+    </RequirePermission></RequireAuth>} />
     <Route path="*" element={<NavigateHome />} />
   </Routes>
 }

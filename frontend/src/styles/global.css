@@ -248,3 +248,38 @@ button, input { font: inherit; }
   .app-shell { grid-template-columns: 80px minmax(0, 1fr); }
   .page-content { padding-inline: 22px; }
 }
+
+.admin-page { max-width: 1500px; margin: 0 auto; }
+.admin-nav { display: flex; gap: 4px; margin: -4px 0 24px; padding: 5px; border: 1px solid #e5e6eb; border-radius: 9px; background: #fff; }
+.admin-nav a { display: flex; align-items: center; gap: 7px; padding: 10px 16px; color: #646a73; border-radius: 6px; text-decoration: none; transition: .16s ease; }
+.admin-nav a:hover { color: #245bdb; background: #f4f7ff; }
+.admin-nav a.active { color: #245bdb; background: #e8efff; font-weight: 600; }
+.admin-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+.admin-heading h2.ant-typography { margin: 7px 0 3px; font-size: 27px; }
+.admin-heading p.ant-typography { margin: 0; color: #646a73; }
+.admin-stats { margin-bottom: 14px; }
+.admin-stats .ant-card { border-color: #e5e6eb; }
+.admin-stats .ant-statistic-content-prefix { margin-right: 9px; color: #3370ff; }
+.admin-surface { margin-bottom: 14px; border-color: #e5e6eb; }
+.admin-surface .ant-table-wrapper { margin: 0 -8px -8px; }
+.admin-main-cell { display: flex; flex-direction: column; gap: 2px; }
+.admin-main-cell > span { color: #8f959e; font-size: 11px; }
+.role-card { min-height: 270px; border-color: #e5e6eb; }
+.role-card .ant-card-body { display: flex; flex-direction: column; min-height: 210px; }
+.role-card p { min-height: 44px; color: #646a73; }
+.role-permission-count { display: flex; align-items: baseline; gap: 6px; margin-bottom: 12px; }
+.role-permission-count strong { color: #245bdb; font-size: 25px; }
+.role-permission-count span { color: #8f959e; font-size: 12px; }
+.role-edit { margin-top: auto; }
+.permission-group { margin-bottom: 24px; padding: 16px; border: 1px solid #e5e6eb; border-radius: 8px; }
+.permission-group > strong { display: block; margin-bottom: 13px; }
+.permission-group .ant-checkbox-group { width: 100%; }
+.permission-group .ant-checkbox-wrapper { align-items: flex-start; }
+.permission-group .ant-checkbox-wrapper span span, .permission-group small { display: block; }
+.permission-group small { color: #8f959e; font-size: 10px; }
+.selected-row td { background: #f0f5ff !important; }
+.product-versions { min-height: 430px; }
+.admin-filter { margin-bottom: 14px; border-color: #e5e6eb; }
+.admin-filter .ant-card-body { padding: 14px; }
+.audit-table .ant-typography code { display: inline-block; overflow: hidden; max-width: 145px; text-overflow: ellipsis; vertical-align: middle; }
+.admin-note { border-color: #e5e6eb; }
