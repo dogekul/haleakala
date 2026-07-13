@@ -80,6 +80,8 @@ public class SecurityConfig {
         .permitAll()
         .antMatchers("/api/v1/admin/**").hasAuthority("system:manage")
         .antMatchers("/api/v1/dashboard/**").hasAuthority("dashboard:read")
+        .antMatchers(HttpMethod.GET, "/api/v1/requirements/**").hasAuthority("requirement:read")
+        .antMatchers("/api/v1/requirements/**").hasAuthority("requirement:write")
         .antMatchers("/api/v1/integrations/agent/events").permitAll()
         .antMatchers(HttpMethod.GET, "/api/v1/agent-jobs/**").hasAuthority("project:read")
         .antMatchers("/api/v1/agent-jobs/**").hasAuthority("project:write")
