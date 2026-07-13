@@ -79,6 +79,8 @@ public class SecurityConfig {
             "/swagger-ui/**")
         .permitAll()
         .antMatchers("/api/v1/admin/**").hasAuthority("system:manage")
+        .antMatchers(HttpMethod.GET, "/api/v1/products/**").authenticated()
+        .antMatchers("/api/v1/products/**").hasAuthority("system:manage")
         .antMatchers("/api/v1/dashboard/**").hasAuthority("dashboard:read")
         .antMatchers(HttpMethod.GET, "/api/v1/requirements/**").hasAuthority("requirement:read")
         .antMatchers("/api/v1/requirements/**").hasAuthority("requirement:write")

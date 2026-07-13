@@ -2,9 +2,12 @@ package com.zhilu.delivery.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import java.util.Collections;
+import java.sql.Timestamp;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +28,7 @@ class AgentJobServiceTest {
   @BeforeEach
   void seed() {
     jdbc.update("delete from audit_log");
+    jdbc.update("delete from system_setting");
     jdbc.update("delete from callback_receipt");
     jdbc.update("delete from agent_attempt");
     jdbc.update("delete from agent_job");
@@ -75,5 +79,21 @@ class AgentJobServiceTest {
 
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from callback_receipt where event_id='evt-once'", Integer.class));
+  }
+
+  @Test
+  void newJobUsesCurrentOrganizationTimeoutSetting() {
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value) "
+        + "values (700,'agent.timeoutMinutes','45')");
+    org.mockito.Mockito.when(gateway.submit(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(new AgentSubmission("external-timeout", "RUNNING"));
+
+    AgentJobView job = jobs.submit(700, "deliver-init", "normal", "timeout-key", 700);
+    Map<String, Object> times = jdbc.queryForMap(
+        "select created_at,timeout_at from agent_job where id=?", job.getId());
+    long minutes = (((Timestamp) times.get("timeout_at")).getTime()
+        - ((Timestamp) times.get("created_at")).getTime()) / 60000L;
+
+    assertTrue(minutes >= 44 && minutes <= 45, "timeout should use the 45 minute setting");
   }
 }

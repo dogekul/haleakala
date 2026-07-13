@@ -2,6 +2,7 @@ package com.zhilu.delivery.iam;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,6 +91,20 @@ class SecurityAccessTest {
                 Collections.singletonList(new SimpleGrantedAuthority("system:manage"))))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].username").value("admin"));
+  }
+
+  @Test
+  void businessUserCanReadProductsButCannotWriteCatalog() throws Exception {
+    mvc.perform(get("/api/v1/products")
+            .with(user("engineer").authorities(() -> "project:read")))
+        .andExpect(status().isOk());
+
+    mvc.perform(post("/api/v1/products")
+            .with(user("engineer").authorities(() -> "project:read"))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"NO-WRITE\",\"name\":\"不可写产品\"}"))
+        .andExpect(status().isForbidden());
   }
 
   private Long ensureRole() {

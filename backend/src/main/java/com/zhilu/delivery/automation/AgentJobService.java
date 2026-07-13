@@ -1,5 +1,6 @@
 package com.zhilu.delivery.automation;
 
+import com.zhilu.delivery.admin.SystemSettingService;
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
@@ -34,15 +35,14 @@ public class AgentJobService {
   private final AgentGateway gateway;
   private final FileService files;
   private final AuditService audit;
+  private final SystemSettingService settings;
   private final String callbackUrl;
-  private final long timeoutMinutes;
 
   public AgentJobService(JdbcTemplate jdbc, AgentGateway gateway, FileService files,
-      AuditService audit,
-      @Value("${delivery.agent.callback-url:http://backend:8080/api/v1/integrations/agent/events}") String callbackUrl,
-      @Value("${delivery.agent.timeout-minutes:30}") long timeoutMinutes) {
+      AuditService audit, SystemSettingService settings,
+      @Value("${delivery.agent.callback-url:http://backend:8080/api/v1/integrations/agent/events}") String callbackUrl) {
     this.jdbc = jdbc; this.gateway = gateway; this.files = files; this.audit = audit;
-    this.callbackUrl = callbackUrl; this.timeoutMinutes = timeoutMinutes;
+    this.settings = settings; this.callbackUrl = callbackUrl;
   }
 
   @Transactional
@@ -57,7 +57,9 @@ public class AgentJobService {
         "select p.organization_id,p.code,p.name,p.customer_name,p.current_stage,pr.name product_name,pv.version_name "
             + "from delivery_project p join product pr on pr.id=p.product_id "
             + "join product_version pv on pv.id=p.product_version_id where p.id=?", projectId);
-    LocalDateTime timeoutAt = LocalDateTime.now().plusMinutes(timeoutMinutes);
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    LocalDateTime timeoutAt =
+        LocalDateTime.now().plusMinutes(settings.agentTimeoutMinutes(organizationId));
     jdbc.update("insert into agent_job(project_id,skill_code,scenario,status,progress,"
             + "idempotency_key,created_by,timeout_at) values (?,?,?,'QUEUED',0,?,?,?)",
         projectId, skill, normalizeScenario(scenario), idempotencyKey, actorUserId,
@@ -82,7 +84,6 @@ public class AgentJobService {
       jdbc.update("insert into agent_attempt(agent_job_id,attempt_no,outcome,error_message) "
           + "values (?,1,'FAILED',?)", id, concise(error));
     }
-    long organizationId = ((Number) project.get("organization_id")).longValue();
     audit.record(organizationId, actorUserId, "AGENT_JOB_SUBMITTED", "AGENT_JOB",
         String.valueOf(id), skill);
     return get(id);
