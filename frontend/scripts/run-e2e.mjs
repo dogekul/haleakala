@@ -4,6 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { createComposeProjectName, finishDisposableRun } from './e2e-runtime.mjs'
 import { ensureChromium } from './playwright-browser.mjs'
 
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -33,7 +34,7 @@ if (process.env.E2E_BASE_URL) {
   process.exit(test.status ?? 1)
 }
 
-const project = `zhilu-delivery-e2e-${process.pid}`
+const project = createComposeProjectName()
 const composeEnv = {
   ...process.env,
   WEB_PORT: '0',
@@ -98,7 +99,10 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
 } finally {
-  compose(['down', '-v'])
+  exitCode = finishDisposableRun({
+    exitCode,
+    cleanup: () => compose(['down', '-v']),
+  })
 }
 
 process.exit(exitCode)
