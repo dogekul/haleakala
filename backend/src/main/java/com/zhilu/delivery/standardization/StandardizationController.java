@@ -79,6 +79,26 @@ public class StandardizationController {
     return standardization.debts(productVersionId);
   }
 
+  @PostMapping("/debts/from-requirement")
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> createCandidateFromRequirement(
+      @Valid @RequestBody CandidateRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.createCandidateFromRequirement(request.requirementId, user);
+  }
+
+  @PostMapping("/debts/{id}/convert-to-feature")
+  public Map<String, Object> convertToFeature(
+      @PathVariable long id,
+      @Valid @RequestBody ConvertFeatureRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    return standardization.convertToFeature(id, user,
+        new StandardizationService.ConvertFeatureCommand(
+            request.productId, request.moduleId, request.productVersionId,
+            request.code, request.name, request.description, request.ownerUserId,
+            request.version));
+  }
+
   @PostMapping("/debts/evaluate")
   public List<Map<String, Object>> evaluateDebts(
       @RequestParam long productVersionId, @AuthenticationPrincipal CurrentUser user) {
@@ -125,5 +145,20 @@ public class StandardizationController {
   public static final class TransitionRequest {
     @NotBlank public String targetStatus;
     public String verificationNote;
+  }
+
+  public static final class CandidateRequest {
+    @NotNull public Long requirementId;
+  }
+
+  public static final class ConvertFeatureRequest {
+    @NotNull public Long productId;
+    @NotNull public Long moduleId;
+    public Long productVersionId;
+    @NotBlank public String code;
+    @NotBlank public String name;
+    public String description;
+    public Long ownerUserId;
+    @NotNull public Long version;
   }
 }

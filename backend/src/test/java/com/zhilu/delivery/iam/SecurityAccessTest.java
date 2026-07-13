@@ -41,6 +41,14 @@ class SecurityAccessTest {
   @BeforeEach
   void seedLoginUser() {
     jdbc.update("delete from audit_log");
+    jdbc.update("delete from standardization_debt_requirement");
+    jdbc.update("delete from standardization_debt");
+    jdbc.update("delete from requirement_product_feature");
+    jdbc.update("delete from product_version_feature");
+    jdbc.update("delete from requirement_item");
+    jdbc.update("delete from delivery_project");
+    jdbc.update("delete from product_feature");
+    jdbc.update("delete from product_module");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
     jdbc.update("delete from user_role");
@@ -166,6 +174,58 @@ class SecurityAccessTest {
 
     mvc.perform(get("/api/v1/products").with(actor("project:read")))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void candidateSubmissionAcceptsRequirementOrStandardizationWriteOnly() throws Exception {
+    jdbc.update("insert into product(id,organization_id,code,name,status) "
+        + "values (2000,200,'ERP','ERP','ACTIVE')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (2000,2000,'V1','RELEASED')");
+    jdbc.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (2001,2000,'V2','PLANNING')");
+    jdbc.update("insert into product_module(id,product_id,code,name,status) "
+        + "values (2000,2000,'FIN','财务','ACTIVE')");
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
+        + "product_id,product_version_id,manager_user_id,created_by) "
+        + "values (2000,200,'P-SEC','权限项目','客户',2000,2000,200,200)");
+    for (long id = 2000; id <= 2002; id++) {
+      jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,"
+          + "title,description,status,created_by) values (?,200,2000,?,?,?,'CONFIRMED',200)",
+          id, "R-" + id, "需求" + id, "待沉淀需求");
+    }
+
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(actor("requirement:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"requirementId\":2000}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.status").value("CANDIDATE"));
+
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(actor("standardization:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"requirementId\":2001}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.status").value("CANDIDATE"));
+
+    mvc.perform(post("/api/v1/standardization/debts/from-requirement")
+            .with(actor("standardization:read")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"requirementId\":2002}"))
+        .andExpect(status().isForbidden());
+
+    Long debtId = jdbc.queryForObject(
+        "select id from standardization_debt where pattern_key='REQUIREMENT:2000'", Long.class);
+    mvc.perform(post("/api/v1/standardization/debts/" + debtId + "/convert-to-feature")
+            .with(actor("standardization:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"productId\":2000,\"moduleId\":2000,\"productVersionId\":2001,"
+                + "\"code\":\"SEC-CONVERT\",\"name\":\"权限测试功能\",\"version\":0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("INCLUDED"))
+        .andExpect(jsonPath("$.convertedFeatureId").isNumber())
+        .andExpect(jsonPath("$.version").value(1));
   }
 
   private Long ensureRole() {

@@ -1,7 +1,12 @@
 package com.zhilu.delivery.standardization;
 
+import com.zhilu.delivery.audit.AuditService;
+import com.zhilu.delivery.catalog.ProductCatalogService;
+import com.zhilu.delivery.catalog.ProductStructureService;
+import com.zhilu.delivery.catalog.ProductVersionFeatureService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.iam.service.CurrentUser;
 import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -18,7 +23,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class StandardizationService {
   private static final List<String> DEBT_STATES = Arrays.asList("CANDIDATE", "PENDING", "INCLUDED", "VERIFYING", "CLOSED");
   private final JdbcTemplate jdbc;
-  public StandardizationService(JdbcTemplate jdbc) { this.jdbc=jdbc; }
+  private final ProductStructureService structures;
+  private final ProductVersionFeatureService manifests;
+  private final ProductCatalogService catalog;
+  private final AuditService audit;
+
+  public StandardizationService(JdbcTemplate jdbc, ProductStructureService structures,
+      ProductVersionFeatureService manifests, ProductCatalogService catalog, AuditService audit) {
+    this.jdbc = jdbc;
+    this.structures = structures;
+    this.manifests = manifests;
+    this.catalog = catalog;
+    this.audit = audit;
+  }
 
   public List<Map<String,Object>> baselines(Long productVersionId) {
     String sql="select b.*,p.name product_name,v.version_name,u.display_name owner_name from product_baseline b join product_version v on v.id=b.product_version_id join product p on p.id=v.product_id left join app_user u on u.id=b.owner_user_id";
@@ -64,6 +81,114 @@ public class StandardizationService {
     for(Map<String,Object> pattern:patterns){try{jdbc.update("insert into standardization_debt(product_version_id,pattern_key,title,occurrence_count,distinct_projects) values (?,?,?,?,?)",productVersionId,pattern.get("pattern_key"),pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"));}catch(DuplicateKeyException duplicate){jdbc.update("update standardization_debt set title=?,occurrence_count=?,distinct_projects=?,updated_at=current_timestamp,version=version+1 where product_version_id=? and pattern_key=?",pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"),productVersionId,pattern.get("pattern_key"));}}
     return debts(productVersionId);
   }
+
+  @Transactional
+  public Map<String, Object> createCandidateFromRequirement(
+      long requirementId, CurrentUser user) {
+    List<Map<String, Object>> contexts = jdbc.queryForList(
+        "select r.title,p.product_version_id from requirement_item r "
+            + "join delivery_project p on p.id=r.project_id "
+            + "where r.id=? and r.organization_id=?",
+        requirementId, user.getOrganizationId());
+    if (contexts.isEmpty()) throw new NotFoundException("需求不存在");
+    Integer full = jdbc.queryForObject(
+        "select count(*) from requirement_product_feature "
+            + "where requirement_id=? and coverage_type='FULL'",
+        Integer.class, requirementId);
+    if (full != null && full > 0) throw new ConflictException("需求已被产品功能完全覆盖");
+    Map<String, Object> context = contexts.get(0);
+    long versionId = ((Number) context.get("product_version_id")).longValue();
+    String pattern = "REQUIREMENT:" + requirementId;
+    try {
+      jdbc.update("insert into standardization_debt(product_version_id,pattern_key,title,"
+              + "occurrence_count,distinct_projects,status) values (?,?,?,1,1,'CANDIDATE')",
+          versionId, pattern, String.valueOf(context.get("title")));
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("该需求已进入标准化候选");
+    }
+    Long debtId = jdbc.queryForObject(
+        "select id from standardization_debt where product_version_id=? and pattern_key=?",
+        Long.class, versionId, pattern);
+    jdbc.update("insert into standardization_debt_requirement(standardization_debt_id,"
+        + "requirement_id) values (?,?)", debtId, requirementId);
+    return debt(debtId, user.getOrganizationId());
+  }
+
+  @Transactional
+  public Map<String, Object> convertToFeature(long debtId, CurrentUser user,
+      ConvertFeatureCommand command) {
+    Map<String, Object> current = debt(debtId, user.getOrganizationId());
+    if (!"CANDIDATE".equals(current.get("status"))
+        && !"PENDING".equals(current.get("status"))) {
+      throw new ConflictException("只有候选或待处理债务可转为产品功能");
+    }
+    if (((Number) current.get("version")).longValue() != command.getVersion()) {
+      throw new ConflictException("标准化债务已被更新，请刷新后重试");
+    }
+    List<Long> requirementIds = validateDebtRequirements(
+        debtId, user.getOrganizationId(), command.getProductId());
+    Map<String, Object> feature = structures.saveFeature(
+        user.getOrganizationId(), user.getId(), command.getProductId(), null,
+        command.getModuleId(), command.getOwnerUserId(), command.getCode(), command.getName(),
+        command.getDescription(), "PLANNING", 0L);
+    long featureId = ((Number) feature.get("id")).longValue();
+    for (Long requirementId : requirementIds) {
+      jdbc.update("insert into requirement_product_feature(requirement_id,product_feature_id,"
+              + "coverage_type,source,created_by) values (?,?,'PARTIAL','STANDARDIZATION',?)",
+          requirementId, featureId, user.getId());
+    }
+    String targetVersion = null;
+    if (command.getProductVersionId() != null) {
+      manifests.appendPlannedFeature(user.getOrganizationId(), command.getProductId(),
+          command.getProductVersionId(), featureId);
+      targetVersion = String.valueOf(catalog.version(user.getOrganizationId(),
+          command.getProductId(), command.getProductVersionId()).get("versionName"));
+    }
+    int changed = jdbc.update("update standardization_debt set status='INCLUDED',"
+            + "converted_feature_id=?,target_version=?,version=version+1,"
+            + "updated_at=current_timestamp where id=? and version=? "
+            + "and status in ('CANDIDATE','PENDING')",
+        featureId, targetVersion, debtId, command.getVersion());
+    if (changed == 0) {
+      throw new ConflictException("标准化债务已被更新，请刷新后重试");
+    }
+    audit.record(user.getOrganizationId(), user.getId(), "CONVERT_TO_FEATURE",
+        "STANDARDIZATION_DEBT", String.valueOf(debtId), command.getCode());
+    return debt(debtId, user.getOrganizationId());
+  }
+
+  private List<Long> validateDebtRequirements(
+      long debtId, long organizationId, long productId) {
+    List<Map<String, Object>> rows = jdbc.queryForList(
+        "select r.id,r.organization_id,p.product_id from standardization_debt_requirement dr "
+            + "join requirement_item r on r.id=dr.requirement_id "
+            + "join delivery_project p on p.id=r.project_id "
+            + "where dr.standardization_debt_id=? order by r.id",
+        debtId);
+    if (rows.isEmpty()) throw new IllegalArgumentException("标准化债务未关联需求");
+    List<Long> requirementIds = new ArrayList<Long>();
+    for (Map<String, Object> row : rows) {
+      if (((Number) row.get("organization_id")).longValue() != organizationId
+          || ((Number) row.get("product_id")).longValue() != productId) {
+        throw new IllegalArgumentException("关联需求与目标产品不一致");
+      }
+      requirementIds.add(((Number) row.get("id")).longValue());
+    }
+    return requirementIds;
+  }
+
+  private Map<String, Object> debt(long id, long organizationId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select d.*,p.name product_name,v.version_name,u.display_name owner_name "
+            + "from standardization_debt d "
+            + "join product_version v on v.id=d.product_version_id "
+            + "join product p on p.id=v.product_id "
+            + "left join app_user u on u.id=d.owner_user_id "
+            + "where d.id=? and p.organization_id=?",
+        (row, index) -> debt(row), id, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("标准化债务不存在");
+    return values.get(0);
+  }
   public List<Map<String,Object>> debts(Long productVersionId){String sql="select d.*,p.name product_name,v.version_name,u.display_name owner_name from standardization_debt d join product_version v on v.id=d.product_version_id join product p on p.id=v.product_id left join app_user u on u.id=d.owner_user_id";Object[] args=new Object[0];if(productVersionId!=null){sql+=" where d.product_version_id=?";args=new Object[]{productVersionId};}sql+=" order by case d.status when 'CANDIDATE' then 1 when 'PENDING' then 2 when 'INCLUDED' then 3 when 'VERIFYING' then 4 else 5 end,d.distinct_projects desc";return jdbc.query(sql,(row,index)->debt(row),args);}
   @Transactional public Map<String,Object> transitionDebt(long id,String target,String note,long actorUserId){List<Map<String,Object>> values=debts(null);Map<String,Object> debt=values.stream().filter(item->((Number)item.get("id")).longValue()==id).findFirst().orElseThrow(()->new NotFoundException("标准化债务不存在"));String current=String.valueOf(debt.get("status"));int from=DEBT_STATES.indexOf(current),to=DEBT_STATES.indexOf(target);if(to!=from+1)throw new ConflictException("债务只能按候选、待评审、已纳入、验证中、已关闭顺序推进");if("CLOSED".equals(target)&&blank(note))throw new IllegalArgumentException("关闭债务必须填写验证结论");jdbc.update("update standardization_debt set status=?,verification_note=?,updated_at=current_timestamp,version=version+1 where id=?",target,note,id);return debts(null).stream().filter(item->((Number)item.get("id")).longValue()==id).findFirst().get();}
 
@@ -76,5 +201,37 @@ public class StandardizationService {
   private BigDecimal number(Object value){return value instanceof BigDecimal?(BigDecimal)value:new BigDecimal(String.valueOf(value));}
   private boolean blank(String value){return value==null||value.trim().isEmpty();}
   private Map<String,Object> baseline(java.sql.ResultSet row)throws java.sql.SQLException{Map<String,Object> v=new LinkedHashMap<String,Object>();v.put("id",row.getLong("id"));v.put("productVersionId",row.getLong("product_version_id"));v.put("productName",row.getString("product_name"));v.put("versionName",row.getString("version_name"));v.put("capabilityCode",row.getString("capability_code"));v.put("capabilityName",row.getString("capability_name"));v.put("dimension",row.getString("dimension"));v.put("scopeDescription",row.getString("scope_description"));v.put("configurationOptions",row.getString("configuration_options"));v.put("extensionPoints",row.getString("extension_points"));v.put("status",row.getString("status"));v.put("ownerName",row.getString("owner_name"));v.put("version",row.getLong("version"));return v;}
-  private Map<String,Object> debt(java.sql.ResultSet row)throws java.sql.SQLException{Map<String,Object> v=new LinkedHashMap<String,Object>();v.put("id",row.getLong("id"));v.put("productVersionId",row.getLong("product_version_id"));v.put("productName",row.getString("product_name"));v.put("versionName",row.getString("version_name"));v.put("patternKey",row.getString("pattern_key"));v.put("title",row.getString("title"));v.put("occurrenceCount",row.getInt("occurrence_count"));v.put("distinctProjects",row.getInt("distinct_projects"));v.put("status",row.getString("status"));v.put("ownerName",row.getString("owner_name"));v.put("targetVersion",row.getString("target_version"));v.put("verificationNote",row.getString("verification_note"));v.put("version",row.getLong("version"));return v;}
+  private Map<String,Object> debt(java.sql.ResultSet row)throws java.sql.SQLException{Map<String,Object> v=new LinkedHashMap<String,Object>();v.put("id",row.getLong("id"));v.put("productVersionId",row.getLong("product_version_id"));v.put("productName",row.getString("product_name"));v.put("versionName",row.getString("version_name"));v.put("patternKey",row.getString("pattern_key"));v.put("title",row.getString("title"));v.put("occurrenceCount",row.getInt("occurrence_count"));v.put("distinctProjects",row.getInt("distinct_projects"));v.put("status",row.getString("status"));v.put("ownerName",row.getString("owner_name"));v.put("targetVersion",row.getString("target_version"));v.put("convertedFeatureId",row.getObject("converted_feature_id"));v.put("verificationNote",row.getString("verification_note"));v.put("version",row.getLong("version"));return v;}
+
+  public static final class ConvertFeatureCommand {
+    private final long productId;
+    private final long moduleId;
+    private final Long productVersionId;
+    private final String code;
+    private final String name;
+    private final String description;
+    private final Long ownerUserId;
+    private final long version;
+
+    public ConvertFeatureCommand(long productId, long moduleId, Long productVersionId,
+        String code, String name, String description, Long ownerUserId, long version) {
+      this.productId = productId;
+      this.moduleId = moduleId;
+      this.productVersionId = productVersionId;
+      this.code = code;
+      this.name = name;
+      this.description = description;
+      this.ownerUserId = ownerUserId;
+      this.version = version;
+    }
+
+    public long getProductId() { return productId; }
+    public long getModuleId() { return moduleId; }
+    public Long getProductVersionId() { return productVersionId; }
+    public String getCode() { return code; }
+    public String getName() { return name; }
+    public String getDescription() { return description; }
+    public Long getOwnerUserId() { return ownerUserId; }
+    public long getVersion() { return version; }
+  }
 }
