@@ -81,6 +81,10 @@ function conversionFetch() {
       status: 'CANDIDATE', version: 3,
     }])
     if (path === '/api/v1/standardization/costs?productVersionId=11') return json({ estimatedPersonDays: 0, actualPersonDays: 0, estimatedCost: 0, actualCost: 0, byExtensionPoint: [] })
+    if (path === '/api/v1/standardization/tasks?productVersionId=11') return json([{
+      id: 31, requirementId: 1, projectId: 101, projectName: '银行项目', requirementCode: 'REQ-1',
+      title: '对账二开任务', status: 'BACKLOG', version: 0,
+    }])
     if (path === '/api/v1/standardization/flywheel?productVersionId=11') return json({ period: '2026-07', confirmedRequirements: 0, l0Count: 0, l1Count: 0, reuseRate: 0, debtClosedCount: 0, customCost: 0, standardCoverage: 0 })
     if (path === '/api/v1/standardization/debts/91/convert-to-feature' && init?.method === 'POST') return json({
       id: 91, patternKey: 'REQUIREMENT:1', title: '对账差异自动定位', occurrenceCount: 1, distinctProjects: 1,
@@ -178,10 +182,50 @@ it('只读标准化用户不发起写请求也不显示转换和流转操作', a
   const user = userEvent.setup()
   show(['standardization:read', 'product:read'])
 
+  await user.click(await screen.findByRole('tab', { name: /成熟度/ }))
+  expect(await screen.findByText('暂无成熟度快照')).toBeVisible()
+  await user.click(screen.getByRole('tab', { name: /产品飞轮/ }))
+  expect(await screen.findByText('暂无产品飞轮快照')).toBeVisible()
   await user.click(await screen.findByRole('tab', { name: /标准化债务/ }))
   await screen.findByText('对账差异自动定位')
   expect(screen.queryByRole('button', { name: '转为产品功能' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '评估高频二开' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '待评审' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: /成本归集/ }))
+  expect(await screen.findByText('对账二开任务')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /新建二开任务/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /编\s*辑/ })).not.toBeInTheDocument()
   expect(requests.some(request => request.init?.method === 'POST')).toBe(false)
+})
+
+it('在成本归集视图创建并编辑二开任务成本', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => {
+    requests.push({ path: input, init })
+    let body: unknown = []
+    if (input.endsWith('/api/v1/products')) body = [{ id: 1, code: 'ERP', name: '企业财务', status: 'ACTIVE' }]
+    else if (input.includes('/versions')) body = [{ id: 11, productId: 1, versionName: 'V5.0', status: 'ACTIVE' }]
+    else if (input.includes('/tasks') && init?.method === 'PUT') body = { id: 31 }
+    else if (input.includes('/tasks')) body = [{ id: 31, requirementId: 201, projectId: 101, projectName: '银行项目', requirementCode: 'REQ-1', title: '对账幂等重跑', status: 'IN_PROGRESS', estimatedPersonDays: 18, actualPersonDays: 12, estimatedCost: 36000, actualCost: 26000, extensionPoint: 'reconciliation.retry', version: 0 }]
+    else if (input.includes('/costs')) body = { estimatedPersonDays: 18, actualPersonDays: 12, estimatedCost: 36000, actualCost: 26000, byExtensionPoint: [] }
+    else if (input.includes('/assessments')) body = { period: '2026-07', standardCoverage: 72, reuseRate: 64, documentationScore: 80, extensionReadiness: 56, deliveryStability: 90, maturityScore: 71 }
+    else if (input.includes('/flywheel')) body = { period: '2026-07', confirmedRequirements: 1, l0Count: 0, l1Count: 1, reuseRate: 0, debtClosedCount: 0, customCost: 26000, standardCoverage: 0 }
+    return Promise.resolve({ ok: true, status: 200, json: async () => body })
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  show(auth.me!.permissions, client)
+
+  await userEvent.click(await screen.findByRole('tab', { name: /成本归集/ }))
+  expect(await screen.findByText('对账幂等重跑')).toBeVisible()
+  expect(screen.getByRole('button', { name: /新建二开任务/ })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: /编\s*辑/ }))
+  const actualCost = screen.getByLabelText('实际成本（元）')
+  await userEvent.clear(actualCost)
+  await userEvent.type(actualCost, '28000')
+  await userEvent.click(screen.getByRole('button', { name: '保存任务' }))
+
+  await waitFor(() => expect(requests.some(request => request.path === '/api/v1/standardization/tasks/31' && request.init?.method === 'PUT')).toBe(true))
+  const saved = requests.find(request => request.path === '/api/v1/standardization/tasks/31' && request.init?.method === 'PUT')
+  expect(JSON.parse(String(saved?.init?.body))).toMatchObject({ actualCost: 28000, version: 0 })
+  vi.unstubAllGlobals()
 })

@@ -30,7 +30,7 @@ public class FileController {
       @RequestParam("file") MultipartFile upload,
       @AuthenticationPrincipal CurrentUser user) throws IOException {
     FileObjectView stored = files.store(upload.getInputStream(), upload.getOriginalFilename(),
-        upload.getContentType(), upload.getSize(), user.getOrganizationId(), user.getId());
+        upload.getContentType(), upload.getSize(), user);
     return ResponseEntity.status(HttpStatus.CREATED).body(stored);
   }
 
@@ -40,12 +40,13 @@ public class FileController {
       @RequestParam("file") MultipartFile upload,
       @AuthenticationPrincipal CurrentUser user) throws IOException {
     return files.addVersion(id, upload.getInputStream(), upload.getContentType(),
-        upload.getSize(), user.getId());
+        upload.getSize(), user);
   }
 
   @GetMapping("/{id}/download")
-  public ResponseEntity<Void> download(@PathVariable long id) {
-    URI location = files.signedDownload(id, Duration.ofMinutes(10));
+  public ResponseEntity<Void> download(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    URI location = files.signedDownload(id, Duration.ofMinutes(10), user);
     return ResponseEntity.status(HttpStatus.FOUND)
         .header(HttpHeaders.LOCATION, location.toString()).build();
   }

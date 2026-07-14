@@ -1,5 +1,5 @@
 import { api } from '../../services/api'
-import type { Assessment, Baseline, CostSummary, Deviation, FlywheelMetric, StandardizationDebt } from './types'
+import type { Assessment, Baseline, CostSummary, CustomDevTask, Deviation, FlywheelMetric, StandardizationDebt } from './types'
 
 export const standardizationApi = {
   baselines: (versionId: number) => api<Baseline[]>(`/api/v1/standardization/baselines?productVersionId=${versionId}`),
@@ -13,5 +13,7 @@ export const standardizationApi = {
     method: 'POST', body: JSON.stringify(input),
   }),
   costs: (versionId: number) => api<CostSummary>(`/api/v1/standardization/costs?productVersionId=${versionId}`),
+  tasks: (versionId: number) => api<CustomDevTask[]>(`/api/v1/standardization/tasks?productVersionId=${versionId}`),
+  saveTask: (id: number | undefined, input: Record<string, unknown>) => api<CustomDevTask>(`/api/v1/standardization/tasks${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
   flywheel: (versionId: number) => api<FlywheelMetric>(`/api/v1/standardization/flywheel?productVersionId=${versionId}`, { method: 'POST' }),
 }

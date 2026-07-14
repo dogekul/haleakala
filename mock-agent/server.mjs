@@ -5,6 +5,7 @@ import { request as httpsRequest } from 'node:https'
 const port = Number(process.env.PORT ?? 8090)
 const secret = process.env.AGENT_SHARED_SECRET ?? 'change-me'
 const jobs = new Map()
+const idempotentJobs = new Map()
 const skills = new Set(['deliver-init', 'deliver-require', 'deliver-dev', 'deliver-transition', 'deliver-standardize', 'deliver-close'])
 
 const server = createServer(async (request, response) => {
@@ -12,7 +13,7 @@ const server = createServer(async (request, response) => {
     const body = await readBody(request)
     if (request.url !== '/health' && !verify(request.headers, body)) return send(response, 401, { code: 'INVALID_SIGNATURE' })
     if (request.method === 'GET' && request.url === '/health') return send(response, 200, { status: 'UP' })
-    if (request.method === 'POST' && request.url === '/v1/jobs') return createJob(body, response)
+    if (request.method === 'POST' && request.url === '/v1/jobs') return createJob(body, request.headers, response)
     const match = request.url?.match(/^\/v1\/jobs\/([^/]+)(\/cancel)?$/)
     if (!match) return send(response, 404, { code: 'NOT_FOUND' })
     const job = jobs.get(match[1])
@@ -28,12 +29,17 @@ const server = createServer(async (request, response) => {
   }
 })
 
-function createJob(raw, response) {
+function createJob(raw, headers, response) {
   const input = JSON.parse(raw || '{}')
   if (!skills.has(input.skill)) return send(response, 422, { code: 'UNSUPPORTED_SKILL' })
+  const idempotencyKey = headers['idempotency-key']
+  if (typeof idempotencyKey === 'string' && idempotentJobs.has(idempotencyKey)) {
+    return send(response, 202, publicJob(idempotentJobs.get(idempotencyKey)))
+  }
   const id = randomUUID()
   const job = { id, skill: input.skill, scenario: input.scenario ?? 'normal', callbackUrl: input.callbackUrl, status: 'QUEUED', progress: 0, artifacts: [], error: null }
   jobs.set(id, job)
+  if (typeof idempotencyKey === 'string' && idempotencyKey) idempotentJobs.set(idempotencyKey, job)
   setTimeout(() => transition(job, 'RUNNING', 25), 250)
   if (job.scenario === 'normal') {
     setTimeout(() => transition(job, 'RUNNING', 70), 900)

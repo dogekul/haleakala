@@ -1,14 +1,18 @@
-import { defineConfig } from '@playwright/test'
+import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
+  fullyParallel: false,
   workers: 1,
   timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: 'list',
   use: {
+    ...devices['Desktop Chrome'],
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:53990',
-    screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     viewport: { width: 1440, height: 900 },
   },
 })

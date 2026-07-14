@@ -1,5 +1,11 @@
 import { api } from '../../services/api'
-import type { KnowledgeItem } from './types'
+import type { KnowledgeItem, UploadedFile } from './types'
+
+function fileBody(file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  return body
+}
 
 export const knowledgeApi = {
   search: (keyword: string, type: string) => {
@@ -11,4 +17,6 @@ export const knowledgeApi = {
   get: (id: number) => api<KnowledgeItem>(`/api/v1/knowledge/${id}`),
   save: (id: number | undefined, input: Record<string, unknown>) => api<KnowledgeItem>(`/api/v1/knowledge${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
   publish: (id: number) => api<KnowledgeItem>(`/api/v1/knowledge/${id}/publish`, { method: 'POST' }),
+  upload: (file: File) => api<UploadedFile>('/api/v1/files', { method: 'POST', body: fileBody(file) }),
+  addFileVersion: (id: number, file: File) => api<UploadedFile>(`/api/v1/files/${id}/versions`, { method: 'POST', body: fileBody(file) }),
 }

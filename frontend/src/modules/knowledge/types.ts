@@ -21,4 +21,14 @@ export interface KnowledgeItem {
   audience?: string
   durationMinutes?: number
   fileObjectId?: number
+  fileOriginalName?: string
+  fileVersion?: number
+  fileSizeBytes?: number
+}
+
+export interface UploadedFile {
+  id: number
+  originalName: string
+  sizeBytes: number
+  fileVersion: number
 }

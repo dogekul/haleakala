@@ -12,8 +12,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
 import { productApi } from '../product/productApi'
 import { ConvertToFeatureDrawer } from './ConvertToFeatureDrawer'
+import { projectApi } from '../project/projectApi'
+import { requirementApi } from '../requirement/requirementApi'
 import { standardizationApi } from './standardizationApi'
-import type { Assessment, Baseline, CostSummary, Deviation, FlywheelMetric, StandardizationDebt } from './types'
+import type { Assessment, Baseline, CostSummary, CustomDevTask, Deviation, FlywheelMetric, StandardizationDebt } from './types'
 
 const dimensionLabels = { FUNCTION: '标准功能', CONFIGURATION: '可配置项', EXTENSION: '扩展点' }
 const debtStates = ['CANDIDATE', 'PENDING', 'INCLUDED', 'VERIFYING', 'CLOSED'] as const
@@ -38,6 +40,7 @@ export function StandardizationPage() {
   const deviations = useQuery({ queryKey: ['deviations', versionId], queryFn: () => standardizationApi.deviations(versionId!), enabled })
   const debts = useQuery({ queryKey: ['standardization-debts', versionId], queryFn: () => standardizationApi.debts(versionId!), enabled })
   const costs = useQuery({ queryKey: ['standardization-costs', versionId], queryFn: () => standardizationApi.costs(versionId!), enabled })
+  const tasks = useQuery({ queryKey: ['standardization-tasks', versionId], queryFn: () => standardizationApi.tasks(versionId!), enabled })
   const flywheel = useQuery({ queryKey: ['standardization-flywheel', versionId], queryFn: () => standardizationApi.flywheel(versionId!), enabled: enabled && canWrite })
   const currentProduct = products.data?.find(item => item.id === productId)
   const currentVersion = versions.data?.find(item => item.id === versionId)
@@ -48,14 +51,14 @@ export function StandardizationPage() {
       <Space><Select aria-label="产品" showSearch optionFilterProp="label" value={productId} loading={products.isLoading} onChange={value => { setProductId(value); setVersionId(undefined) }} style={{ width: 170 }} options={products.data?.map(item => ({ value: item.id, label: item.name }))} />
         <Select aria-label="版本" showSearch optionFilterProp="label" value={versionId} loading={versions.isLoading} onChange={setVersionId} style={{ width: 130 }} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Space></div>
     <div className="standardization-context"><div><ApiOutlined /><span>当前基线</span><strong>{currentProduct?.name ?? '请选择产品'} / {currentVersion?.versionName ?? '-'}</strong></div>
-      <div><span>评估周期</span><strong>{assessment.data?.period ?? '-'}</strong></div><div><span>标准覆盖</span><strong>{assessment.data?.standardCoverage ?? 0}%</strong></div><div><span>二开实际成本</span><strong>{currency(costs.data?.actualCost)}</strong></div></div>
+      <div><span>评估周期</span><strong>{assessment.data?.period ?? '-'}</strong></div><div><span>标准覆盖</span><strong>{assessment.data ? `${assessment.data.standardCoverage}%` : '-'}</strong></div><div><span>二开实际成本</span><strong>{currency(costs.data?.actualCost)}</strong></div></div>
     {!versionId ? <Card><Empty description="请先选择产品版本" /></Card> : <Tabs className="standardization-tabs" items={[
       { key: 'baseline', label: <span><FileProtectOutlined />能力基线</span>, children: <BaselineView values={baselines.data ?? []} loading={baselines.isLoading} canWrite={canWrite} onEdit={setBaselineEditor} /> },
-      { key: 'maturity', label: <span><BarChartOutlined />成熟度</span>, children: <MaturityView value={assessment.data} loading={assessment.isLoading} canWrite={canWrite} onRefresh={() => assessment.refetch()} /> },
+      { key: 'maturity', label: <span><BarChartOutlined />成熟度</span>, children: <MaturityView value={assessment.data} loading={assessment.isLoading} canWrite={canWrite} unavailable={!canWrite && !assessment.data} onRefresh={() => assessment.refetch()} /> },
       { key: 'deviation', label: <span><ExperimentOutlined />偏离度</span>, children: <DeviationView values={deviations.data ?? []} loading={deviations.isLoading} /> },
       { key: 'debt', label: <span><AuditOutlined />标准化债务</span>, children: <DebtView versionId={versionId} values={debts.data ?? []} loading={debts.isLoading} canWrite={canWrite} canConvert={canConvert} onConvert={setConverting} /> },
-      { key: 'cost', label: <span><DollarOutlined />成本归集</span>, children: <CostView value={costs.data} loading={costs.isLoading} /> },
-      { key: 'flywheel', label: <span><SyncOutlined />产品飞轮</span>, children: <FlywheelView value={flywheel.data} loading={flywheel.isLoading} /> },
+      { key: 'cost', label: <span><DollarOutlined />成本归集</span>, children: <CostView versionId={versionId} value={costs.data} tasks={tasks.data ?? []} loading={costs.isLoading || tasks.isLoading} canWrite={canWrite} /> },
+      { key: 'flywheel', label: <span><SyncOutlined />产品飞轮</span>, children: <FlywheelView value={flywheel.data} loading={flywheel.isLoading} unavailable={!canWrite && !flywheel.data} /> },
     ]} />}
     <BaselineEditor versionId={versionId} value={baselineEditor} canWrite={canWrite} onClose={() => setBaselineEditor(undefined)} />
     <ConvertToFeatureDrawer debt={converting} defaultProductId={productId} onClose={() => setConverting(undefined)} />
@@ -70,7 +73,8 @@ function BaselineView({ values, loading, canWrite, onEdit }: { values: Baseline[
         {!group.values.length && <Col span={24}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未定义" /></Col>}</Row></section>)}</div>
 }
 
-function MaturityView({ value, loading, canWrite, onRefresh }: { value?: Assessment; loading: boolean; canWrite: boolean; onRefresh(): void }) {
+function MaturityView({ value, loading, canWrite, unavailable, onRefresh }: { value?: Assessment; loading: boolean; canWrite: boolean; unavailable: boolean; onRefresh(): void }) {
+  if (unavailable) return <Alert showIcon type="info" message="暂无成熟度快照" description="当前账号无权刷新成熟度评估。" />
   const metrics: Array<[string, number, string]> = value ? [
     ['标准覆盖率', value.standardCoverage, '30%'], ['扩展复用率', value.reuseRate, '40%'], ['文档完备度', value.documentationScore, '10%'],
     ['扩展就绪度', value.extensionReadiness, '10%'], ['交付稳定性', value.deliveryStability, '10%'],
@@ -97,13 +101,62 @@ function DebtView({ versionId, values, loading, canWrite, canConvert, onConvert 
     <Modal title="关闭标准化债务" open={Boolean(closing)} onCancel={() => setClosing(undefined)} onOk={() => closing && advance.mutate({ item: closing, note })} okButtonProps={{ disabled: !note.trim(), loading: advance.isPending }}><Alert type="info" showIcon message="请填写版本回归和项目验证结论。" /><Input.TextArea className="verification-note" rows={5} value={note} onChange={event => setNote(event.target.value)} /></Modal></Card>
 }
 
-function CostView({ value, loading }: { value?: CostSummary; loading: boolean }) {
+function CostView({ versionId, value, tasks, loading, canWrite }: { versionId: number; value?: CostSummary; tasks: CustomDevTask[]; loading: boolean; canWrite: boolean }) {
+  const [editing, setEditing] = useState<CustomDevTask | null | undefined>()
   const overrun = Number(value?.actualCost ?? 0) - Number(value?.estimatedCost ?? 0)
   return <div><Row gutter={12} className="cost-kpis"><Col span={6}><Card loading={loading}><Statistic title="预估人天" value={value?.estimatedPersonDays ?? 0} suffix="人天" /></Card></Col><Col span={6}><Card loading={loading}><Statistic title="实际人天" value={value?.actualPersonDays ?? 0} suffix="人天" /></Card></Col><Col span={6}><Card loading={loading}><Statistic title="实际成本" value={value?.actualCost ?? 0} prefix="¥" /></Card></Col><Col span={6}><Card loading={loading}><Statistic title="成本偏差" value={overrun} prefix="¥" valueStyle={{ color: overrun > 0 ? '#f54a45' : '#2ea869' }} /></Card></Col></Row>
-    <Card title="按扩展点归集"><Table rowKey="extension_point" dataSource={value?.byExtensionPoint ?? []} pagination={false} columns={[{ title: '扩展点', dataIndex: 'extension_point' }, { title: '任务数', dataIndex: 'task_count' }, { title: '实际人天', dataIndex: 'person_days' }, { title: '实际成本', dataIndex: 'amount', render: currency }]} /></Card></div>
+    <Card title="二开任务与成本明细" extra={canWrite && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新建二开任务</Button>}><Table rowKey="id" loading={loading} dataSource={tasks} pagination={false} columns={[
+      { title: '任务', render: (_, item: CustomDevTask) => <div><strong>{item.title}</strong><span className="cell-sub">{item.requirementCode} · {item.projectName}</span></div> },
+      { title: '状态', dataIndex: 'status', render: status => <Tag>{taskStatusLabels[status] ?? status}</Tag> },
+      { title: '扩展点', dataIndex: 'extensionPoint', render: value => value || '未归类' },
+      { title: '预估 / 实际人天', render: (_, item: CustomDevTask) => `${item.estimatedPersonDays ?? 0} / ${item.actualPersonDays ?? 0}` },
+      { title: '预估 / 实际成本', render: (_, item: CustomDevTask) => `${currency(item.estimatedCost)} / ${currency(item.actualCost)}` },
+      { title: '操作', render: (_, item: CustomDevTask) => canWrite ? <Button size="small" onClick={() => setEditing(item)}>编辑</Button> : null },
+    ]} /></Card>
+    <Card title="按扩展点归集"><Table rowKey="extension_point" dataSource={value?.byExtensionPoint ?? []} pagination={false} columns={[{ title: '扩展点', dataIndex: 'extension_point' }, { title: '任务数', dataIndex: 'task_count' }, { title: '实际人天', dataIndex: 'person_days' }, { title: '实际成本', dataIndex: 'amount', render: currency }]} /></Card>
+    <TaskEditor productVersionId={versionId} value={editing} onClose={() => setEditing(undefined)} />
+  </div>
 }
 
-function FlywheelView({ value, loading }: { value?: FlywheelMetric; loading: boolean }) {
+const taskStatusLabels: Record<string, string> = { BACKLOG: '待排期', IN_PROGRESS: '进行中', BLOCKED: '阻塞', DONE: '已完成', CANCELLED: '已取消' }
+
+function TaskEditor({ productVersionId, value, onClose }: { productVersionId: number; value: CustomDevTask | null | undefined; onClose(): void }) {
+  const [form] = Form.useForm()
+  const client = useQueryClient()
+  const projectId = Form.useWatch('projectId', form)
+  const projects = useQuery({ queryKey: ['projects-standardization-task'], queryFn: projectApi.list, enabled: value !== undefined })
+  const requirements = useQuery({ queryKey: ['requirements-standardization-task'], queryFn: requirementApi.list, enabled: value !== undefined })
+  useEffect(() => {
+    if (value === undefined) return
+    form.setFieldsValue(value ?? { status: 'BACKLOG' })
+  }, [form, value])
+  const save = useMutation({
+    mutationFn: (input: Record<string, unknown>) => standardizationApi.saveTask(value?.id, { ...input, version: value?.version ?? 0 }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['standardization-tasks', productVersionId] }),
+        client.invalidateQueries({ queryKey: ['standardization-costs', productVersionId] }),
+        client.invalidateQueries({ queryKey: ['standardization-flywheel', productVersionId] }),
+      ])
+      form.resetFields(); onClose(); message.success(value ? '二开任务成本已更新' : '二开任务已创建')
+    },
+    onError: (error: Error) => message.error(error.message),
+  })
+  const projectOptions = projects.data?.filter(project => project.productVersionId === productVersionId).map(project => ({ value: project.id, label: `${project.code} · ${project.name}` }))
+  const requirementOptions = requirements.data?.filter(requirement => requirement.projectId === projectId && requirement.status === 'CONFIRMED' && requirement.confirmedLevel === 'L1').map(requirement => ({ value: requirement.id, label: `${requirement.code} · ${requirement.title}` }))
+  return <Drawer width={650} title={value ? '编辑二开任务成本' : '新建二开任务'} open={value !== undefined} onClose={onClose} extra={<Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存任务</Button>}>
+    <Form form={form} layout="vertical" onFinish={save.mutate}>
+      <Row gutter={12}><Col span={12}><Form.Item label="项目" name="projectId" rules={[{ required: true }]}><Select disabled={Boolean(value)} options={projectOptions} onChange={() => form.setFieldValue('requirementId', undefined)} /></Form.Item></Col><Col span={12}><Form.Item label="L1 需求" name="requirementId" rules={[{ required: true }]}><Select disabled={Boolean(value) || !projectId} options={requirementOptions} /></Form.Item></Col></Row>
+      <Form.Item label="任务标题" name="title" rules={[{ required: true }]}><Input /></Form.Item>
+      <Row gutter={12}><Col span={12}><Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={Object.entries(taskStatusLabels).map(([status, label]) => ({ value: status, label }))} /></Form.Item></Col><Col span={12}><Form.Item label="技术负责人 ID" name="technicalOwnerId"><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col></Row>
+      <Form.Item label="扩展点" name="extensionPoint"><Input placeholder="例如 reconciliation.retry" /></Form.Item>
+      <Row gutter={12}><Col span={12}><Form.Item label="预估人天" name="estimatedPersonDays"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="实际人天" name="actualPersonDays"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="预估成本（元）" name="estimatedCost"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="实际成本（元）" name="actualCost"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col></Row>
+    </Form>
+  </Drawer>
+}
+
+function FlywheelView({ value, loading, unavailable }: { value?: FlywheelMetric; loading: boolean; unavailable: boolean }) {
+  if (unavailable) return <Alert showIcon type="info" message="暂无产品飞轮快照" description="当前账号无权刷新产品飞轮指标。" />
   const steps = [['交付需求', value?.confirmedRequirements ?? 0], ['标准覆盖', `${value?.standardCoverage ?? 0}%`], ['扩展复用', `${value?.reuseRate ?? 0}%`], ['债务闭环', value?.debtClosedCount ?? 0]]
   return <Card loading={loading} className="flywheel-card"><div className="flywheel-heading"><div><RiseOutlined /><Typography.Title level={3}>交付 → 沉淀 → 复用 → 更高标准化</Typography.Title><p>所有指标都可追溯到人工确认需求、实际二开任务和债务状态。</p></div><Tag color="blue">{value?.period}</Tag></div>
     <div className="flywheel-loop">{steps.map(([label, metric], index) => <div key={String(label)}><span>{index + 1}</span><strong>{metric}</strong><small>{label}</small></div>)}</div>

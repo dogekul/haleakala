@@ -40,6 +40,7 @@ class StandardizationServiceTest {
   @SpyBean private JdbcTemplate jdbc;
   @Autowired private StandardizationService standardization;
   @SpyBean private ProductStructureService structures;
+  @Autowired private StandardizationController controller;
 
   @BeforeEach void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
@@ -72,6 +73,9 @@ class StandardizationServiceTest {
     assertEquals(1,first.size()); assertEquals(1,second.size());
     assertEquals(1,jdbc.queryForObject("select count(*) from standardization_debt",Integer.class));
     long debt=((Number)first.get(0).get("id")).longValue();
+    assertEquals(5, jdbc.queryForObject(
+        "select count(*) from standardization_debt_requirement where standardization_debt_id=?",
+        Integer.class, debt));
     assertThrows(ConflictException.class,()->standardization.transitionDebt(1000,debt,"CLOSED","直接关闭",1000));
     standardization.transitionDebt(1000,debt,"PENDING",null,1000);
     standardization.transitionDebt(1000,debt,"INCLUDED",null,1000);
@@ -430,5 +434,28 @@ class StandardizationServiceTest {
         Integer.class));
     assertEquals(Long.valueOf(expectedDebtVersion), jdbc.queryForObject(
         "select version from standardization_debt where id=?", Long.class, debtId));
+  }
+
+  @Test void taskCostWorkflowIsOrganizationScopedAndEditable() {
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,title,description,status,created_by) values (1200,1000,1000,'R-NEW','新二开任务','需要受控扩展','CONFIRMED',1000)");
+    jdbc.update("insert into classification_decision(requirement_id,confirmed_level,confirmed_by) values (1200,'L1',1000)");
+
+    StandardizationController.TaskRequest request=new StandardizationController.TaskRequest();
+    request.requirementId=1200L;request.projectId=1000L;request.title="新二开任务";request.status="BACKLOG";
+    request.technicalOwnerId=1000L;request.estimatedPersonDays=new java.math.BigDecimal("4");
+    request.actualPersonDays=java.math.BigDecimal.ZERO;request.estimatedCost=new java.math.BigDecimal("8000");
+    request.actualCost=java.math.BigDecimal.ZERO;request.extensionPoint="payment.export";
+    CurrentUser actor=new CurrentUser(1000L,1000L,"product","产品经理",java.util.Collections.<String>emptyList(),java.util.Arrays.asList("standardization:read","standardization:write"));
+    Map<String,Object> created=controller.createTask(request,actor);
+    assertEquals(6,standardization.tasks(1000,1000).size());
+    assertEquals(0,standardization.tasks(9999,1000).size());
+    assertEquals(1,jdbc.queryForObject("select count(*) from audit_log where resource_type='CUSTOM_DEV_TASK' and action='CREATE'",Integer.class));
+
+    long id=((Number)created.get("id")).longValue();
+    Map<String,Object> updated=standardization.saveTask(id,1000,1200,1000,"新二开任务","DONE",1000L,
+        new java.math.BigDecimal("4"),new java.math.BigDecimal("5"),new java.math.BigDecimal("8000"),
+        new java.math.BigDecimal("10000"),"payment.export",0);
+    assertEquals("DONE",updated.get("status"));
+    assertEquals(110000.0,((Number)standardization.costs(1000,1000).get("actualCost")).doubleValue(),0.01);
   }
 }

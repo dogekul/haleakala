@@ -3,6 +3,13 @@ package com.zhilu.delivery.automation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import java.util.Collections;
@@ -18,7 +25,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:agent-job;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
     "spring.datasource.username=sa", "spring.datasource.password=",
-    "spring.jpa.hibernate.ddl-auto=none", "spring.session.store-type=none"
+    "spring.jpa.hibernate.ddl-auto=none", "spring.session.store-type=none",
+    "delivery.agent.dispatch-initial-delay-ms=3600000",
+    "delivery.agent.reconcile-initial-delay-ms=3600000"
 })
 class AgentJobServiceTest {
   @Autowired private JdbcTemplate jdbc;
@@ -54,10 +63,12 @@ class AgentJobServiceTest {
 
   @Test
   void duplicateIdempotencyKeyReturnsSameJobAndTerminalStateCannotRegress() {
-    org.mockito.Mockito.when(gateway.submit(org.mockito.ArgumentMatchers.any()))
+    when(gateway.submit(anyString(), any()))
         .thenReturn(new AgentSubmission("external-700", "RUNNING"));
     AgentJobView first = jobs.submit(700, "deliver-init", "normal", "same-key", 700);
     AgentJobView duplicate = jobs.submit(700, "deliver-init", "normal", "same-key", 700);
+    verify(gateway, never()).submit(any(), any());
+    jobs.dispatchPending();
     jobs.accept(new AgentEvent("evt-1", "external-700", "SUCCEEDED", 100, null,
         Collections.<AgentArtifact>emptyList()));
 
@@ -69,9 +80,10 @@ class AgentJobServiceTest {
 
   @Test
   void duplicateCallbackIsAppliedOnce() {
-    org.mockito.Mockito.when(gateway.submit(org.mockito.ArgumentMatchers.any()))
+    when(gateway.submit(anyString(), any()))
         .thenReturn(new AgentSubmission("external-701", "RUNNING"));
     jobs.submit(700, "deliver-require", "normal", "callback-key", 700);
+    jobs.dispatchPending();
     AgentEvent event = new AgentEvent("evt-once", "external-701", "SUCCEEDED", 100,
         null, Collections.<AgentArtifact>emptyList());
     jobs.accept(event);
@@ -85,9 +97,6 @@ class AgentJobServiceTest {
   void newJobUsesCurrentOrganizationTimeoutSetting() {
     jdbc.update("insert into system_setting(organization_id,setting_key,setting_value) "
         + "values (700,'agent.timeoutMinutes','45')");
-    org.mockito.Mockito.when(gateway.submit(org.mockito.ArgumentMatchers.any()))
-        .thenReturn(new AgentSubmission("external-timeout", "RUNNING"));
-
     AgentJobView job = jobs.submit(700, "deliver-init", "normal", "timeout-key", 700);
     Map<String, Object> times = jdbc.queryForMap(
         "select created_at,timeout_at from agent_job where id=?", job.getId());
@@ -95,5 +104,41 @@ class AgentJobServiceTest {
         - ((Timestamp) times.get("created_at")).getTime()) / 60000L;
 
     assertTrue(minutes >= 44 && minutes <= 45, "timeout should use the 45 minute setting");
+  }
+
+  @Test
+  void failedDispatchIsRetriedAndUsesStableRemoteIdempotencyKey() {
+    when(gateway.submit(anyString(), any()))
+        .thenThrow(new IllegalStateException("temporary outage"))
+        .thenReturn(new AgentSubmission("external-retry", "QUEUED"));
+    AgentJobView queued = jobs.submit(700, "deliver-dev", "normal", "retry-key", 700);
+
+    jobs.dispatchPending();
+    jdbc.update("update agent_job set next_dispatch_at=current_timestamp where id=?", queued.getId());
+    jobs.dispatchPending();
+
+    AgentJobView dispatched = jobs.get(queued.getId());
+    assertEquals("external-retry", dispatched.getExternalJobId());
+    assertEquals("QUEUED", dispatched.getStatus());
+    verify(gateway, times(2)).submit(eq("platform-job-" + queued.getId()), any());
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from agent_attempt where agent_job_id=?", Integer.class, queued.getId()));
+  }
+
+  @Test
+  void reconciliationRecoversWhenCallbackWasLost() {
+    when(gateway.submit(anyString(), any()))
+        .thenReturn(new AgentSubmission("external-poll", "RUNNING"));
+    AgentJobView queued = jobs.submit(700, "deliver-close", "normal", "poll-key", 700);
+    jobs.dispatchPending();
+    when(gateway.status("external-poll")).thenReturn(new AgentEvent(
+        null, "external-poll", "SUCCEEDED", 100, null,
+        Collections.<AgentArtifact>emptyList()));
+
+    jobs.reconcileActive();
+
+    assertEquals("SUCCEEDED", jobs.get(queued.getId()).getStatus());
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from callback_receipt where agent_job_id=?", Integer.class, queued.getId()));
   }
 }

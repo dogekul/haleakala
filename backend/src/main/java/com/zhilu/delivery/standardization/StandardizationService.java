@@ -83,7 +83,10 @@ public class StandardizationService {
   @Transactional public List<Map<String,Object>> evaluateDebts(long organizationId,long productVersionId,long actorUserId){
     requireProductVersion(organizationId,productVersionId,false);
     List<Map<String,Object>> patterns=jdbc.queryForList("select t.extension_point pattern_key,min(t.title) title,count(*) occurrence_count,count(distinct t.project_id) distinct_projects from custom_dev_task t join delivery_project p on p.id=t.project_id where p.product_version_id=? and t.extension_point is not null group by t.extension_point having count(distinct t.project_id)>=5",productVersionId);
-    for(Map<String,Object> pattern:patterns){try{jdbc.update("insert into standardization_debt(product_version_id,pattern_key,title,occurrence_count,distinct_projects) values (?,?,?,?,?)",productVersionId,pattern.get("pattern_key"),pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"));}catch(DuplicateKeyException duplicate){jdbc.update("update standardization_debt set title=?,occurrence_count=?,distinct_projects=?,updated_at=current_timestamp,version=version+1 where product_version_id=? and pattern_key=?",pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"),productVersionId,pattern.get("pattern_key"));}}
+    for(Map<String,Object> pattern:patterns){try{jdbc.update("insert into standardization_debt(product_version_id,pattern_key,title,occurrence_count,distinct_projects) values (?,?,?,?,?)",productVersionId,pattern.get("pattern_key"),pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"));}catch(DuplicateKeyException duplicate){jdbc.update("update standardization_debt set title=?,occurrence_count=?,distinct_projects=?,updated_at=current_timestamp,version=version+1 where product_version_id=? and pattern_key=?",pattern.get("title"),pattern.get("occurrence_count"),pattern.get("distinct_projects"),productVersionId,pattern.get("pattern_key"));}
+      Long debtId=jdbc.queryForObject("select id from standardization_debt where product_version_id=? and pattern_key=?",Long.class,productVersionId,pattern.get("pattern_key"));
+      jdbc.update("insert into standardization_debt_requirement(standardization_debt_id,requirement_id) select ?,t.requirement_id from custom_dev_task t join delivery_project p on p.id=t.project_id where p.product_version_id=? and t.extension_point=? and not exists (select 1 from standardization_debt_requirement l where l.standardization_debt_id=? and l.requirement_id=t.requirement_id)",debtId,productVersionId,pattern.get("pattern_key"),debtId);
+    }
     return debts(organizationId,productVersionId);
   }
 
@@ -130,6 +133,36 @@ public class StandardizationService {
     audit.record(user.getOrganizationId(), user.getId(), "CREATE_CANDIDATE",
         "STANDARDIZATION_DEBT", String.valueOf(debtId), "requirementId=" + requirementId);
     return debt(debtId, user.getOrganizationId());
+  }
+
+  public List<Map<String,Object>> tasks(long organizationId,long productVersionId){
+    return jdbc.query("select t.*,r.requirement_code,r.title requirement_title,p.code project_code,p.name project_name,p.product_version_id,u.display_name technical_owner_name "
+        + "from custom_dev_task t join requirement_item r on r.id=t.requirement_id join delivery_project p on p.id=t.project_id "
+        + "left join app_user u on u.id=t.technical_owner_id where p.organization_id=? and p.product_version_id=? order by t.updated_at desc,t.id desc",
+        (row,index)->task(row),organizationId,productVersionId);
+  }
+
+  @Transactional public Map<String,Object> saveTask(Long id,long organizationId,long requirementId,long projectId,
+      String title,String status,Long technicalOwnerId,BigDecimal estimatedPersonDays,
+      BigDecimal actualPersonDays,BigDecimal estimatedCost,BigDecimal actualCost,
+      String extensionPoint,long version){
+    if(blank(title))throw new IllegalArgumentException("二开任务标题不能为空");
+    if(!Arrays.asList("BACKLOG","IN_PROGRESS","BLOCKED","DONE","CANCELLED").contains(status))throw new IllegalArgumentException("二开任务状态不受支持");
+    for(BigDecimal value:Arrays.asList(estimatedPersonDays,actualPersonDays,estimatedCost,actualCost))if(value!=null&&value.signum()<0)throw new IllegalArgumentException("人天和成本不能为负数");
+    Integer valid=jdbc.queryForObject("select count(*) from requirement_item r join delivery_project p on p.id=r.project_id join classification_decision d on d.requirement_id=r.id where r.id=? and p.id=? and p.organization_id=? and r.status='CONFIRMED' and d.confirmed_level='L1'",Integer.class,requirementId,projectId,organizationId);
+    if(valid==null||valid==0)throw new NotFoundException("当前组织和项目下没有匹配的 L1 需求");
+    if(technicalOwnerId!=null){Integer owner=jdbc.queryForObject("select count(*) from app_user where id=? and organization_id=?",Integer.class,technicalOwnerId,organizationId);if(owner==null||owner==0)throw new NotFoundException("技术负责人不存在");}
+    if(id==null){
+      try{jdbc.update("insert into custom_dev_task(requirement_id,project_id,title,status,technical_owner_id,estimated_person_days,actual_person_days,estimated_cost,actual_cost,extension_point) values (?,?,?,?,?,?,?,?,?,?)",requirementId,projectId,title,status,technicalOwnerId,estimatedPersonDays,actualPersonDays,estimatedCost,actualCost,extensionPoint);}
+      catch(DuplicateKeyException duplicate){throw new ConflictException("该 L1 需求已有二开任务");}
+      id=jdbc.queryForObject("select id from custom_dev_task where requirement_id=?",Long.class,requirementId);
+    }else{
+      Map<String,Object> current=task(id,organizationId);
+      if(((Number)current.get("requirementId")).longValue()!=requirementId||((Number)current.get("projectId")).longValue()!=projectId)throw new ConflictException("不能变更二开任务所属需求或项目");
+      int changed=jdbc.update("update custom_dev_task set title=?,status=?,technical_owner_id=?,estimated_person_days=?,actual_person_days=?,estimated_cost=?,actual_cost=?,extension_point=?,updated_at=current_timestamp,version=version+1 where id=? and version=?",title,status,technicalOwnerId,estimatedPersonDays,actualPersonDays,estimatedCost,actualCost,extensionPoint,id,version);
+      if(changed==0)throw new ConflictException("二开任务已被更新，请刷新后重试");
+    }
+    return task(id,organizationId);
   }
 
   private void lockRequirement(long requirementId, long organizationId) {
@@ -290,4 +323,8 @@ public class StandardizationService {
     public Long getOwnerUserId() { return ownerUserId; }
     public long getVersion() { return version; }
   }
+
+  private Map<String,Object> task(long id,long organizationId){List<Map<String,Object>> values=jdbc.query("select t.*,r.requirement_code,r.title requirement_title,p.code project_code,p.name project_name,p.product_version_id,u.display_name technical_owner_name from custom_dev_task t join requirement_item r on r.id=t.requirement_id join delivery_project p on p.id=t.project_id left join app_user u on u.id=t.technical_owner_id where t.id=? and p.organization_id=?",(row,index)->task(row),id,organizationId);if(values.isEmpty())throw new NotFoundException("二开任务不存在");return values.get(0);}
+  private Map<String,Object> task(java.sql.ResultSet row)throws java.sql.SQLException{Map<String,Object> v=new LinkedHashMap<String,Object>();v.put("id",row.getLong("id"));v.put("requirementId",row.getLong("requirement_id"));v.put("requirementCode",row.getString("requirement_code"));v.put("requirementTitle",row.getString("requirement_title"));v.put("projectId",row.getLong("project_id"));v.put("projectCode",row.getString("project_code"));v.put("projectName",row.getString("project_name"));v.put("productVersionId",row.getLong("product_version_id"));v.put("title",row.getString("title"));v.put("status",row.getString("status"));v.put("technicalOwnerId",nullableLong(row,"technical_owner_id"));v.put("technicalOwnerName",row.getString("technical_owner_name"));v.put("estimatedPersonDays",row.getBigDecimal("estimated_person_days"));v.put("actualPersonDays",row.getBigDecimal("actual_person_days"));v.put("estimatedCost",row.getBigDecimal("estimated_cost"));v.put("actualCost",row.getBigDecimal("actual_cost"));v.put("extensionPoint",row.getString("extension_point"));v.put("version",row.getLong("version"));return v;}
+  private Long nullableLong(java.sql.ResultSet row,String column)throws java.sql.SQLException{long value=row.getLong(column);return row.wasNull()?null:value;}
 }
