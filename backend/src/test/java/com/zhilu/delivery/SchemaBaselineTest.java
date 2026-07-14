@@ -71,22 +71,25 @@ class SchemaBaselineTest {
   }
 
   @Test
-  void agentDeliveryMigrationRunsAfterAnAlreadyDeployedV11() {
+  void agentDeliveryKeepsItsPublishedV10VersionBeforeProductCenterV11() {
     DriverManagerDataSource dataSource = new DriverManagerDataSource(
-        "jdbc:h2:mem:deployed-v11;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+        "jdbc:h2:mem:published-v10;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
         "sa", "");
-    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("11"))
+    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("10"))
         .load().migrate();
     JdbcTemplate deployed = new JdbcTemplate(dataSource);
-    assertEquals(Integer.valueOf(0), deployed.queryForObject(
+    assertEquals(Integer.valueOf(1), deployed.queryForObject(
         "select count(*) from information_schema.columns where table_schema='public' "
             + "and table_name='agent_job' and column_name='dispatch_status'", Integer.class));
+    assertEquals(Integer.valueOf(0), deployed.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name='product_module'", Integer.class));
 
     Flyway.configure().dataSource(dataSource).load().migrate();
 
     assertEquals(Integer.valueOf(1), deployed.queryForObject(
-        "select count(*) from information_schema.columns where table_schema='public' "
-            + "and table_name='agent_job' and column_name='dispatch_status'", Integer.class));
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name='product_module'", Integer.class));
   }
 
   @Test
