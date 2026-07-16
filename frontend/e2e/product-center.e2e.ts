@@ -121,7 +121,7 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await unbindableProductDrawer.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('产品已创建')).toBeVisible()
 
-  await nav(page, '客户管理').click()
+  await nav(page, '客户中心').click()
   await expect(page.getByRole('heading', { name: '客户管理' })).toBeVisible()
   await page.getByRole('button', { name: '新建客户' }).click()
   const customerDrawer = page.getByRole('dialog', { name: '新建客户' })
@@ -163,7 +163,7 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible()
   await expect(page.getByText(`${productName} ${releasedVersion}`, { exact: true })).toBeVisible()
 
-  await nav(page, '客户管理').click()
+  await nav(page, '客户中心').click()
   await page.getByPlaceholder('搜索客户、简称或联系人').fill(customerName)
   await page.getByRole('button', { name: `编辑${customerName}` }).click()
   const stopCustomerDrawer = page.getByRole('dialog', { name: '编辑客户' })

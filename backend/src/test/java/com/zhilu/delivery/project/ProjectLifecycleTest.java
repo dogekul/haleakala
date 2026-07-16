@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.operation.CustomerOperationService;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collections;
@@ -25,9 +26,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class ProjectLifecycleTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ProjectService projects;
+  @Autowired private CustomerOperationService operations;
 
   @BeforeEach
   void seedFoundation() {
+    jdbc.update("delete from customer_operation");
+    jdbc.update("delete from opportunity_artifact");
+    jdbc.update("delete from opportunity_activity");
+    jdbc.update("delete from sales_opportunity");
     jdbc.update("delete from project_activity");
     jdbc.update("delete from project_artifact");
     jdbc.update("delete from template_instance");
@@ -116,6 +122,44 @@ class ProjectLifecycleTest {
     assertThrows(IllegalArgumentException.class, () -> projects.updateSettings(closed.getId(),
         closed.getName(), "HACKED", closed.getRiskLevel(), closed.getGateMode(),
         closed.getPlannedEndDate(), closed.getVersion(), manager()));
+  }
+
+  @Test
+  void closingAProjectFromAWonOpportunityCreatesExactlyOneOperation() {
+    ProjectView project = projects.create(command("PRJ-605"));
+    jdbc.update("insert into sales_opportunity(organization_id,customer_id,customer_name_snapshot,"
+            + "title,amount,stage,status,project_id,operation_owner_user_id,created_by) "
+            + "values (600,600,'华东银行','核心系统升级',100,'CONTRACT','WON',?,600,600)",
+        project.getId());
+
+    for (DeliveryStage stage : DeliveryStage.values()) {
+      if (stage != DeliveryStage.START) {
+        project = projects.advanceStage(project.getId(), stage, manager());
+      }
+    }
+
+    assertEquals("CLOSE", project.getCurrentStage());
+    operations.ensureForClosedProject(600, project.getId(), 600);
+    operations.ensureForClosedProject(600, project.getId(), 600);
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from customer_operation where project_id=? and stage='MAINTENANCE' "
+            + "and status='OPEN'", Integer.class, project.getId()));
+    assertEquals("华东银行核心系统交付", jdbc.queryForObject(
+        "select title from customer_operation where project_id=?", String.class, project.getId()));
+  }
+
+  @Test
+  void closingAProjectWithoutAnOpportunityDoesNotCreateAnOperation() {
+    ProjectView project = projects.create(command("PRJ-606"));
+    for (DeliveryStage stage : DeliveryStage.values()) {
+      if (stage != DeliveryStage.START) {
+        project = projects.advanceStage(project.getId(), stage, manager());
+      }
+    }
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from customer_operation where project_id=?",
+        Integer.class, project.getId()));
   }
 
   private CreateProjectCommand command(String code) {

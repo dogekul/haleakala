@@ -3,6 +3,7 @@ package com.zhilu.delivery.project;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.operation.CustomerOperationService;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -22,9 +23,11 @@ public class ProjectService {
   private static final List<String> PROJECT_STATUSES =
       Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
+  private final CustomerOperationService operations;
 
-  public ProjectService(JdbcTemplate jdbc) {
+  public ProjectService(JdbcTemplate jdbc, CustomerOperationService operations) {
     this.jdbc = jdbc;
+    this.operations = operations;
   }
 
   @Transactional
@@ -133,6 +136,14 @@ public class ProjectService {
     return get(projectId);
   }
 
+  public ProjectView getForOrganization(long projectId, long organizationId) {
+    Integer count = jdbc.queryForObject(
+        "select count(*) from delivery_project where id=? and organization_id=?",
+        Integer.class, projectId, organizationId);
+    if (count == null || count == 0) throw new NotFoundException("项目不存在");
+    return get(projectId);
+  }
+
   @Transactional
   public ProjectView advanceStage(
       long projectId, DeliveryStage target, CurrentUser user) {
@@ -163,6 +174,9 @@ public class ProjectService {
         blocked ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
         "项目阶段推进至" + target.getDisplayName(),
         blocked ? String.valueOf(gate.get("gate_message")) : null);
+    if (target == DeliveryStage.CLOSE) {
+      operations.ensureForClosedProject(user.getOrganizationId(), projectId, user.getId());
+    }
     return get(projectId);
   }
 
@@ -364,9 +378,9 @@ public class ProjectService {
   private void assertOrganizationUser(long organizationId, Long userId) {
     if (userId == null) return;
     Integer count = jdbc.queryForObject(
-        "select count(*) from app_user where id=? and organization_id=?",
+        "select count(*) from app_user where id=? and organization_id=? and status='ACTIVE'",
         Integer.class, userId, organizationId);
-    if (count == null || count == 0) throw new NotFoundException("用户不存在");
+    if (count == null || count == 0) throw new NotFoundException("用户不存在或已停用");
   }
 
   private Map<String, Object> customerForProject(long organizationId, long customerId) {

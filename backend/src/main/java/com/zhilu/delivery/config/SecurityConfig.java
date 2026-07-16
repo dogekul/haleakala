@@ -87,6 +87,11 @@ public class SecurityConfig {
         .antMatchers("/api/v1/admin/**").hasAuthority("system:manage")
         .antMatchers(HttpMethod.GET, "/api/v1/products/**").hasAuthority("product:read")
         .antMatchers("/api/v1/products/**").hasAuthority("product:write")
+        .antMatchers(HttpMethod.GET,
+            "/api/v1/opportunities/**", "/api/v1/operations/**", "/api/v1/crm/**")
+        .hasAuthority("crm:read")
+        .antMatchers("/api/v1/opportunities/**", "/api/v1/operations/**")
+        .hasAuthority("crm:write")
         .antMatchers(HttpMethod.GET, "/api/v1/customers/**").hasAuthority("customer:read")
         .antMatchers("/api/v1/customers/**").hasAuthority("customer:write")
         .antMatchers("/api/v1/dashboard/**").hasAuthority("dashboard:read")

@@ -1,20 +1,21 @@
 const destinations = [
-  { path: '/dashboard', permission: 'dashboard:read' },
-  { path: '/customers', permission: 'customer:read' },
-  { path: '/projects', permission: 'project:read' },
-  { path: '/products', permission: 'product:read' },
-  { path: '/requirements', permission: 'requirement:read' },
-  { path: '/standardization', permission: 'standardization:read' },
-  { path: '/knowledge', permission: 'knowledge:read' },
-  { path: '/resources', permission: 'resource:read' },
-  { path: '/audit-logs', permission: 'audit:read' },
-  { path: '/admin', permission: 'system:manage' },
+  { path: '/dashboard', permissions: ['dashboard:read'] },
+  { path: '/customers/opportunities', permissions: ['crm:read'] },
+  { path: '/customers', permissions: ['customer:read'] },
+  { path: '/projects', permissions: ['project:read'] },
+  { path: '/products', permissions: ['product:read'] },
+  { path: '/requirements', permissions: ['requirement:read'] },
+  { path: '/standardization', permissions: ['standardization:read'] },
+  { path: '/knowledge', permissions: ['knowledge:read'] },
+  { path: '/resources', permissions: ['resource:read'] },
+  { path: '/audit-logs', permissions: ['audit:read'] },
+  { path: '/admin', permissions: ['system:manage'] },
 ]
 
 export function homeRoute(permissions: string[], requested?: string) {
   if (requested) {
     const destination = destinations.find(item => requested.startsWith(item.path))
-    if (destination && permissions.includes(destination.permission)) return requested
+    if (destination && destination.permissions.some(permission => permissions.includes(permission))) return requested
   }
-  return destinations.find(item => permissions.includes(item.permission))?.path ?? '/403'
+  return destinations.find(item => item.permissions.some(permission => permissions.includes(permission)))?.path ?? '/403'
 }
