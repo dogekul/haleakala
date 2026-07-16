@@ -133,6 +133,14 @@ public class ProjectService {
     return get(projectId);
   }
 
+  public ProjectView getForOrganization(long projectId, long organizationId) {
+    Integer count = jdbc.queryForObject(
+        "select count(*) from delivery_project where id=? and organization_id=?",
+        Integer.class, projectId, organizationId);
+    if (count == null || count == 0) throw new NotFoundException("项目不存在");
+    return get(projectId);
+  }
+
   @Transactional
   public ProjectView advanceStage(
       long projectId, DeliveryStage target, CurrentUser user) {

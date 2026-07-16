@@ -134,6 +134,17 @@ public class OpportunityController {
     return value;
   }
 
+  @PostMapping("/{id}/handoff")
+  @Transactional
+  public Map<String, Object> handoff(@PathVariable long id,
+      @Valid @RequestBody OpportunityService.HandoffInput request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = opportunities.handoff(
+        user.getOrganizationId(), id, user.getId(), request);
+    record(user, "HANDOFF", id, "转交项目 " + value.get("projectId"));
+    return value;
+  }
+
   private void record(CurrentUser user, String action, Object id, String details) {
     audit.record(user.getOrganizationId(), user.getId(), action, "OPPORTUNITY",
         String.valueOf(id), details);

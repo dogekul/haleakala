@@ -3,6 +3,9 @@ package com.zhilu.delivery.opportunity;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.customer.CustomerService;
+import com.zhilu.delivery.project.CreateProjectCommand;
+import com.zhilu.delivery.project.ProjectService;
+import com.zhilu.delivery.project.ProjectView;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -18,6 +21,7 @@ import javax.validation.constraints.DecimalMin;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Service;
@@ -30,12 +34,14 @@ public class OpportunityService {
   private final JdbcTemplate jdbc;
   private final CustomerService customers;
   private final OpportunityGate gate;
+  private final ProjectService projects;
 
   public OpportunityService(
-      JdbcTemplate jdbc, CustomerService customers, OpportunityGate gate) {
+      JdbcTemplate jdbc, CustomerService customers, OpportunityGate gate, ProjectService projects) {
     this.jdbc = jdbc;
     this.customers = customers;
     this.gate = gate;
+    this.projects = projects;
   }
 
   public List<Map<String, Object>> list(long organizationId, String keyword, Long customerId,
@@ -230,6 +236,63 @@ public class OpportunityService {
     values.put("created_by", actorId);
     long id = insert("opportunity_artifact", values);
     return artifact(organizationId, opportunityId, id);
+  }
+
+  @Transactional
+  public Map<String, Object> handoff(long organizationId, long opportunityId,
+      long actorId, HandoffInput input) {
+    Map<String, Object> opportunity = get(organizationId, opportunityId);
+    assertVersion(opportunity, input.version.longValue());
+    assertOpen(opportunity);
+    if (!OpportunityStage.CONTRACT.name().equals(opportunity.get("stage"))) {
+      throw new ConflictException("只有合同阶段可以转交实施");
+    }
+    Map<String, Object> customer = customers.get(
+        organizationId, ((Number) opportunity.get("customerId")).longValue());
+    if (!"ACTIVE".equals(customer.get("status"))) {
+      throw new IllegalArgumentException("客户已停用，不能转交实施");
+    }
+    List<String> missing = gate.missingArtifacts(
+        opportunityId, OpportunityStage.CONTRACT, "PASS");
+    if (!missing.isEmpty()) {
+      throw new IllegalArgumentException("缺少必需产出物：" + join(missing));
+    }
+    ProjectView project;
+    try {
+      if ("CREATE".equals(input.mode)) {
+        if (input.project == null) throw new IllegalArgumentException("请填写新项目资料");
+        project = projects.create(new CreateProjectCommand(organizationId,
+            input.project.code, input.project.name,
+            ((Number) opportunity.get("customerId")).longValue(), input.project.productId,
+            input.project.productVersionId, input.project.managerUserId, actorId,
+            input.project.startDate, input.project.plannedEndDate, input.project.gateMode));
+      } else if ("LINK".equals(input.mode)) {
+        if (input.projectId == null) throw new IllegalArgumentException("请选择已有项目");
+        project = projects.getForOrganization(input.projectId.longValue(), organizationId);
+        if (project.getCustomerId() == null
+            || project.getCustomerId().longValue()
+            != ((Number) opportunity.get("customerId")).longValue()) {
+          throw new IllegalArgumentException("项目客户与商机客户不一致");
+        }
+        Integer claimed = jdbc.queryForObject(
+            "select count(*) from sales_opportunity where project_id=? and id<>?",
+            Integer.class, project.getId(), opportunityId);
+        if (claimed != null && claimed > 0) {
+          throw new ConflictException("项目已关联其他商机");
+        }
+      } else {
+        throw new IllegalArgumentException("转交模式不受支持");
+      }
+      int changed = jdbc.update("update sales_opportunity set project_id=?,status='WON',"
+              + "updated_at=current_timestamp,version=version+1 "
+              + "where id=? and organization_id=? and version=? and status='OPEN' "
+              + "and stage='CONTRACT' and project_id is null",
+          project.getId(), opportunityId, organizationId, input.version);
+      if (changed == 0) throw new ConflictException("商机已转交或数据已被更新");
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("项目编号或项目关联已存在");
+    }
+    return get(organizationId, opportunityId);
   }
 
   private References validateReferences(long organizationId, Input input) {
@@ -452,6 +515,24 @@ public class OpportunityService {
     public String contentMarkdown;
     public Long fileId;
     public String decision;
+  }
+
+  public static final class HandoffInput {
+    @NotBlank public String mode;
+    @NotNull public Long version;
+    public Long projectId;
+    @javax.validation.Valid public ProjectInput project;
+  }
+
+  public static final class ProjectInput {
+    @NotBlank @Size(max = 64) public String code;
+    @NotBlank @Size(max = 180) public String name;
+    @NotNull public Long productId;
+    @NotNull public Long productVersionId;
+    @NotNull public Long managerUserId;
+    public java.time.LocalDate startDate;
+    public java.time.LocalDate plannedEndDate;
+    public String gateMode = "BLOCK";
   }
 
   private static final class References {
