@@ -8,6 +8,8 @@
 
 ## 首次部署
 
+- `SETTINGS_ENCRYPTION_KEY` 用于加密管理页保存的 API Token。生产环境必须设置独立、稳定的高强度值；更换前需先完成密钥轮换，直接更换会导致已有密文无法解密。
+
 ```bash
 cp .env.example .env
 # 先修改 .env 中的数据库、MinIO 和 Agent 密钥
