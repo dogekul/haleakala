@@ -1,5 +1,6 @@
 import {
   BookOutlined,
+  ContactsOutlined,
   AuditOutlined,
   DashboardOutlined,
   FolderOpenOutlined,
@@ -27,6 +28,7 @@ interface ModuleNav {
 
 const modules: ModuleNav[] = [
   { path: '/dashboard', label: '驾驶舱', permission: 'dashboard:read', icon: <DashboardOutlined /> },
+  { path: '/customers', label: '客户管理', permission: 'customer:read', icon: <ContactsOutlined /> },
   { path: '/projects', label: '项目空间', permission: 'project:read', icon: <FolderOpenOutlined /> },
   { path: '/products', label: '产品中心', permission: 'product:read', icon: <ShoppingOutlined /> },
   { path: '/requirements', label: '需求工坊', permission: 'requirement:read', icon: <ToolOutlined /> },

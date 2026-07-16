@@ -353,3 +353,35 @@ button, input { font: inherit; }
 .admin-filter .ant-card-body { padding: 14px; }
 .audit-table .ant-typography code { display: inline-block; overflow: hidden; max-width: 145px; text-overflow: ellipsis; vertical-align: middle; }
 .admin-note { border-color: #e5e6eb; }
+
+.customer-page { max-width: 1500px; margin: 0 auto; }
+.customer-kpis { margin-bottom: 14px; }
+.customer-kpis .ant-card { border-color: #e5e6eb; }
+.customer-kpis .ant-card-body { padding: 16px 18px; }
+.customer-kpis .ant-statistic-content { font-size: 22px; }
+.customer-kpis .ant-statistic-content-prefix { margin-right: 10px; color: #3370ff; font-size: 18px; }
+.customer-filter { margin-bottom: 14px; border-color: #e5e6eb; }
+.customer-filter .ant-card-body { padding: 12px 14px; }
+.customer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.customer-table { overflow: hidden; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
+.customer-name-cell, .customer-contact-cell { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.customer-name-cell strong, .customer-name-cell span, .customer-contact-cell strong, .customer-contact-cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-name-cell span, .customer-contact-cell span { color: #8f959e; font-size: 11px; }
+.customer-card { min-width: 0; height: 220px; overflow: hidden; border-color: #e5e6eb; }
+.customer-card .ant-card-body { min-width: 0; padding: 18px; }
+.customer-card-head, .customer-card-foot { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; }
+.customer-card-head > div { display: flex; min-width: 0; flex-direction: column; }
+.customer-card-head strong { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.customer-card-head span { overflow: hidden; color: #8f959e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.customer-card-contact { display: grid; grid-template-columns: 52px minmax(0, 1fr); margin: 17px 0 12px; }
+.customer-card-contact span, .customer-card-contact small { color: #8f959e; font-size: 11px; }
+.customer-card-contact small { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-card > .ant-card-body > p { margin: 0 0 12px; color: #646a73; font-size: 12px; }
+.customer-card-foot { padding-top: 10px; color: #8f959e; border-top: 1px solid #eff0f1; font-size: 11px; }
+.customer-card-foot .ant-btn { margin-left: auto; padding-inline: 3px; }
+.customer-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-select-empty { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px; color: #8f959e; }
+
+@media (max-width: 768px) {
+  .customer-toolbar { align-items: flex-start; flex-direction: column; }
+}

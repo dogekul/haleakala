@@ -9,6 +9,7 @@ public final class ProjectView {
   private final long organizationId;
   private final String code;
   private final String name;
+  private final Long customerId;
   private final String customerName;
   private final long productId;
   private final String productName;
@@ -32,7 +33,7 @@ public final class ProjectView {
   private final List<Map<String, Object>> activities;
 
   public ProjectView(
-      long id, long organizationId, String code, String name, String customerName,
+      long id, long organizationId, String code, String name, Long customerId, String customerName,
       long productId, String productName, long productVersionId, String productVersionName,
       long managerUserId, String managerName, String status, String currentStage,
       String riskLevel, String gateMode, LocalDate startDate, LocalDate plannedEndDate, long version,
@@ -44,6 +45,7 @@ public final class ProjectView {
     this.organizationId = organizationId;
     this.code = code;
     this.name = name;
+    this.customerId = customerId;
     this.customerName = customerName;
     this.productId = productId;
     this.productName = productName;
@@ -71,6 +73,7 @@ public final class ProjectView {
   public long getOrganizationId() { return organizationId; }
   public String getCode() { return code; }
   public String getName() { return name; }
+  public Long getCustomerId() { return customerId; }
   public String getCustomerName() { return customerName; }
   public long getProductId() { return productId; }
   public String getProductName() { return productName; }
