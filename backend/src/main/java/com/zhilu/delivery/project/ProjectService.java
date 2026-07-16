@@ -3,6 +3,7 @@ package com.zhilu.delivery.project;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.operation.CustomerOperationService;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -22,9 +23,11 @@ public class ProjectService {
   private static final List<String> PROJECT_STATUSES =
       Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
+  private final CustomerOperationService operations;
 
-  public ProjectService(JdbcTemplate jdbc) {
+  public ProjectService(JdbcTemplate jdbc, CustomerOperationService operations) {
     this.jdbc = jdbc;
+    this.operations = operations;
   }
 
   @Transactional
@@ -171,6 +174,9 @@ public class ProjectService {
         blocked ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
         "项目阶段推进至" + target.getDisplayName(),
         blocked ? String.valueOf(gate.get("gate_message")) : null);
+    if (target == DeliveryStage.CLOSE) {
+      operations.ensureForClosedProject(user.getOrganizationId(), projectId, user.getId());
+    }
     return get(projectId);
   }
 
