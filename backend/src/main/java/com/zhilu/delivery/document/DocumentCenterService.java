@@ -6,10 +6,12 @@ import com.zhilu.delivery.iam.service.CurrentUser;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
@@ -42,9 +44,9 @@ public class DocumentCenterService {
     }
     claimCreation(linkId);
     try {
-      OutlineDocument created = outline.create(
-          title, "", properties.getCollectionId(), parentDocumentId(parentLinkId, organizationId),
-          true);
+      OutlineDocument created = createOrRecover(
+          organizationId, businessKey, title, "",
+          parentDocumentId(parentLinkId, organizationId));
       sync(linkId, created);
       return linkId;
     } catch (OutlineException failure) {
@@ -65,9 +67,9 @@ public class DocumentCenterService {
     }
     claimCreation(linkId);
     try {
-      OutlineDocument created = outline.create(
-          title, value(markdown), properties.getCollectionId(),
-          parentDocumentId(Long.valueOf(parentLinkId), organizationId), true);
+      OutlineDocument created = createOrRecover(
+          organizationId, businessKey, title, value(markdown),
+          parentDocumentId(Long.valueOf(parentLinkId), organizationId));
       sync(linkId, created);
       return linkId;
     } catch (OutlineException failure) {
@@ -193,14 +195,37 @@ public class DocumentCenterService {
   }
 
   private void claimCreation(long linkId) {
+    Timestamp staleBefore = Timestamp.from(
+        Instant.now().minus(properties.getStaleAfter()));
     int changed = jdbc.update(
         "update outline_document_link set sync_status='CREATING',updated_at=current_timestamp,"
             + "version=version+1 where id=? and outline_document_id is null "
-            + "and sync_status in ('PENDING','FAILED')",
-        linkId);
+            + "and (sync_status in ('PENDING','FAILED') "
+            + "or (sync_status='CREATING' and updated_at<?))",
+        linkId, staleBefore);
     if (changed == 0) {
       throw new ConflictException("文档正在初始化，请稍后重试");
     }
+  }
+
+  private OutlineDocument createOrRecover(
+      long organizationId, String businessKey, String title, String markdown,
+      String parentDocumentId) {
+    String documentId = deterministicDocumentId(organizationId, businessKey);
+    try {
+      OutlineDocument existing = outline.info(documentId);
+      if (existing != null) return existing;
+    } catch (OutlineException failure) {
+      if (failure.getType() != OutlineException.Type.NOT_FOUND) throw failure;
+    }
+    return outline.create(
+        documentId, title, markdown, properties.getCollectionId(), parentDocumentId, true);
+  }
+
+  static String deterministicDocumentId(long organizationId, String businessKey) {
+    return UUID.nameUUIDFromBytes(
+        ("zhilu-outline:" + organizationId + ":" + businessKey)
+            .getBytes(StandardCharsets.UTF_8)).toString();
   }
 
   private long projectDocumentLink(long projectId, long projectDocumentId) {
@@ -283,9 +308,14 @@ public class DocumentCenterService {
     if (document.getUrl().startsWith("http://") || document.getUrl().startsWith("https://")) {
       return document.getUrl();
     }
-    String base = properties.getBaseUrl().trim();
+    String base = browserBaseUrl();
     if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
     return base + (document.getUrl().startsWith("/") ? "" : "/") + document.getUrl();
+  }
+
+  private String browserBaseUrl() {
+    String value = properties.getPublicBaseUrl();
+    return blank(value) ? properties.getBaseUrl().trim() : value.trim();
   }
 
   private String summary(String markdown) {

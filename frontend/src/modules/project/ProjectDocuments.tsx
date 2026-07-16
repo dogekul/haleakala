@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert, Button, Card, Col, Drawer, Empty, Row, Space, Spin, Tag, Typography, message,
 } from 'antd'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
@@ -58,6 +58,11 @@ export function ProjectDocuments({ project }: { project: Project }) {
     },
   })
   const documents = query.data ?? []
+  useEffect(() => {
+    if (!selected) return
+    const refreshed = documents.find(item => item.id === selected.id)
+    if (refreshed && refreshed !== selected) setSelected(refreshed)
+  }, [documents, selected])
   const counts = useMemo(() => documents.reduce<Record<string, number>>((all, item) => {
     all[item.stageCode] = (all[item.stageCode] ?? 0) + 1
     return all

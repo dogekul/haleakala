@@ -6,12 +6,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "delivery.outline")
 public class OutlineProperties {
   private String baseUrl = "http://localhost:3000";
+  private String publicBaseUrl = "";
   private String apiToken = "";
   private String collectionId = "";
   private Duration connectTimeout = Duration.ofSeconds(3);
   private Duration readTimeout = Duration.ofSeconds(10);
   private int maxAttempts = 5;
   private Duration initialBackoff = Duration.ofSeconds(30);
+  private Duration staleAfter = Duration.ofMinutes(5);
 
   public String getBaseUrl() {
     return baseUrl;
@@ -19,6 +21,14 @@ public class OutlineProperties {
 
   public void setBaseUrl(String baseUrl) {
     this.baseUrl = baseUrl;
+  }
+
+  public String getPublicBaseUrl() {
+    return publicBaseUrl;
+  }
+
+  public void setPublicBaseUrl(String publicBaseUrl) {
+    this.publicBaseUrl = publicBaseUrl;
   }
 
   public String getApiToken() {
@@ -67,5 +77,13 @@ public class OutlineProperties {
 
   public void setInitialBackoff(Duration initialBackoff) {
     this.initialBackoff = initialBackoff;
+  }
+
+  public Duration getStaleAfter() {
+    return staleAfter;
+  }
+
+  public void setStaleAfter(Duration staleAfter) {
+    this.staleAfter = staleAfter;
   }
 }

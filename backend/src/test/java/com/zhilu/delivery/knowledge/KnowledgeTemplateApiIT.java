@@ -94,14 +94,15 @@ class KnowledgeTemplateApiIT {
   private void stubOutline() {
     stored.clear();
     ids.set(0);
-    when(outline.create(anyString(),anyString(),anyString(),nullable(String.class),anyBoolean()))
+    when(outline.create(anyString(),anyString(),anyString(),anyString(),
+        nullable(String.class),anyBoolean()))
         .thenAnswer(invocation -> {
-          String title=invocation.getArgument(0);
-          String id=UUID.nameUUIDFromBytes(
-              (title+"-"+ids.incrementAndGet()).getBytes(StandardCharsets.UTF_8)).toString();
+          String id=invocation.getArgument(0);
+          String title=invocation.getArgument(1);
+          ids.incrementAndGet();
           OutlineDocument document=new OutlineDocument(
-              id,"a4296a54-2044-4529-ba86-d598a5322e06",invocation.getArgument(3),
-              title,invocation.getArgument(1),"/doc/"+id,id.substring(0,8),1,
+              id,"a4296a54-2044-4529-ba86-d598a5322e06",invocation.getArgument(4),
+              title,invocation.getArgument(2),"/doc/"+id,id.substring(0,8),1,
               Instant.parse("2026-07-16T08:00:00Z"));
           stored.put(id,document);
           return document;

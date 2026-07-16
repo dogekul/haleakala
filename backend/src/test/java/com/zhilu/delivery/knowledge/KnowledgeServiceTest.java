@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.common.error.NotFoundException;
@@ -56,6 +58,7 @@ class KnowledgeServiceTest {
     jdbc.update("insert into product(id,organization_id,code,name,status) values (1100,1100,'ERP','企业财务','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) values (1100,1100,'V5','RELEASED')");
     user = new CurrentUser(1100L,1100L,"expert","方案专家",Collections.<String>emptyList(),Arrays.asList("knowledge:read","knowledge:write"));
+    reset(outline);
     stubOutline();
   }
 
@@ -137,9 +140,10 @@ class KnowledgeServiceTest {
   }
 
   @Test void outlineFailureKeepsTheLocalKnowledgeDraftForRetry() {
-    when(outline.create(anyString(),anyString(),anyString(),nullable(String.class),anyBoolean()))
-        .thenThrow(new OutlineException(
-            OutlineException.Type.UNAVAILABLE,"Outline is unavailable"));
+    doThrow(new OutlineException(
+        OutlineException.Type.UNAVAILABLE,"Outline is unavailable"))
+        .when(outline).create(anyString(),anyString(),anyString(),anyString(),
+            nullable(String.class),anyBoolean());
 
     Map<String,Object> draft=knowledge.create(user,"CASE","离线草稿","服务不可用时不丢输入",
         "需要稍后同步的正文","离线",null,null,"ORGANIZATION",
@@ -151,18 +155,27 @@ class KnowledgeServiceTest {
     assertEquals(Integer.valueOf(1),jdbc.queryForObject(
         "select count(*) from knowledge_item where organization_id=1100 and title='离线草稿'",
         Integer.class));
+
+    reset(outline);
+    stubOutline();
+    Map<String,Object> recovered=knowledge.retryDocument(
+        ((Number)draft.get("id")).longValue(),user);
+
+    assertEquals("READY",recovered.get("documentStatus"));
+    assertEquals(null,recovered.get("documentError"));
   }
 
   private void stubOutline() {
     outlineDocuments.clear();
     outlineIds.set(0);
-    when(outline.create(anyString(),anyString(),anyString(),nullable(String.class),anyBoolean()))
+    when(outline.create(anyString(),anyString(),anyString(),anyString(),
+        nullable(String.class),anyBoolean()))
         .thenAnswer(invocation -> {
-          String title=invocation.getArgument(0);
-          String text=invocation.getArgument(1);
-          String parent=invocation.getArgument(3);
-          String id=UUID.nameUUIDFromBytes(
-              (title+"-"+outlineIds.incrementAndGet()).getBytes(StandardCharsets.UTF_8)).toString();
+          String id=invocation.getArgument(0);
+          String title=invocation.getArgument(1);
+          String text=invocation.getArgument(2);
+          String parent=invocation.getArgument(4);
+          outlineIds.incrementAndGet();
           OutlineDocument document=document(id,parent,title,text,1);
           outlineDocuments.put(id,document);
           return document;

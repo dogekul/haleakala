@@ -88,6 +88,7 @@ public class ProjectService {
           projectId, command.getCreatedByUserId(), "DELIVERY_ENGINEER");
     }
     activity(projectId, command.getCreatedByUserId(), "PROJECT_CREATED", "创建项目并初始化七阶段", null);
+    projectDocuments.snapshotTemplates(projectId, command.getOrganizationId());
     documentJobs.enqueueProjectInitialization(command.getOrganizationId(), projectId);
     return get(projectId);
   }

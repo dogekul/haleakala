@@ -1,5 +1,6 @@
 package com.zhilu.delivery.document;
 
+import com.zhilu.delivery.audit.AuditService;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -19,14 +20,16 @@ public class DocumentJobService {
   private final ProjectDocumentService projectDocuments;
   private final DocumentMigrationService migrations;
   private final OutlineProperties properties;
+  private final AuditService audit;
 
   public DocumentJobService(
       JdbcTemplate jdbc, ProjectDocumentService projectDocuments,
-      DocumentMigrationService migrations, OutlineProperties properties) {
+      DocumentMigrationService migrations, OutlineProperties properties, AuditService audit) {
     this.jdbc = jdbc;
     this.projectDocuments = projectDocuments;
     this.migrations = migrations;
     this.properties = properties;
+    this.audit = audit;
   }
 
   public void enqueueProjectInitialization(long organizationId, long projectId) {
@@ -55,11 +58,22 @@ public class DocumentJobService {
       fixedDelayString = "${delivery.outline.job-scan-ms:5000}",
       initialDelayString = "${delivery.outline.job-initial-delay-ms:60000}")
   public void runDueJobs() {
+    recoverStaleJobs();
     List<Long> ids = jdbc.queryForList(
         "select id from document_job where status in ('PENDING','RETRY') "
             + "and next_attempt_at<=current_timestamp order by id limit 20",
         Long.class);
     for (Long id : ids) run(id.longValue());
+  }
+
+  private void recoverStaleJobs() {
+    Timestamp staleBefore = Timestamp.from(
+        Instant.now().minus(properties.getStaleAfter()));
+    jdbc.update("update document_job set status='RETRY',"
+            + "next_attempt_at=current_timestamp,last_error='任务执行中断，已自动恢复',"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where status='RUNNING' and updated_at<?",
+        staleBefore);
   }
 
   public void retryProjectInitialization(long organizationId, long projectId) {
@@ -109,6 +123,10 @@ public class DocumentJobService {
       jdbc.update("update document_job set status='DONE',completed_at=current_timestamp,"
               + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
           jobId);
+      audit.record(
+          ((Number) job.get("organization_id")).longValue(), null,
+          auditAction(String.valueOf(job.get("job_type"))), "DOCUMENT_JOB",
+          String.valueOf(jobId), String.valueOf(job.get("job_type")) + ":" + businessId);
     } catch (RuntimeException failure) {
       int attempts = ((Number) job.get("attempt_count")).intValue();
       String status = attempts >= properties.getMaxAttempts() ? "FAILED" : "RETRY";
@@ -120,6 +138,11 @@ public class DocumentJobService {
         projectDocuments.markFailure(businessId, failure);
       }
     }
+  }
+
+  private String auditAction(String jobType) {
+    if (PROJECT_INIT.equals(jobType)) return "INITIALIZE";
+    return "MIGRATE";
   }
 
   private Timestamp nextAttempt(int attempts) {

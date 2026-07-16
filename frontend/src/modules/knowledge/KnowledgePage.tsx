@@ -1,6 +1,7 @@
 import {
   BookOutlined, CodeOutlined, DownloadOutlined, FileDoneOutlined, FileTextOutlined,
-  PlusOutlined, ReadOutlined, SearchOutlined, SendOutlined, TeamOutlined, UploadOutlined,
+  PlusOutlined, ReadOutlined, ReloadOutlined, SearchOutlined, SendOutlined, TeamOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -8,6 +9,7 @@ import {
   Space, Statistic, Switch, Tabs, Tag, Typography, Upload, message,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../../app/AuthProvider'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { stageNames } from '../project/types'
 import { projectApi } from '../project/projectApi'
@@ -26,6 +28,7 @@ const documentStatusLabel = {
 } as const
 
 export function KnowledgePage() {
+  const { me } = useAuth()
   const [type, setType] = useState('ALL')
   const [keyword, setKeyword] = useState('')
   const [editing, setEditing] = useState<KnowledgeItem | null | undefined>()
@@ -48,6 +51,10 @@ export function KnowledgePage() {
     { key: 'ALL', label: '全部知识' },
     ...keys.map(key => ({ key, label: typeMeta[key].label })),
   ]
+  const canWrite = me?.permissions.includes('knowledge:write') ?? false
+  const canManage = (item: KnowledgeItem) => canWrite && (
+    me?.id === item.ownerUserId || (me?.permissions.includes('system:manage') ?? false)
+  )
 
   return <div className="knowledge-page">
     <div className="knowledge-hero">
@@ -58,9 +65,14 @@ export function KnowledgePage() {
           把最佳实践、受控代码扩展、培训材料与文档模版沉淀到 Outline，
           从项目现场直接复用并持续完善。
         </Typography.Paragraph>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setEditing(null)}>
+        {canWrite && <Button
+          type="primary"
+          size="large"
+          icon={<PlusOutlined />}
+          onClick={() => setEditing(null)}
+        >
           创建知识
-        </Button>
+        </Button>}
       </div>
       <div className="knowledge-hero-metrics">
         <div><BookOutlined /><Statistic value={(query.data ?? []).length} title="知识条目" /></div>
@@ -97,25 +109,35 @@ export function KnowledgePage() {
     />
     <Row gutter={[14, 14]}>
       {values.map(item => <Col xs={24} md={12} xl={8} key={item.id}>
-        <KnowledgeCard item={item} onOpen={setDetail} onEdit={setEditing} />
+        <KnowledgeCard
+          item={item}
+          canManage={canManage(item)}
+          onOpen={setDetail}
+          onEdit={setEditing}
+        />
       </Col>)}
       {!query.isLoading && !values.length && <Col span={24}>
         <Card><Empty description="没有匹配的知识" /></Card>
       </Col>}
     </Row>
-    <KnowledgeDetail value={detail} onClose={() => setDetail(undefined)} />
-    <KnowledgeEditor
+    <KnowledgeDetail
+      value={detail}
+      canEdit={detail ? canManage(detail) : false}
+      onClose={() => setDetail(undefined)}
+    />
+    {canWrite && <KnowledgeEditor
       value={editing}
       onClose={() => setEditing(undefined)}
       onCreated={setDetail}
-    />
+    />}
   </div>
 }
 
 function KnowledgeCard({
-  item, onOpen, onEdit,
+  item, canManage, onOpen, onEdit,
 }: {
   item: KnowledgeItem
+  canManage: boolean
   onOpen(value: KnowledgeItem): void
   onEdit(value: KnowledgeItem): void
 }) {
@@ -126,6 +148,14 @@ function KnowledgeCard({
       await client.invalidateQueries({ queryKey: ['knowledge'] })
       message.success('知识已发布')
     },
+  })
+  const retry = useMutation({
+    mutationFn: () => knowledgeApi.retryDocument(item.id),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['knowledge'] })
+      message.success('文档同步已重试')
+    },
+    onError: (error: Error) => message.error(error.message),
   })
   const meta = typeMeta[item.type]
   const documentStatus = item.documentStatus ?? (item.content ? 'READY' : 'PENDING')
@@ -179,8 +209,15 @@ function KnowledgeCard({
         {' · '}{item.ownerName}
       </span>
       <Space onClick={event => event.stopPropagation()}>
-        <Button type="link" size="small" onClick={() => onEdit(item)}>编辑</Button>
-        {item.status === 'DRAFT' && <Button
+        {canManage && documentStatus === 'FAILED' && <Button
+          type="link"
+          size="small"
+          icon={<ReloadOutlined />}
+          loading={retry.isPending}
+          onClick={() => retry.mutate()}
+        >重试同步</Button>}
+        {canManage && <Button type="link" size="small" onClick={() => onEdit(item)}>编辑</Button>}
+        {canManage && item.status === 'DRAFT' && <Button
           type="link"
           size="small"
           loading={publish.isPending}
@@ -191,7 +228,14 @@ function KnowledgeCard({
   </Card>
 }
 
-function KnowledgeDetail({ value, onClose }: { value?: KnowledgeItem; onClose(): void }) {
+function KnowledgeDetail({
+  value, canEdit, onClose,
+}: {
+  value?: KnowledgeItem
+  canEdit: boolean
+  onClose(): void
+}) {
+  const client = useQueryClient()
   const meta = value ? typeMeta[value.type] : undefined
   return <Drawer
     width="min(1180px, 94vw)"
@@ -240,7 +284,8 @@ function KnowledgeDetail({ value, onClose }: { value?: KnowledgeItem; onClose():
         load={() => knowledgeApi.loadDocument(value.id)}
         save={input => knowledgeApi.saveDocument(value.id, input)}
         exportUrl={format => knowledgeApi.exportUrl(value.id, format)}
-        canEdit
+        canEdit={canEdit}
+        onSaved={() => void client.invalidateQueries({ queryKey: ['knowledge'] })}
       />
       <footer>{value.ownerName} · {value.productName ?? '组织通用'} {value.versionName ?? ''}</footer>
     </div>}

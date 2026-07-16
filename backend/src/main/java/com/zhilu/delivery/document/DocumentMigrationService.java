@@ -43,8 +43,10 @@ public class DocumentMigrationService {
 
   public Map<String, Object> startKnowledgeMigration(long organizationId) {
     List<Long> ids = jdbc.queryForList(
-        "select id from knowledge_item where organization_id=? and outline_link_id is null "
-            + "order by id",
+        "select k.id from knowledge_item k "
+            + "left join outline_document_link d on d.id=k.outline_link_id "
+            + "where k.organization_id=? and (k.outline_link_id is null "
+            + "or d.outline_document_id is null or d.sync_status='FAILED') order by k.id",
         Long.class, organizationId);
     int enqueued = 0;
     for (Long id : ids) {
@@ -73,7 +75,6 @@ public class DocumentMigrationService {
         knowledgeId, organizationId);
     if (values.isEmpty()) throw new NotFoundException("知识条目不存在");
     Map<String, Object> item = values.get(0);
-    if (item.get("outline_link_id") != null) return;
     String type = String.valueOf(item.get("type"));
     long root = documents.ensureIndex(organizationId, "KNOWLEDGE_ROOT", "知识库", null);
     long typeRoot = documents.ensureIndex(
@@ -96,7 +97,7 @@ public class DocumentMigrationService {
       integrationStatus = "NOT_CONFIGURED";
     } else {
       try {
-        outline.children(null);
+        outline.collectionInfo(properties.getCollectionId());
         integrationStatus = "READY";
       } catch (OutlineException failure) {
         integrationStatus = "FAILED";
@@ -108,6 +109,7 @@ public class DocumentMigrationService {
     result.put("knowledgeRoot", rootStatus(organizationId, "KNOWLEDGE_ROOT"));
     result.put("projectRoot", rootStatus(organizationId, "PROJECT_ROOT"));
     result.put("jobs", jobCounts(organizationId));
+    result.put("failedJobs", jobs(organizationId, "FAILED"));
     result.put("recentError", recentError(organizationId, connectionError));
     return result;
   }
@@ -139,6 +141,32 @@ public class DocumentMigrationService {
     result.put("id", jobId);
     result.put("status", "PENDING");
     return result;
+  }
+
+  public List<Map<String, Object>> jobs(long organizationId, String status) {
+    String condition = blank(status) ? "" : " and status=?";
+    Object[] args = blank(status)
+        ? new Object[] { organizationId }
+        : new Object[] { organizationId, status };
+    return jdbc.query(
+        "select id,job_type,business_key,business_id,status,attempt_count,last_error,"
+            + "started_at,completed_at,updated_at from document_job "
+            + "where organization_id=?" + condition
+            + " order by updated_at desc,id desc limit 50",
+        (row, index) -> {
+          Map<String, Object> value = new LinkedHashMap<String, Object>();
+          value.put("id", row.getLong("id"));
+          value.put("jobType", row.getString("job_type"));
+          value.put("businessKey", row.getString("business_key"));
+          value.put("businessId", row.getObject("business_id"));
+          value.put("status", row.getString("status"));
+          value.put("attemptCount", row.getInt("attempt_count"));
+          value.put("lastError", row.getString("last_error"));
+          value.put("startedAt", row.getTimestamp("started_at"));
+          value.put("completedAt", row.getTimestamp("completed_at"));
+          value.put("updatedAt", row.getTimestamp("updated_at"));
+          return value;
+        }, args);
   }
 
   private boolean enqueue(
@@ -218,5 +246,9 @@ public class DocumentMigrationService {
 
   private String string(Object value) {
     return value == null ? "" : String.valueOf(value);
+  }
+
+  private boolean blank(String value) {
+    return value == null || value.trim().isEmpty();
   }
 }

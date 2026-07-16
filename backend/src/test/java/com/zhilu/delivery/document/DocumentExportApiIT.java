@@ -1,5 +1,6 @@
 package com.zhilu.delivery.document;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -46,7 +47,7 @@ class DocumentExportApiIT {
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "document_job", "project_document", "document_template_config", "training_material",
+        "audit_log", "document_job", "project_document", "document_template_config", "training_material",
         "code_snippet", "knowledge_item", "outline_document_link", "project_activity",
         "project_artifact", "template_instance", "milestone", "project_risk", "stage_instance",
         "project_member", "delivery_project", "customer", "product_version", "product",
@@ -101,6 +102,10 @@ class DocumentExportApiIT {
             .with(actor(5101, 5100, "project:read")))
         .andExpect(status().isOk())
         .andExpect(header().string("Content-Type", "application/pdf"));
+
+    assertEquals(2, jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=5100 and action='EXPORT'",
+        Integer.class));
   }
 
   @Test

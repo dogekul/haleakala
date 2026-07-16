@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,7 +55,9 @@ class DocumentCenterServiceTest {
   @Test
   void createsEachBusinessIndexExactlyOnce() {
     OutlineDocument created = document("知识库", "# 知识库", 1);
-    when(outline.create("知识库", "", COLLECTION_ID, null, true)).thenReturn(created);
+    String desiredId = DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT");
+    when(outline.create(desiredId, "知识库", "", COLLECTION_ID, null, true))
+        .thenReturn(created);
     when(outline.info(DOCUMENT_ID)).thenReturn(created);
 
     long first = documents.ensureIndex(3100, "KNOWLEDGE_ROOT", "知识库", null);
@@ -64,7 +67,7 @@ class DocumentCenterServiceTest {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from outline_document_link where organization_id=3100 "
             + "and business_key='KNOWLEDGE_ROOT'", Integer.class));
-    verify(outline).create("知识库", "", COLLECTION_ID, null, true);
+    verify(outline).create(desiredId, "知识库", "", COLLECTION_ID, null, true);
   }
 
   @Test
@@ -97,7 +100,8 @@ class DocumentCenterServiceTest {
 
   @Test
   void storesFailureForRetryAndKeepsTenantIsolation() {
-    when(outline.create(anyString(), anyString(), anyString(), isNull(), anyBoolean()))
+    when(outline.create(
+        anyString(), anyString(), anyString(), anyString(), isNull(), anyBoolean()))
         .thenThrow(new OutlineException(
             OutlineException.Type.UNAVAILABLE, "Outline is unavailable"));
 
@@ -110,6 +114,55 @@ class DocumentCenterServiceTest {
         "select id from outline_document_link where organization_id=3100 "
             + "and business_key='PROJECT_ROOT'", Long.class);
     assertThrows(NotFoundException.class, () -> documents.readLink(linkId, 3200));
+  }
+
+  @Test
+  void recoversACompletedRemoteCreateAfterTheResponseWasLost() {
+    String businessKey = "PROJECT_ROOT";
+    String desiredId = DocumentCenterService.deterministicDocumentId(3100, businessKey);
+    OutlineDocument recovered = document(
+        desiredId, "项目文档", "", 1);
+    when(outline.info(desiredId))
+        .thenThrow(new OutlineException(
+            OutlineException.Type.NOT_FOUND, "document not found"))
+        .thenReturn(recovered);
+    when(outline.create(desiredId, "项目文档", "", COLLECTION_ID, null, true))
+        .thenThrow(new OutlineException(
+            OutlineException.Type.TIMEOUT, "Outline request timed out"));
+
+    assertThrows(OutlineException.class,
+        () -> documents.ensureIndex(3100, businessKey, "项目文档", null));
+    long linkId = documents.ensureIndex(3100, businessKey, "项目文档", null);
+
+    assertEquals("READY", jdbc.queryForObject(
+        "select sync_status from outline_document_link where id=?",
+        String.class, linkId));
+    assertEquals(desiredId, jdbc.queryForObject(
+        "select outline_document_id from outline_document_link where id=?",
+        String.class, linkId));
+    verify(outline, times(1))
+        .create(desiredId, "项目文档", "", COLLECTION_ID, null, true);
+  }
+
+  @Test
+  void reclaimsAStaleCreatingLink() {
+    String businessKey = "KNOWLEDGE_ROOT";
+    String desiredId = DocumentCenterService.deterministicDocumentId(3100, businessKey);
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+            + "outline_collection_id,title_cache,sync_status,updated_at) "
+            + "values (3100,?,'INDEX',?,'知识库','CREATING',?)",
+        businessKey, COLLECTION_ID,
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)));
+    when(outline.info(desiredId)).thenThrow(new OutlineException(
+        OutlineException.Type.NOT_FOUND, "document not found"));
+    when(outline.create(desiredId, "知识库", "", COLLECTION_ID, null, true))
+        .thenReturn(document(desiredId, "知识库", "", 1));
+
+    long linkId = documents.ensureIndex(3100, businessKey, "知识库", null);
+
+    assertEquals("READY", jdbc.queryForObject(
+        "select sync_status from outline_document_link where id=?",
+        String.class, linkId));
   }
 
   private long link(
@@ -125,9 +178,14 @@ class DocumentCenterServiceTest {
   }
 
   private OutlineDocument document(String title, String text, long revision) {
+    return document(DOCUMENT_ID, title, text, revision);
+  }
+
+  private OutlineDocument document(
+      String documentId, String title, String text, long revision) {
     return new OutlineDocument(
-        DOCUMENT_ID, COLLECTION_ID, null, title, text,
-        "/doc/test-" + DOCUMENT_ID, "test-url-id", revision,
+        documentId, COLLECTION_ID, null, title, text,
+        "/doc/test-" + documentId, "test-url-id", revision,
         Instant.parse("2026-07-16T08:00:00Z"));
   }
 }

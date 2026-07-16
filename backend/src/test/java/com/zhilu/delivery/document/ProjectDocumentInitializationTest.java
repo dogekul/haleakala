@@ -2,6 +2,7 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +14,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.project.CreateProjectCommand;
 import com.zhilu.delivery.project.DeliveryStage;
 import com.zhilu.delivery.project.ProjectService;
@@ -74,7 +76,7 @@ class ProjectDocumentInitializationTest {
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "document_job", "project_document", "document_template_config",
+        "audit_log", "document_job", "project_document", "document_template_config",
         "outline_document_link", "knowledge_item", "project_activity", "project_artifact",
         "template_instance", "milestone", "project_risk", "stage_instance", "project_member",
         "delivery_project", "customer", "product_version", "product", "app_user", "organization"
@@ -107,6 +109,15 @@ class ProjectDocumentInitializationTest {
 
     assertEquals("PENDING", project.getDocumentSpaceStatus());
     assertEquals(0, outlineIds.get());
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from project_document where project_id=?",
+        Integer.class, project.getId()));
+    assertThrows(ConflictException.class,
+        () -> projects.advanceStage(project.getId(), DeliveryStage.REQUIREMENT, manager));
+
+    jdbc.update("update document_template_config set stage_code='REQUIREMENT',"
+        + "requirement='OPTIONAL',enabled=false where knowledge_item_id=7802");
+    seedTemplate(7104, "创建后发布的模板", "START", "REQUIRED", true, "PUBLISHED", 5);
 
     jobs.runDueJobs();
 
@@ -176,6 +187,20 @@ class ProjectDocumentInitializationTest {
         Integer.class, project.getId()));
   }
 
+  @Test
+  void recoversAJobLeftRunningByAStoppedProcess() {
+    ProjectView project = projects.create(command("PRJ-703"));
+    jdbc.update("update document_job set status='RUNNING',started_at=?,updated_at=? "
+            + "where job_type='PROJECT_INIT' and business_id=?",
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)),
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)), project.getId());
+
+    jobs.runDueJobs();
+
+    assertEquals("DONE", jobStatus(project.getId()));
+    assertEquals("READY", projects.get(project.getId()).getDocumentSpaceStatus());
+  }
+
   private void seedTemplate(
       long id, String title, String stage, String requirement, boolean enabled,
       String status, long revision) {
@@ -239,18 +264,17 @@ class ProjectDocumentInitializationTest {
   private void stubOutline() {
     outlineDocuments.clear();
     outlineIds.set(0);
-    when(outline.create(anyString(), anyString(), anyString(),
+    when(outline.create(anyString(), anyString(), anyString(), anyString(),
         nullable(String.class), anyBoolean())).thenAnswer(invocation -> {
           if (!outlineAvailable.get()) {
             throw new OutlineException(
                 OutlineException.Type.UNAVAILABLE, "Outline is unavailable");
           }
-          String title = invocation.getArgument(0);
-          String text = invocation.getArgument(1);
-          String parent = invocation.getArgument(3);
-          String id = UUID.nameUUIDFromBytes(
-              (title + "-" + outlineIds.incrementAndGet()).getBytes(StandardCharsets.UTF_8))
-              .toString();
+          String id = invocation.getArgument(0);
+          String title = invocation.getArgument(1);
+          String text = invocation.getArgument(2);
+          String parent = invocation.getArgument(4);
+          outlineIds.incrementAndGet();
           OutlineDocument document = document(id, parent, title, text, 1);
           outlineDocuments.put(id, document);
           return document;

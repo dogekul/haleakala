@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.audit.AuditService;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -37,6 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class DocumentAdminControllerTest {
   @Autowired private MockMvc mvc;
   @MockBean private DocumentMigrationService migrations;
+  @MockBean private AuditService audit;
 
   @Test
   void exposesStatusAndOperationsOnlyToSystemManagers() throws Exception {
@@ -52,6 +54,8 @@ class DocumentAdminControllerTest {
         .thenReturn(Collections.singletonMap("enqueued", 3));
     when(migrations.retry(7100, 99))
         .thenReturn(Collections.singletonMap("status", "PENDING"));
+    when(migrations.jobs(7100, "FAILED"))
+        .thenReturn(Collections.singletonList(Collections.singletonMap("id", 99)));
 
     mvc.perform(get("/api/v1/admin/document-center/status").with(actor(false)))
         .andExpect(status().isForbidden());
@@ -74,6 +78,9 @@ class DocumentAdminControllerTest {
             .with(actor(true)).with(csrf()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("PENDING"));
+    mvc.perform(get("/api/v1/admin/document-center/jobs?status=FAILED").with(actor(true)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].id").value(99));
 
     verify(migrations).initialize(7100);
     verify(migrations).retry(7100, 99);

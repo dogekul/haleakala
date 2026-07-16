@@ -229,6 +229,37 @@ public class KnowledgeService {
     return get(id, user);
   }
 
+  @Transactional
+  public DocumentView updateDocument(
+      long id, CurrentUser user, String title, String markdown, long revision) {
+    Map<String, Object> current = get(id, user);
+    if (((Number) current.get("ownerUserId")).longValue() != user.getId()
+        && !user.getPermissions().contains("system:manage")) {
+      throw new ConflictException("只能维护自己的知识条目");
+    }
+    DocumentView updated = documents.updateKnowledge(id, title, markdown, revision, user);
+    jdbc.update("update knowledge_item set title=?,status='DRAFT',published_at=null,"
+            + "updated_at=current_timestamp,version=version+1 where id=? and organization_id=?",
+        title, id, user.getOrganizationId());
+    jdbc.update("update document_template_config set published_revision=null,"
+            + "updated_at=current_timestamp,version=version+1 where knowledge_item_id=?",
+        id);
+    return updated;
+  }
+
+  @Transactional
+  public Map<String, Object> retryDocument(long id, CurrentUser user) {
+    Map<String, Object> current = get(id, user);
+    if (((Number) current.get("ownerUserId")).longValue() != user.getId()
+        && !user.getPermissions().contains("system:manage")) {
+      throw new ConflictException("只能维护自己的知识条目");
+    }
+    initializeDocument(
+        user.getOrganizationId(), id, String.valueOf(current.get("type")),
+        String.valueOf(current.get("title")), String.valueOf(current.get("content")));
+    return get(id, user);
+  }
+
   private void initializeDocument(
       long organizationId, long id, String type, String title, String content) {
     String businessKey = "KNOWLEDGE:" + id;
@@ -366,7 +397,8 @@ public class KnowledgeService {
   }
   private String outlineUrl(String urlId) {
     if (blank(urlId)) return null;
-    String base = outlineProperties.getBaseUrl();
+    String base = outlineProperties.getPublicBaseUrl();
+    if (blank(base)) base = outlineProperties.getBaseUrl();
     if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
     return base + "/doc/" + urlId;
   }

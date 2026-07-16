@@ -57,12 +57,13 @@ class HttpOutlineClientTest {
   void createsReadsUpdatesListsAndExportsDocuments() throws Exception {
     responses.put("/api/documents.create", ok(document("项目文档", "# 根目录", 1)));
     OutlineDocument created = client.create(
-        "项目文档", "# 根目录", COLLECTION_ID, null, true);
+        DOCUMENT_ID, "项目文档", "# 根目录", COLLECTION_ID, null, true);
 
     assertEquals(DOCUMENT_ID, created.getId());
     assertEquals(1L, created.getRevision());
     assertEquals("Bearer ol_api_test", authorization.get());
     JsonNode createRequest = json.readTree(requestBody.get());
+    assertEquals(DOCUMENT_ID, createRequest.path("id").asText());
     assertEquals("项目文档", createRequest.path("title").asText());
     assertEquals(COLLECTION_ID, createRequest.path("collectionId").asText());
     assertTrue(createRequest.path("publish").asBoolean());
@@ -89,6 +90,12 @@ class HttpOutlineClientTest {
 
     responses.put("/api/documents.export", new Response(200, "{\"data\":\"# 导出正文\"}"));
     assertEquals("# 导出正文", client.exportMarkdown(DOCUMENT_ID));
+
+    responses.put("/api/collections.info",
+        new Response(200, "{\"data\":{\"id\":\"" + COLLECTION_ID
+            + "\",\"name\":\"文档中心\"}}"));
+    client.collectionInfo(COLLECTION_ID);
+    assertEquals(COLLECTION_ID, json.readTree(requestBody.get()).path("id").asText());
   }
 
   @Test

@@ -72,7 +72,7 @@ class ProjectDocumentLifecycleIT {
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "document_job", "project_document", "document_template_config", "knowledge_item",
+        "audit_log", "document_job", "project_document", "document_template_config", "knowledge_item",
         "outline_document_link", "project_activity", "stage_instance", "project_member",
         "delivery_project", "customer", "product_version", "product", "app_user", "organization"
     }) {
@@ -145,6 +145,10 @@ class ProjectDocumentLifecycleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("COMPLETED"))
         .andExpect(jsonPath("$.confirmedRevision").value(2));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='CONFIRM' "
+            + "and resource_type='PROJECT_DOCUMENT' and resource_id=?",
+        Integer.class, String.valueOf(requiredDocumentId)));
 
     String outlineId = "project-document-7320";
     outlineDocuments.put(outlineId, document(
@@ -160,6 +164,25 @@ class ProjectDocumentLifecycleIT {
     assertNull(jdbc.queryForObject(
         "select confirmed_revision from project_document where id=?",
         Long.class, requiredDocumentId));
+  }
+
+  @Test
+  void sectionHeadingsWithoutAnswersRemainTodo() throws Exception {
+    String outlineId = "project-document-7320";
+    outlineDocuments.put(outlineId, document(
+        outlineId, "项目启动方案",
+        "# 项目启动方案\n\n## 项目目标\n\n### 项目范围\n\n## 关键干系人", 3));
+
+    mvc.perform(get("/api/v1/projects/{id}/documents", projectId)
+            .with(actor(member, "project:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[?(@.id==" + requiredDocumentId + ")].status")
+            .value("TODO"));
+
+    mvc.perform(post("/api/v1/projects/{id}/documents/{documentId}/confirm",
+            projectId, requiredDocumentId)
+            .with(actor(manager, "project:write")).with(csrf()))
+        .andExpect(status().isConflict());
   }
 
   @Test

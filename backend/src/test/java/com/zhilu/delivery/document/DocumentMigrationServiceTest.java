@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,12 +43,14 @@ class DocumentMigrationServiceTest {
   @Autowired private com.zhilu.delivery.knowledge.KnowledgeService knowledge;
   @MockBean private OutlineClient outline;
   private final AtomicInteger sequence = new AtomicInteger();
+  private final Map<String, OutlineDocument> remote =
+      new ConcurrentHashMap<String, OutlineDocument>();
 
   @BeforeEach
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "document_job", "project_document", "document_template_config", "training_material",
+        "audit_log", "document_job", "project_document", "document_template_config", "training_material",
         "code_snippet", "knowledge_item", "outline_document_link", "project_activity",
         "project_artifact", "template_instance", "milestone", "project_risk", "stage_instance",
         "project_member", "delivery_project", "customer", "product_version", "product",
@@ -76,26 +79,38 @@ class DocumentMigrationServiceTest {
             + "'GREEN','BLOCK',6100),"
             + "(6101,6100,'PRJ-6101','项目二','客户',6100,6100,6100,6100,'ACTIVE','START',"
             + "'GREEN','BLOCK',6100)");
+    remote.clear();
     when(outline.isConfigured()).thenReturn(true);
-    when(outline.info(anyString())).thenAnswer(invocation ->
-        document(invocation.getArgument(0), "已迁移", "# Outline 正文", 1));
+    when(outline.info(anyString())).thenAnswer(invocation -> {
+      OutlineDocument document = remote.get(invocation.getArgument(0));
+      if (document == null) {
+        throw new OutlineException(OutlineException.Type.NOT_FOUND, "document not found");
+      }
+      return document;
+    });
     doAnswer(invocation -> {
-      String title = invocation.getArgument(0);
+      String title = invocation.getArgument(1);
       if ("失败知识".equals(title)) {
         throw new OutlineException(OutlineException.Type.UNAVAILABLE, "模拟单条失败");
       }
-      return document(
-          "outline-" + sequence.incrementAndGet(), title, invocation.getArgument(1), 1);
-    }).when(outline).create(anyString(), anyString(), anyString(), isNull(), anyBoolean());
+      OutlineDocument document = document(
+          invocation.getArgument(0), title, invocation.getArgument(2), 1);
+      remote.put(document.getId(), document);
+      return document;
+    }).when(outline).create(
+        anyString(), anyString(), anyString(), anyString(), isNull(), anyBoolean());
     doAnswer(invocation -> {
-      String title = invocation.getArgument(0);
+      String title = invocation.getArgument(1);
       if ("失败知识".equals(title)) {
         throw new OutlineException(OutlineException.Type.UNAVAILABLE, "模拟单条失败");
       }
-      return document(
-          "outline-" + sequence.incrementAndGet(), title, invocation.getArgument(1), 1);
+      OutlineDocument document = document(
+          invocation.getArgument(0), title, invocation.getArgument(2), 1);
+      remote.put(document.getId(), document);
+      return document;
     })
-        .when(outline).create(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+        .when(outline).create(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean());
   }
 
   @Test
@@ -135,6 +150,28 @@ class DocumentMigrationServiceTest {
     assertEquals(2, jdbc.queryForObject(
         "select count(*) from document_job where job_type='PROJECT_MIGRATION'",
         Integer.class));
+  }
+
+  @Test
+  void retriesKnowledgeThatAlreadyHasAFailedOutlineLink() {
+    String documentId = DocumentCenterService.deterministicDocumentId(6100, "KNOWLEDGE:6100");
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+            + "outline_collection_id,outline_document_id,title_cache,revision,sync_status,last_error) "
+            + "values (6100,'KNOWLEDGE:6100','KNOWLEDGE_DOCUMENT',?,?,?,1,'FAILED','temporary')",
+        COLLECTION_ID, documentId, "成功知识");
+    Long linkId = jdbc.queryForObject(
+        "select id from outline_document_link where business_key='KNOWLEDGE:6100'",
+        Long.class);
+    jdbc.update("update knowledge_item set outline_link_id=? where id=6100", linkId);
+    remote.put(documentId, document(documentId, "成功知识", "# 已恢复", 2));
+
+    assertEquals(2, migrations.startKnowledgeMigration(6100).get("enqueued"));
+    jobs.runDueJobs();
+
+    assertEquals("READY", jdbc.queryForObject(
+        "select sync_status from outline_document_link where id=?", String.class, linkId));
+    assertNull(jdbc.queryForObject(
+        "select last_error from outline_document_link where id=?", String.class, linkId));
   }
 
   private CurrentUser admin() {

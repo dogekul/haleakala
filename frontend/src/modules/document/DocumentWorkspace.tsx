@@ -75,7 +75,7 @@ export function DocumentWorkspace({
       onSaved?.()
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        setSaveError('Outline 中已有更新。你的本地内容已保留，请刷新后手动合并。')
+        setSaveError('Outline 中已有更新。你的本地内容仍保留在编辑器中；放弃本地修改后才能刷新服务端版本。')
       } else {
         setSaveError((error as Error).message || '保存失败')
       }
@@ -153,7 +153,9 @@ export function DocumentWorkspace({
       type={saveError.includes('Outline 中已有更新') ? 'warning' : 'error'}
       message={saveError}
       action={saveError.includes('Outline 中已有更新')
-        ? <Button size="small" onClick={() => void reload()}>刷新服务端版本</Button>
+        ? <Button size="small" danger onClick={() => void reload()}>
+            放弃本地修改并刷新
+          </Button>
         : undefined}
     />}
     <div className="document-canvas">

@@ -353,6 +353,10 @@ class SchemaBaselineTest {
             + "and table_name='delivery_project' and column_name='document_space_status'",
         Integer.class));
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='delivery_project' and column_name='document_snapshot_at'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.table_constraints "
             + "where table_schema='public' and table_name='outline_document_link' "
             + "and constraint_name='uk_outline_business_key'", Integer.class));

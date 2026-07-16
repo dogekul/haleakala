@@ -48,12 +48,16 @@ it('loads, edits and saves with the loaded Outline revision', async () => {
 })
 
 it('keeps local markdown and explains a revision conflict', async () => {
+  const server = { ...content, markdown: '# 服务端新版本', revision: 8 }
+  const load = vi.fn()
+    .mockResolvedValueOnce(content)
+    .mockResolvedValueOnce(server)
   const save = vi.fn().mockRejectedValue(
     new ApiError(409, 'CONFLICT', '文档已在 Outline 中更新，请刷新后合并'),
   )
   render(<DocumentWorkspace
     title="启动文档"
-    load={() => Promise.resolve(content)}
+    load={load}
     save={save}
     exportUrl={format => `/export?format=${format}`}
     canEdit
@@ -67,6 +71,10 @@ it('keeps local markdown and explains a revision conflict', async () => {
 
   expect(await screen.findByText(/Outline 中已有更新/)).toBeVisible()
   expect(editor).toHaveValue('我的本地修改')
+  await userEvent.click(screen.getByRole('button', { name: '放弃本地修改并刷新' }))
+  await waitFor(() => expect(
+    screen.getByRole('textbox', { name: 'Markdown 正文' }),
+  ).toHaveValue('# 服务端新版本'))
 })
 
 it('opens Outline and exposes four backend export links', async () => {

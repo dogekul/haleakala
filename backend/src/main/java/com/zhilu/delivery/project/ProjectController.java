@@ -1,5 +1,6 @@
 package com.zhilu.delivery.project;
 
+import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.document.ProjectDocumentService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.time.LocalDate;
@@ -26,10 +27,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectController {
   private final ProjectService projects;
   private final ProjectDocumentService projectDocuments;
+  private final AuditService audit;
 
-  public ProjectController(ProjectService projects, ProjectDocumentService projectDocuments) {
+  public ProjectController(
+      ProjectService projects, ProjectDocumentService projectDocuments, AuditService audit) {
     this.projects = projects;
     this.projectDocuments = projectDocuments;
+    this.audit = audit;
   }
 
   @GetMapping
@@ -66,7 +70,10 @@ public class ProjectController {
   @PostMapping("/{id}/documents/retry")
   public ProjectView retryDocuments(
       @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
-    return projects.retryDocumentInitialization(id, user);
+    ProjectView value = projects.retryDocumentInitialization(id, user);
+    audit.record(user.getOrganizationId(), user.getId(), "RETRY", "PROJECT_DOCUMENT_SPACE",
+        String.valueOf(id), value.getCode());
+    return value;
   }
 
   @GetMapping("/{id}/documents")
@@ -80,7 +87,10 @@ public class ProjectController {
       @PathVariable long id,
       @PathVariable long documentId,
       @AuthenticationPrincipal CurrentUser user) {
-    return projectDocuments.confirm(id, documentId, user);
+    Map<String, Object> value = projectDocuments.confirm(id, documentId, user);
+    audit.record(user.getOrganizationId(), user.getId(), "CONFIRM", "PROJECT_DOCUMENT",
+        String.valueOf(documentId), "project " + id + " · revision " + value.get("revision"));
+    return value;
   }
 
   @PutMapping("/{id}/stages/{stageCode}/gate")

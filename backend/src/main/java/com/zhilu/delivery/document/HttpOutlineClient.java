@@ -38,8 +38,10 @@ public class HttpOutlineClient implements OutlineClient {
 
   @Override
   public OutlineDocument create(
-      String title, String text, String collectionId, String parentDocumentId, boolean publish) {
+      String documentId, String title, String text, String collectionId,
+      String parentDocumentId, boolean publish) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
+    if (!blank(documentId)) body.put("id", documentId);
     body.put("title", title);
     body.put("text", text);
     body.put("collectionId", collectionId);
@@ -79,6 +81,17 @@ public class HttpOutlineClient implements OutlineClient {
     body.put("title", title);
     body.put("text", text);
     return document(post("documents.update", body).path("data"));
+  }
+
+  @Override
+  public void collectionInfo(String collectionId) {
+    Map<String, Object> body = new LinkedHashMap<String, Object>();
+    body.put("id", collectionId);
+    JsonNode data = post("collections.info", body).path("data");
+    if (!data.isObject() || blank(data.path("id").asText(null))) {
+      throw new OutlineException(
+          OutlineException.Type.INVALID_RESPONSE, "Outline returned an invalid collection");
+    }
   }
 
   @Override

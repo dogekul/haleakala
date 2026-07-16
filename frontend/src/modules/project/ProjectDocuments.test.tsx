@@ -141,6 +141,43 @@ it('项目负责人可编辑并确认，普通成员只能编辑查看', async (
   expect(screen.queryByRole('button', { name: '确认文档' })).not.toBeInTheDocument()
 })
 
+it('保存正文后同步刷新当前抽屉中的项目文档状态', async () => {
+  let currentDocuments = documents
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/v1/projects/9/documents') return json(currentDocuments)
+    if (path === '/api/v1/projects/9/documents/10' && !init?.method) return json({
+      linkId: 81, title: '启动检查单', markdown: '# 启动检查单\n\n请补充',
+      renderedHtml: '<h1>启动检查单</h1><p>请补充</p>', revision: 1,
+      syncStatus: 'READY',
+    })
+    if (path === '/api/v1/projects/9/documents/10' && init?.method === 'PUT') {
+      currentDocuments = documents.map(item => item.id === 10
+        ? { ...item, status: 'PENDING_CONFIRMATION' as const, revision: 2 }
+        : item)
+      return json({
+        linkId: 81, title: '启动检查单', markdown: '# 启动检查单\n\n目标已明确',
+        renderedHtml: '<h1>启动检查单</h1><p>目标已明确</p>', revision: 2,
+        syncStatus: 'READY',
+      })
+    }
+    throw new Error(`unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  show(<ProjectDocuments project={project} />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /启动/ }))
+  await userEvent.click(await screen.findByText('启动检查单'))
+  await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
+  const editor = screen.getByRole('textbox', { name: 'Markdown 正文' })
+  await userEvent.clear(editor)
+  await userEvent.type(editor, '# 启动检查单\n\n目标已明确')
+  await userEvent.click(screen.getByRole('button', { name: '保存' }))
+
+  await waitFor(() => expect(screen.getAllByText('待确认').length).toBeGreaterThan(0))
+  expect(screen.queryByText('待填写')).not.toBeInTheDocument()
+})
+
 it('项目文档初始化失败时展示原因并支持重试', async () => {
   const failed = {
     ...project, documentSpaceStatus: 'FAILED' as const,

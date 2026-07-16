@@ -1,6 +1,8 @@
 package com.zhilu.delivery.document;
 
+import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.knowledge.KnowledgeService;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import javax.validation.Valid;
@@ -21,10 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentController {
   private final DocumentCenterService documents;
   private final DocumentExportService exports;
+  private final KnowledgeService knowledge;
+  private final AuditService audit;
 
-  public DocumentController(DocumentCenterService documents, DocumentExportService exports) {
+  public DocumentController(
+      DocumentCenterService documents, DocumentExportService exports,
+      KnowledgeService knowledge, AuditService audit) {
     this.documents = documents;
     this.exports = exports;
+    this.knowledge = knowledge;
+    this.audit = audit;
   }
 
   @GetMapping("/api/v1/knowledge/{id}/document")
@@ -37,15 +45,21 @@ public class DocumentController {
   public DocumentView updateKnowledge(
       @PathVariable long id, @Valid @RequestBody SaveRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return documents.updateKnowledge(
-        id, request.title, request.markdown, request.revision, user);
+    DocumentView value = knowledge.updateDocument(
+        id, user, request.title, request.markdown, request.revision);
+    audit.record(user.getOrganizationId(), user.getId(), "EDIT", "KNOWLEDGE_DOCUMENT",
+        String.valueOf(id), request.title + " · revision " + value.getRevision());
+    return value;
   }
 
   @GetMapping("/api/v1/knowledge/{id}/document/export")
   public ResponseEntity<byte[]> exportKnowledge(
       @PathVariable long id, @RequestParam(defaultValue = "md") String format,
       @AuthenticationPrincipal CurrentUser user) {
-    return download(documents.readKnowledge(id, user), format);
+    DocumentView document = documents.readKnowledge(id, user);
+    audit.record(user.getOrganizationId(), user.getId(), "EXPORT", "KNOWLEDGE_DOCUMENT",
+        String.valueOf(id), format);
+    return download(document, format);
   }
 
   @GetMapping("/api/v1/projects/{projectId}/documents/{documentId}")
@@ -59,8 +73,11 @@ public class DocumentController {
   public DocumentView updateProject(
       @PathVariable long projectId, @PathVariable long documentId,
       @Valid @RequestBody SaveRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return documents.updateProjectDocument(
+    DocumentView value = documents.updateProjectDocument(
         projectId, documentId, request.title, request.markdown, request.revision, user);
+    audit.record(user.getOrganizationId(), user.getId(), "EDIT", "PROJECT_DOCUMENT",
+        String.valueOf(documentId), "project " + projectId + " · revision " + value.getRevision());
+    return value;
   }
 
   @GetMapping("/api/v1/projects/{projectId}/documents/{documentId}/export")
@@ -68,7 +85,10 @@ public class DocumentController {
       @PathVariable long projectId, @PathVariable long documentId,
       @RequestParam(defaultValue = "md") String format,
       @AuthenticationPrincipal CurrentUser user) {
-    return download(documents.readProjectDocument(projectId, documentId, user), format);
+    DocumentView document = documents.readProjectDocument(projectId, documentId, user);
+    audit.record(user.getOrganizationId(), user.getId(), "EXPORT", "PROJECT_DOCUMENT",
+        String.valueOf(documentId), "project " + projectId + " · " + format);
+    return download(document, format);
   }
 
   private ResponseEntity<byte[]> download(DocumentView document, String format) {

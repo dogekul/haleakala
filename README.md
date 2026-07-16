@@ -102,6 +102,8 @@ curl -fsS http://localhost:8082/api/v1/admin/document-center/status
 
 未配置或暂时无法连接 Outline 时，项目仍可创建，文档空间会显示明确的待初始化/失败状态；修复配置后可直接重试。
 
+当前兼容边界：Markdown 正文、目录和修订以 Outline 为准；培训课件等二进制附件仍由现有 MinIO 文件中心保存和下载，不会自动迁移为 Outline Attachment。服务端导出不会抓取远程图片，避免 SSRF；需要携带 Outline 私有图片的完整离线包时，请使用 Outline 原生集合导出。
+
 ## 文档
 
 - [系统设计](./docs/superpowers/specs/2026-07-13-delivery-project-management-platform-design.md)

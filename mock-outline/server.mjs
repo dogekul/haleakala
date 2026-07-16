@@ -88,7 +88,9 @@ const server = http.createServer(async (request, response) => {
     if (!body.title || !body.collectionId) {
       return send(response, 400, { error: 'title_and_collection_required' })
     }
-    const id = randomUUID()
+    const id = typeof body.id === 'string' && body.id ? body.id : randomUUID()
+    const existing = documents.get(id)
+    if (existing) return send(response, 200, { data: view(existing) })
     const document = {
       id,
       urlId: `mock-${id}`,
@@ -101,6 +103,12 @@ const server = http.createServer(async (request, response) => {
     }
     documents.set(id, document)
     return send(response, 200, { data: view(document) })
+  }
+  if (url.pathname === '/api/collections.info') {
+    if (!body.id) return send(response, 400, { error: 'collection_id_required' })
+    return send(response, 200, {
+      data: { id: String(body.id), name: 'E2E 文档中心' },
+    })
   }
   if (url.pathname === '/api/documents.info') {
     const document = findDocument(String(body.id ?? ''))

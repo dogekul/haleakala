@@ -30,9 +30,31 @@ public class ProjectDocumentService {
     this.documents = documents;
   }
 
+  public void snapshotTemplates(long projectId, long organizationId) {
+    List<Map<String, Object>> projects = jdbc.queryForList(
+        "select document_snapshot_at from delivery_project where id=? and organization_id=?",
+        projectId, organizationId);
+    if (projects.isEmpty()) throw new NotFoundException("项目不存在");
+    if (projects.get(0).get("document_snapshot_at") != null) return;
+    for (Map<String, Object> template : templates(organizationId)) {
+      ensureProjectDocument(
+          projectId, ((Number) template.get("id")).longValue(),
+          String.valueOf(template.get("stage_code")),
+          ((Number) template.get("published_revision")).longValue(),
+          String.valueOf(template.get("requirement")));
+    }
+    jdbc.update("update delivery_project set document_snapshot_at=current_timestamp,"
+            + "updated_at=current_timestamp where id=? and organization_id=? "
+            + "and document_snapshot_at is null",
+        projectId, organizationId);
+  }
+
   public void initialize(long projectId) {
     Map<String, Object> project = project(projectId);
     long organizationId = ((Number) project.get("organization_id")).longValue();
+    if (project.get("document_snapshot_at") == null) {
+      snapshotTemplates(projectId, organizationId);
+    }
     jdbc.update("update delivery_project set document_space_status='INITIALIZING',"
             + "document_space_error=null,updated_at=current_timestamp where id=?",
         projectId);
@@ -52,7 +74,7 @@ public class ProjectDocumentService {
       stages.put(stage.name(), Long.valueOf(stageLinkId));
     }
 
-    for (Map<String, Object> template : templates(organizationId)) {
+    for (Map<String, Object> template : snapshots(projectId)) {
       copyTemplate(projectId, organizationId, template, stages);
     }
     jdbc.update("update delivery_project set document_space_status='READY',"
@@ -133,9 +155,7 @@ public class ProjectDocumentService {
     if (source.getRevision() != publishedRevision) {
       throw new ConflictException("文档模版已在 Outline 更新，请重新发布：" + source.getTitle());
     }
-    long projectDocumentId = ensureProjectDocument(
-        projectId, templateId, stageCode, publishedRevision,
-        String.valueOf(template.get("requirement")));
+    long projectDocumentId = ((Number) template.get("project_document_id")).longValue();
     String businessKey = "PROJECT:" + projectId + ":DOC:" + templateId;
     try {
       long linkId = documents.createDocument(
@@ -180,7 +200,8 @@ public class ProjectDocumentService {
 
   private Map<String, Object> project(long projectId) {
     List<Map<String, Object>> values = jdbc.queryForList(
-        "select id,organization_id,code,name,manager_user_id from delivery_project where id=?",
+        "select id,organization_id,code,name,manager_user_id,document_snapshot_at "
+            + "from delivery_project where id=?",
         projectId);
     if (values.isEmpty()) throw new NotFoundException("项目不存在");
     return values.get(0);
@@ -194,6 +215,16 @@ public class ProjectDocumentService {
             + "and c.enabled=true and c.published_revision is not null "
             + "and k.outline_link_id is not null order by k.id",
         organizationId);
+  }
+
+  private List<Map<String, Object>> snapshots(long projectId) {
+    return jdbc.queryForList(
+        "select pd.id project_document_id,pd.source_template_id id,"
+            + "pd.source_template_revision published_revision,pd.stage_code,pd.requirement,"
+            + "k.outline_link_id from project_document pd "
+            + "join knowledge_item k on k.id=pd.source_template_id "
+            + "where pd.project_id=? order by pd.id",
+        projectId);
   }
 
   private Map<String, Object> refresh(
@@ -292,6 +323,7 @@ public class ProjectDocumentService {
     if (markdown == null || markdown.trim().isEmpty()) return "TODO";
     String expectedTitle = plain(title);
     for (String sourceLine : markdown.split("\\r?\\n")) {
+      if (sourceLine.matches("^\\s{0,3}#{1,6}(\\s+.*)?$")) continue;
       String line = plain(sourceLine);
       if (line.isEmpty() || line.equals(expectedTitle) || hint(line)) continue;
       if (line.matches("^[-:|\\s]+$") || line.endsWith("：") || line.endsWith(":")) continue;

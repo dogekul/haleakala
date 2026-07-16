@@ -65,6 +65,7 @@ services:
 
   mock-outline:
     build: ./mock-outline
+    profiles: ["e2e"]
     environment:
       PORT: 3000
       OUTLINE_API_TOKEN: ${MOCK_OUTLINE_TOKEN:-ol_api_e2e}
@@ -96,6 +97,7 @@ services:
       AI_MODEL: ${AI_MODEL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       OUTLINE_BASE_URL: ${OUTLINE_BASE_URL:-http://host.docker.internal:3000}
+      OUTLINE_PUBLIC_BASE_URL: ${OUTLINE_PUBLIC_BASE_URL:-http://localhost:3000}
       OUTLINE_API_TOKEN: ${OUTLINE_API_TOKEN:-}
       OUTLINE_COLLECTION_ID: ${OUTLINE_COLLECTION_ID:-a4296a54-2044-4529-ba86-d598a5322e06}
       DELIVERY_OUTLINE_JOB_INITIAL_DELAY_MS: ${DELIVERY_OUTLINE_JOB_INITIAL_DELAY_MS:-60000}
@@ -108,7 +110,6 @@ services:
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
       mock-agent: { condition: service_healthy }
-      mock-outline: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
       interval: 8s

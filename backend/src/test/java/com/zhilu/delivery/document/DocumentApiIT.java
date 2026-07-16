@@ -1,5 +1,6 @@
 package com.zhilu.delivery.document;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
     "spring.jpa.hibernate.ddl-auto=none",
     "spring.session.store-type=none",
     "delivery.outline.base-url=http://outline.test",
+    "delivery.outline.public-base-url=http://outline.browser",
     "delivery.outline.api-token=ol_api_test",
     "delivery.outline.collection-id=a4296a54-2044-4529-ba86-d598a5322e06"
 })
@@ -54,7 +56,7 @@ class DocumentApiIT {
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "document_job", "project_document", "document_template_config", "training_material",
+        "audit_log", "document_job", "project_document", "document_template_config", "training_material",
         "code_snippet", "knowledge_item", "outline_document_link", "project_activity",
         "project_artifact", "template_instance", "milestone", "project_risk", "stage_instance",
         "project_member", "delivery_project", "customer", "product_version", "product",
@@ -78,8 +80,10 @@ class DocumentApiIT {
     long knowledgeLink = link("KNOWLEDGE:4100", "知识正文");
     jdbc.update("insert into knowledge_item(id,organization_id,type,title,summary,content_text,"
             + "visibility,status,owner_user_id,outline_link_id) "
-            + "values (4100,4100,'CASE','知识正文','摘要','旧正文','ORGANIZATION',"
+            + "values (4100,4100,'TEMPLATE','知识正文','摘要','旧正文','ORGANIZATION',"
             + "'PUBLISHED',4100,?)", knowledgeLink);
+    jdbc.update("insert into document_template_config(knowledge_item_id,stage_code,requirement,"
+        + "enabled,published_revision) values (4100,'START','REQUIRED',true,2)");
     knowledgeId = 4100;
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
             + "customer_id,product_id,product_version_id,manager_user_id,status,current_stage,"
@@ -109,7 +113,7 @@ class DocumentApiIT {
             org.hamcrest.Matchers.containsString("<h1>最新正文</h1>")))
         .andExpect(jsonPath("$.revision").value(3))
         .andExpect(jsonPath("$.outlineUrl").value(
-            "http://outline.test/doc/test-" + DOCUMENT_ID));
+            "http://outline.browser/doc/test-" + DOCUMENT_ID));
 
     mvc.perform(get("/api/v1/projects/{projectId}/documents/{documentId}",
             projectId, projectDocumentId)
@@ -129,6 +133,30 @@ class DocumentApiIT {
         .andExpect(status().isConflict());
 
     verify(outline, never()).update(anyString(), anyString(), anyString());
+  }
+
+  @Test
+  void editingPublishedKnowledgeDocumentReturnsItToDraft() throws Exception {
+    when(outline.info(DOCUMENT_ID)).thenReturn(document("知识正文", "# 已发布正文", 2));
+    when(outline.update(DOCUMENT_ID, "知识正文", "# 修改后的正文"))
+        .thenReturn(document("知识正文", "# 修改后的正文", 3));
+
+    mvc.perform(put("/api/v1/knowledge/{id}/document", knowledgeId)
+            .with(actor(4100, 4100, "knowledge:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"title\":\"知识正文\",\"markdown\":\"# 修改后的正文\",\"revision\":2}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.revision").value(3));
+
+    assertEquals("DRAFT", jdbc.queryForObject(
+        "select status from knowledge_item where id=?", String.class, knowledgeId));
+    assertEquals(null, jdbc.queryForObject(
+        "select published_revision from document_template_config where knowledge_item_id=?",
+        Long.class, knowledgeId));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='EDIT' "
+            + "and resource_type='KNOWLEDGE_DOCUMENT' and resource_id=?",
+        Integer.class, String.valueOf(knowledgeId)));
   }
 
   @Test

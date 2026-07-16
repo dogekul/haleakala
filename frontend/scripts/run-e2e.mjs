@@ -58,7 +58,7 @@ const composeEnv = {
 }
 
 function compose(args, options = {}) {
-  return spawnSync('docker', ['compose', '-p', project, ...args], {
+  return spawnSync('docker', ['compose', '-p', project, '--profile', 'e2e', ...args], {
     cwd: root,
     env: composeEnv,
     stdio: 'inherit',
