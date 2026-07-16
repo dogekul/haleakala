@@ -48,6 +48,7 @@ class OpportunityHandoffIT {
         "audit_log", "customer_operation", "opportunity_artifact", "opportunity_activity",
         "sales_opportunity", "project_activity", "project_artifact", "template_instance",
         "milestone", "project_risk", "project_member", "stage_instance", "delivery_project",
+        "document_job",
         "file_object", "customer", "product_version", "product", "app_user", "organization")) {
       jdbc.update("delete from " + table);
     }

@@ -2,6 +2,7 @@ package com.zhilu.delivery.project;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.document.DocumentJobService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.operation.CustomerOperationService;
 import java.sql.Date;
@@ -24,10 +25,13 @@ public class ProjectService {
       Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
   private final CustomerOperationService operations;
+  private final DocumentJobService documentJobs;
 
-  public ProjectService(JdbcTemplate jdbc, CustomerOperationService operations) {
+  public ProjectService(
+      JdbcTemplate jdbc, CustomerOperationService operations, DocumentJobService documentJobs) {
     this.jdbc = jdbc;
     this.operations = operations;
+    this.documentJobs = documentJobs;
   }
 
   @Transactional
@@ -80,6 +84,7 @@ public class ProjectService {
           projectId, command.getCreatedByUserId(), "DELIVERY_ENGINEER");
     }
     activity(projectId, command.getCreatedByUserId(), "PROJECT_CREATED", "创建项目并初始化七阶段", null);
+    documentJobs.enqueueProjectInitialization(command.getOrganizationId(), projectId);
     return get(projectId);
   }
 
@@ -123,7 +128,9 @@ public class ProjectService {
             row.getString("product_name"), row.getLong("product_version_id"),
             row.getString("version_name"), row.getLong("manager_user_id"),
             row.getString("manager_name"), row.getString("status"), row.getString("current_stage"),
-            row.getString("risk_level"), row.getString("gate_mode"), localDate(row.getDate("start_date")),
+            row.getString("risk_level"), row.getString("gate_mode"),
+            row.getString("document_space_status"), row.getString("document_space_error"),
+            localDate(row.getDate("start_date")),
             localDate(row.getDate("planned_end_date")), row.getLong("version"),
             stages(projectId), members(projectId), risks(projectId), milestones(projectId),
             templates(projectId), artifacts(projectId), activities(projectId)), projectId);
@@ -141,6 +148,13 @@ public class ProjectService {
         "select count(*) from delivery_project where id=? and organization_id=?",
         Integer.class, projectId, organizationId);
     if (count == null || count == 0) throw new NotFoundException("项目不存在");
+    return get(projectId);
+  }
+
+  @Transactional
+  public ProjectView retryDocumentInitialization(long projectId, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    documentJobs.retryProjectInitialization(project.getOrganizationId(), projectId);
     return get(projectId);
   }
 

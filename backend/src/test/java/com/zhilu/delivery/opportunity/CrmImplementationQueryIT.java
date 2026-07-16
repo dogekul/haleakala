@@ -45,7 +45,8 @@ class CrmImplementationQueryIT {
     for (String table : Arrays.asList(
         "customer_operation", "opportunity_artifact", "opportunity_activity", "sales_opportunity",
         "project_activity", "project_artifact", "template_instance", "milestone", "project_risk",
-        "project_member", "stage_instance", "delivery_project", "customer", "product_version",
+        "project_member", "stage_instance", "delivery_project", "document_job",
+        "customer", "product_version",
         "product", "app_user", "organization")) {
       jdbc.update("delete from " + table);
     }

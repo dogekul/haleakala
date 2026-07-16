@@ -60,6 +60,12 @@ public class ProjectController {
         user);
   }
 
+  @PostMapping("/{id}/documents/retry")
+  public ProjectView retryDocuments(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    return projects.retryDocumentInitialization(id, user);
+  }
+
   @PutMapping("/{id}/stages/{stageCode}/gate")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void setGate(
