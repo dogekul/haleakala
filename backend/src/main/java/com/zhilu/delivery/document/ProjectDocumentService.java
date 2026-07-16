@@ -198,40 +198,59 @@ public class ProjectDocumentService {
 
   private Map<String, Object> refresh(
       long projectDocumentId, long projectId, long organizationId) {
-    Map<String, Object> row = record(projectDocumentId, projectId);
-    Object linkValue = row.get("outline_link_id");
-    if (linkValue == null) return view(row, null, row.get("status"), row.get("last_error"));
-    try {
-      DocumentView document = documents.readLink(
-          ((Number) linkValue).longValue(), organizationId);
-      Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
-      String status = contentStatus(document.getTitle(), document.getMarkdown());
-      boolean completed = "PENDING_CONFIRMATION".equals(status)
-          && confirmedRevision != null
-          && confirmedRevision.longValue() == document.getRevision();
-      if (completed) {
-        status = "COMPLETED";
-        jdbc.update("update project_document set status='COMPLETED',last_synced_at=current_timestamp,"
-                + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
-            projectDocumentId);
-      } else {
-        jdbc.update("update project_document set status=?,confirmed_revision=null,"
-                + "confirmed_by=null,confirmed_at=null,last_synced_at=current_timestamp,"
-                + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
-            status, projectDocumentId);
+    for (int attempt = 0; attempt < 4; attempt++) {
+      Map<String, Object> row = record(projectDocumentId, projectId);
+      Object linkValue = row.get("outline_link_id");
+      if (linkValue == null) {
+        return view(row, null, row.get("status"), row.get("last_error"));
       }
-      return view(record(projectDocumentId, projectId), document, status, null);
-    } catch (OutlineException failure) {
-      jdbc.update("update project_document set status='FAILED',last_error=?,"
-              + "updated_at=current_timestamp,version=version+1 where id=?",
-          truncate(failure.getMessage()), projectDocumentId);
-      return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
-    } catch (ConflictException failure) {
-      jdbc.update("update project_document set status='FAILED',last_error=?,"
-              + "updated_at=current_timestamp,version=version+1 where id=?",
-          truncate(failure.getMessage()), projectDocumentId);
-      return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
+      long expectedVersion = ((Number) row.get("version")).longValue();
+      try {
+        DocumentView document = documents.readLink(
+            ((Number) linkValue).longValue(), organizationId);
+        Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
+        String status = contentStatus(document.getTitle(), document.getMarkdown());
+        boolean completed = "PENDING_CONFIRMATION".equals(status)
+            && confirmedRevision != null
+            && confirmedRevision.longValue() == document.getRevision();
+        int changed;
+        if (completed) {
+          status = "COMPLETED";
+          changed = jdbc.update(
+              "update project_document set status='COMPLETED',"
+                  + "last_synced_at=current_timestamp,last_error=null,"
+                  + "updated_at=current_timestamp,version=version+1 "
+                  + "where id=? and version=?",
+              projectDocumentId, expectedVersion);
+        } else {
+          changed = jdbc.update(
+              "update project_document set status=?,confirmed_revision=null,"
+                  + "confirmed_by=null,confirmed_at=null,last_synced_at=current_timestamp,"
+                  + "last_error=null,updated_at=current_timestamp,version=version+1 "
+                  + "where id=? and version=?",
+              status, projectDocumentId, expectedVersion);
+        }
+        if (changed == 0) continue;
+        return view(record(projectDocumentId, projectId), document, status, null);
+      } catch (OutlineException failure) {
+        int changed = jdbc.update(
+            "update project_document set status='FAILED',last_error=?,"
+                + "updated_at=current_timestamp,version=version+1 "
+                + "where id=? and version=?",
+            truncate(failure.getMessage()), projectDocumentId, expectedVersion);
+        if (changed == 0) continue;
+        return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
+      } catch (ConflictException failure) {
+        int changed = jdbc.update(
+            "update project_document set status='FAILED',last_error=?,"
+                + "updated_at=current_timestamp,version=version+1 "
+                + "where id=? and version=?",
+            truncate(failure.getMessage()), projectDocumentId, expectedVersion);
+        if (changed == 0) continue;
+        return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
+      }
     }
+    throw new ConflictException("项目文档状态正在更新，请重试");
   }
 
   private Map<String, Object> record(long projectDocumentId, long projectId) {

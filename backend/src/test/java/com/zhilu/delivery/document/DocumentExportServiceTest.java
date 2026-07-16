@@ -54,4 +54,15 @@ class DocumentExportServiceTest {
     org.junit.jupiter.api.Assertions.assertThrows(
         IllegalArgumentException.class, () -> service.export(document, "zip"));
   }
+
+  @Test
+  void blocksRemoteMarkdownImagesBeforePreviewOrPdfRendering() {
+    MarkdownRenderer renderer = new MarkdownRenderer();
+
+    String html = renderer.renderPage(
+        "安全文档", "![外部图片](http://169.254.169.254/latest/meta-data/)");
+
+    assertFalse(html.contains("169.254.169.254"));
+    assertFalse(html.contains("src=\"http"));
+  }
 }

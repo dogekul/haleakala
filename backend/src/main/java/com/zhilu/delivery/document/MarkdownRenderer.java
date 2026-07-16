@@ -2,10 +2,13 @@ package com.zhilu.delivery.document;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.commonmark.Extension;
 import org.commonmark.ext.gfm.tables.TablesExtension;
+import org.commonmark.node.Image;
 import org.commonmark.node.Node;
 import org.commonmark.parser.Parser;
+import org.commonmark.renderer.html.AttributeProvider;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +24,16 @@ public class MarkdownRenderer {
         .extensions(extensions)
         .escapeHtml(true)
         .sanitizeUrls(true)
+        .attributeProviderFactory(context -> new AttributeProvider() {
+          @Override
+          public void setAttributes(
+              Node node, String tagName, Map<String, String> attributes) {
+            if (node instanceof Image
+                && !safeImage(((Image) node).getDestination())) {
+              attributes.remove("src");
+            }
+          }
+        })
         .build();
   }
 
@@ -65,5 +78,11 @@ public class MarkdownRenderer {
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
         .replace("'", "&#39;");
+  }
+
+  private boolean safeImage(String destination) {
+    if (destination == null) return false;
+    String value = destination.trim();
+    return !value.isEmpty() && !value.startsWith("//") && value.indexOf(':') < 0;
   }
 }

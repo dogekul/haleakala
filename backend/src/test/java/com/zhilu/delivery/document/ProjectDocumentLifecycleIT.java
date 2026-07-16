@@ -2,6 +2,7 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -17,7 +18,14 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -152,6 +160,46 @@ class ProjectDocumentLifecycleIT {
     assertNull(jdbc.queryForObject(
         "select confirmed_revision from project_document where id=?",
         Long.class, requiredDocumentId));
+  }
+
+  @Test
+  void staleRefreshCannotClearANewerConfirmation() throws Exception {
+    CountDownLatch staleRefreshRead = new CountDownLatch(1);
+    CountDownLatch continueStaleRefresh = new CountDownLatch(1);
+    AtomicBoolean delayRequiredDocument = new AtomicBoolean(true);
+    when(outline.info(anyString())).thenAnswer(invocation -> {
+      String documentId = invocation.getArgument(0);
+      if ("project-document-7320".equals(documentId)
+          && delayRequiredDocument.compareAndSet(true, false)) {
+        staleRefreshRead.countDown();
+        assertTrue(continueStaleRefresh.await(5, TimeUnit.SECONDS));
+      }
+      return outlineDocuments.get(documentId);
+    });
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<List<Map<String, Object>>> stale =
+          executor.submit(() -> projectDocuments.list(projectId, member));
+      assertTrue(staleRefreshRead.await(5, TimeUnit.SECONDS));
+
+      Map<String, Object> confirmed =
+          projectDocuments.confirm(projectId, requiredDocumentId, manager);
+      assertEquals("COMPLETED", confirmed.get("status"));
+      assertEquals(2L, ((Number) confirmed.get("confirmedRevision")).longValue());
+
+      continueStaleRefresh.countDown();
+      stale.get(5, TimeUnit.SECONDS);
+
+      assertEquals(Long.valueOf(2L), jdbc.queryForObject(
+          "select confirmed_revision from project_document where id=?",
+          Long.class, requiredDocumentId));
+      assertEquals("COMPLETED", jdbc.queryForObject(
+          "select status from project_document where id=?",
+          String.class, requiredDocumentId));
+    } finally {
+      continueStaleRefresh.countDown();
+      executor.shutdownNow();
+    }
   }
 
   @Test
