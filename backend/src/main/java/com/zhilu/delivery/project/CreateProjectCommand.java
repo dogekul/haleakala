@@ -6,7 +6,7 @@ public final class CreateProjectCommand {
   private final long organizationId;
   private final String code;
   private final String name;
-  private final String customerName;
+  private final long customerId;
   private final long productId;
   private final long productVersionId;
   private final long managerUserId;
@@ -19,14 +19,14 @@ public final class CreateProjectCommand {
       long organizationId,
       String code,
       String name,
-      String customerName,
+      long customerId,
       long productId,
       long productVersionId,
       long managerUserId,
       LocalDate startDate,
       LocalDate plannedEndDate,
       String gateMode) {
-    this(organizationId, code, name, customerName, productId, productVersionId, managerUserId,
+    this(organizationId, code, name, customerId, productId, productVersionId, managerUserId,
         managerUserId, startDate, plannedEndDate, gateMode);
   }
 
@@ -34,7 +34,7 @@ public final class CreateProjectCommand {
       long organizationId,
       String code,
       String name,
-      String customerName,
+      long customerId,
       long productId,
       long productVersionId,
       long managerUserId,
@@ -45,7 +45,7 @@ public final class CreateProjectCommand {
     this.organizationId = organizationId;
     this.code = code;
     this.name = name;
-    this.customerName = customerName;
+    this.customerId = customerId;
     this.productId = productId;
     this.productVersionId = productVersionId;
     this.managerUserId = managerUserId;
@@ -58,7 +58,7 @@ public final class CreateProjectCommand {
   public long getOrganizationId() { return organizationId; }
   public String getCode() { return code; }
   public String getName() { return name; }
-  public String getCustomerName() { return customerName; }
+  public long getCustomerId() { return customerId; }
   public long getProductId() { return productId; }
   public long getProductVersionId() { return productVersionId; }
   public long getManagerUserId() { return managerUserId; }

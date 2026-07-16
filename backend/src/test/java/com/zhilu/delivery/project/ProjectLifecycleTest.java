@@ -36,6 +36,7 @@ class ProjectLifecycleTest {
     jdbc.update("delete from stage_instance");
     jdbc.update("delete from project_member");
     jdbc.update("delete from delivery_project");
+    jdbc.update("delete from customer");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
     jdbc.update("delete from app_user");
@@ -47,6 +48,8 @@ class ProjectLifecycleTest {
         + "values (600,600,'ERP','智鹿 ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (600,600,'V5.2','RELEASED')");
+    jdbc.update("insert into customer(id,organization_id,name,status) "
+        + "values (600,600,'华东银行','ACTIVE')");
   }
 
   @Test
@@ -92,7 +95,7 @@ class ProjectLifecycleTest {
         () -> projects.create(command("PRJ-603", 601, 602)));
 
     assertThrows(IllegalArgumentException.class,
-        () -> projects.create(new CreateProjectCommand(601, "PRJ-604", "跨组织项目", "客户",
+        () -> projects.create(new CreateProjectCommand(601, "PRJ-604", "跨组织项目", 600,
             600, 600, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK")));
   }
 
@@ -120,7 +123,7 @@ class ProjectLifecycleTest {
   }
 
   private CreateProjectCommand command(String code, long productId, long versionId) {
-    return new CreateProjectCommand(600, code, "华东银行核心系统交付", "华东银行",
+    return new CreateProjectCommand(600, code, "华东银行核心系统交付", 600,
         productId, versionId, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
   }
 

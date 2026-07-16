@@ -36,6 +36,7 @@ class ProjectApiIT {
     jdbc.update("delete from stage_instance");
     jdbc.update("delete from project_member");
     jdbc.update("delete from delivery_project");
+    jdbc.update("delete from customer");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
     jdbc.update("delete from app_user");
@@ -47,7 +48,9 @@ class ProjectApiIT {
         + "values (610,610,'CRM','智鹿 CRM','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (610,610,'V3.0','RELEASED')");
-    projects.create(new CreateProjectCommand(610, "PRJ-610", "北方银行 CRM", "北方银行",
+    jdbc.update("insert into customer(id,organization_id,name,status) "
+        + "values (610,610,'北方银行','ACTIVE')");
+    projects.create(new CreateProjectCommand(610, "PRJ-610", "北方银行 CRM", 610,
         610, 610, 610, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 11, 30), "BLOCK"));
   }
 

@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
@@ -40,7 +41,7 @@ class ProjectAuthorizationIT {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {"project_activity", "project_artifact", "template_instance",
         "milestone", "project_risk", "stage_instance", "project_member", "delivery_project",
-        "product_version", "product", "app_user", "organization"}) {
+        "customer", "product_version", "product", "app_user", "organization"}) {
       jdbc.update("delete from " + table);
     }
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
@@ -55,8 +56,11 @@ class ProjectAuthorizationIT {
         + "values (620,620,'ERP-AUTH','ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (620,620,'V1','RELEASED')");
+    jdbc.update("insert into customer(id,organization_id,name,status) values "
+        + "(620,620,'客户','ACTIVE'),(621,621,'其他客户','ACTIVE'),"
+        + "(622,620,'停用客户','INACTIVE')");
     ProjectView project = projects.create(new CreateProjectCommand(620, "PRJ-AUTH", "安全项目",
-        "客户", 620, 620, 620, 620, LocalDate.of(2026, 7, 1),
+        620, 620, 620, 620, 620, LocalDate.of(2026, 7, 1),
         LocalDate.of(2026, 12, 31), "BLOCK"));
     projectId = project.getId();
     jdbc.update("insert into project_risk(project_id,title,category,probability,impact,risk_level,status) "
@@ -151,8 +155,44 @@ class ProjectAuthorizationIT {
             .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"PRJ-CROSS-MANAGER\",\"name\":\"跨组织负责人项目\","
-                + "\"customerName\":\"客户\",\"productId\":620,\"productVersionId\":620,"
+                + "\"customerId\":620,\"productId\":620,\"productVersionId\":620,"
                 + "\"managerUserId\":623,\"gateMode\":\"BLOCK\"}"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void createsProjectFromActiveCustomerIdWithoutAcceptingCustomerName() throws Exception {
+    mvc.perform(post("/api/v1/projects")
+            .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"PRJ-CUSTOMER\",\"name\":\"客户关联项目\","
+                + "\"customerId\":620,\"customerName\":\"伪造名称\","
+                + "\"productId\":620,\"productVersionId\":620,\"gateMode\":\"BLOCK\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.customerId").value(620))
+        .andExpect(jsonPath("$.customerName").value("客户"));
+  }
+
+  @Test
+  void inactiveCustomerCannotCreateProject() throws Exception {
+    mvc.perform(post("/api/v1/projects")
+            .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"PRJ-INACTIVE-CUSTOMER\",\"name\":\"停用客户项目\","
+                + "\"customerId\":622,\"productId\":620,\"productVersionId\":620,"
+                + "\"gateMode\":\"BLOCK\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("停用客户不能创建项目"));
+  }
+
+  @Test
+  void foreignCustomerCannotCreateProject() throws Exception {
+    mvc.perform(post("/api/v1/projects")
+            .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"code\":\"PRJ-FOREIGN-CUSTOMER\",\"name\":\"跨组织客户项目\","
+                + "\"customerId\":621,\"productId\":620,\"productVersionId\":620,"
+                + "\"gateMode\":\"BLOCK\"}"))
         .andExpect(status().isNotFound());
   }
 
