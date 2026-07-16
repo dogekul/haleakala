@@ -86,6 +86,22 @@ it('客户运营显示三列看板、关闭记录并携带版本推进', async (
   })))
 })
 
+it('客户运营筛选由服务端查询执行', async () => {
+  const fetch = vi.fn((_path: RequestInfo | URL) => json(operations))
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show(<OperationBoardPage />)
+
+  await screen.findByText('华东银行持续运营')
+  await user.type(screen.getByPlaceholderText('搜索运营或客户'), '银行')
+  await user.click(screen.getByRole('combobox', { name: '运营阶段筛选' }))
+  await user.click(await screen.findByRole('option', { name: '持续运营' }))
+  await waitFor(() => expect(fetch.mock.calls.some(call => {
+    const path = String(call[0])
+    return path.includes('keyword=%E9%93%B6%E8%A1%8C') && path.includes('stage=OPERATING')
+  })).toBe(true))
+})
+
 it('运营详情展示客户商机项目来源和可跳转全链', async () => {
   vi.stubGlobal('fetch', vi.fn(() => json(operations[0])))
   show(<Routes><Route path="/customers/operations/:id" element={<OperationDetailPage />} /></Routes>,

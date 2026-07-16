@@ -378,9 +378,9 @@ public class ProjectService {
   private void assertOrganizationUser(long organizationId, Long userId) {
     if (userId == null) return;
     Integer count = jdbc.queryForObject(
-        "select count(*) from app_user where id=? and organization_id=?",
+        "select count(*) from app_user where id=? and organization_id=? and status='ACTIVE'",
         Integer.class, userId, organizationId);
-    if (count == null || count == 0) throw new NotFoundException("用户不存在");
+    if (count == null || count == 0) throw new NotFoundException("用户不存在或已停用");
   }
 
   private Map<String, Object> customerForProject(long organizationId, long customerId) {

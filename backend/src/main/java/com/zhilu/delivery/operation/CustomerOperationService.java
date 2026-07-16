@@ -69,7 +69,7 @@ public class CustomerOperationService {
     values.put("stage", "MAINTENANCE");
     values.put("status", "OPEN");
     values.put("owner_user_id", input.ownerUserId);
-    values.put("project_id", input.projectId);
+    values.put("project_id", references.projectId);
     values.put("opportunity_id", input.opportunityId);
     values.put("created_by", actorId);
     try {
@@ -84,17 +84,15 @@ public class CustomerOperationService {
 
   @Transactional
   public Map<String, Object> update(
-      long organizationId, long id, long version, Input input) {
+      long organizationId, long id, long version, UpdateInput input) {
     Map<String, Object> current = get(organizationId, id);
     assertOpen(current);
-    References references = validateReferences(organizationId, input);
+    validateOwner(organizationId, input.ownerUserId);
     try {
-      int changed = jdbc.update("update customer_operation set customer_id=?,"
-              + "customer_name_snapshot=?,title=?,owner_user_id=?,project_id=?,opportunity_id=?,"
+      int changed = jdbc.update("update customer_operation set title=?,owner_user_id=?,"
               + "updated_at=current_timestamp,version=version+1 "
               + "where id=? and organization_id=? and version=? and status='OPEN'",
-          input.customerId, references.customerName, input.title.trim(), input.ownerUserId,
-          input.projectId, input.opportunityId, id, organizationId, version);
+          input.title.trim(), input.ownerUserId, id, organizationId, version);
       if (changed == 0) throw new ConflictException("数据已被更新，请刷新后重试");
     } catch (DuplicateKeyException duplicate) {
       throw new ConflictException("该商机已经进入客户运营");
@@ -128,7 +126,7 @@ public class CustomerOperationService {
               + "customer_name_snapshot,title,stage,status,owner_user_id,project_id,"
               + "opportunity_id,created_by) "
               + "select o.organization_id,o.customer_id,o.customer_name_snapshot,"
-              + "concat(o.title,'客户运营'),'MAINTENANCE','OPEN',"
+              + "p.name,'MAINTENANCE','OPEN',"
               + "coalesce(o.operation_owner_user_id,p.manager_user_id),p.id,o.id,? "
               + "from sales_opportunity o join delivery_project p on p.id=o.project_id "
               + "where o.organization_id=? and p.organization_id=? and p.id=? and o.status='WON' "
@@ -148,31 +146,39 @@ public class CustomerOperationService {
     if (!"ACTIVE".equals(customer.get("status"))) {
       throw new IllegalArgumentException("停用客户不能创建运营记录");
     }
-    if (input.ownerUserId != null) {
-      List<String> statuses = jdbc.queryForList(
-          "select status from app_user where id=? and organization_id=?",
-          String.class, input.ownerUserId, organizationId);
-      if (statuses.isEmpty()) throw new NotFoundException("负责人不存在");
-      if (!"ACTIVE".equals(statuses.get(0))) throw new IllegalArgumentException("负责人已停用");
-    }
-    if (input.projectId != null) {
-      Integer project = jdbc.queryForObject(
-          "select count(*) from delivery_project where id=? and organization_id=? and customer_id=?",
-          Integer.class, input.projectId, organizationId, input.customerId);
-      if (project == null || project == 0) throw new NotFoundException("项目不存在或客户不一致");
-    }
+    validateOwner(organizationId, input.ownerUserId);
+    Long resolvedProjectId = input.projectId;
     if (input.opportunityId != null) {
       List<Map<String, Object>> opportunities = jdbc.queryForList(
           "select project_id from sales_opportunity where id=? and organization_id=? and customer_id=?",
           input.opportunityId, organizationId, input.customerId);
       if (opportunities.isEmpty()) throw new NotFoundException("商机不存在或客户不一致");
       Object linkedProject = opportunities.get(0).get("project_id");
-      if (input.projectId != null && linkedProject != null
+      if (linkedProject != null && input.projectId != null
           && ((Number) linkedProject).longValue() != input.projectId.longValue()) {
         throw new IllegalArgumentException("商机与项目关联不一致");
       }
+      if (linkedProject == null && input.projectId != null) {
+        throw new IllegalArgumentException("商机尚未关联该项目");
+      }
+      if (linkedProject != null) resolvedProjectId = ((Number) linkedProject).longValue();
     }
-    return new References(String.valueOf(customer.get("name")));
+    if (resolvedProjectId != null) {
+      Integer project = jdbc.queryForObject(
+          "select count(*) from delivery_project where id=? and organization_id=? and customer_id=?",
+          Integer.class, resolvedProjectId, organizationId, input.customerId);
+      if (project == null || project == 0) throw new NotFoundException("项目不存在或客户不一致");
+    }
+    return new References(String.valueOf(customer.get("name")), resolvedProjectId);
+  }
+
+  private void validateOwner(long organizationId, Long ownerUserId) {
+    if (ownerUserId == null) return;
+    List<String> statuses = jdbc.queryForList(
+        "select status from app_user where id=? and organization_id=?",
+        String.class, ownerUserId, organizationId);
+    if (statuses.isEmpty()) throw new NotFoundException("负责人不存在");
+    if (!"ACTIVE".equals(statuses.get(0))) throw new IllegalArgumentException("负责人已停用");
   }
 
   private String selectSql() {
@@ -236,7 +242,11 @@ public class CustomerOperationService {
 
   private static final class References {
     private final String customerName;
-    private References(String customerName) { this.customerName = customerName; }
+    private final Long projectId;
+    private References(String customerName, Long projectId) {
+      this.customerName = customerName;
+      this.projectId = projectId;
+    }
   }
 
   public static class Input {
@@ -245,5 +255,10 @@ public class CustomerOperationService {
     public Long ownerUserId;
     public Long projectId;
     public Long opportunityId;
+  }
+
+  public static class UpdateInput {
+    @NotBlank @Size(max = 180) public String title;
+    public Long ownerUserId;
   }
 }

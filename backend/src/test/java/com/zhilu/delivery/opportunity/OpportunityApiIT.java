@@ -68,6 +68,8 @@ class OpportunityApiIT {
     jdbc.update("insert into customer(id,organization_id,name,status) "
         + "values (402,400,'停用客户','INACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) "
+        + "values (404,400,'华南制造','ACTIVE')");
+    jdbc.update("insert into customer(id,organization_id,name,status) "
         + "values (401,401,'其他客户','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,owner_user_id,code,name,status) "
         + "values (400,400,400,'CRM','智鹿 CRM','ACTIVE')");
@@ -140,6 +142,19 @@ class OpportunityApiIT {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"customerId\":400,\"title\":\"过期更新\",\"amount\":1,\"version\":0}"))
         .andExpect(status().isConflict());
+  }
+
+  @Test
+  void neverChangesTheOpportunityCustomerThroughTheGeneralUpdateApi() throws Exception {
+    long id = insertOpportunity(400, 400, "客户关联不可变");
+
+    mvc.perform(put("/api/v1/opportunities/{id}", id).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"customerId\":404,\"title\":\"试图换客户\",\"amount\":1,\"version\":0}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("商机客户不能修改"));
+    assertEquals(Long.valueOf(400), jdbc.queryForObject(
+        "select customer_id from sales_opportunity where id=?", Long.class, id));
   }
 
   @Test

@@ -24,13 +24,15 @@ export function OperationBoardPage() {
   const [status, setStatus] = useState<OperationStatus>()
   const [editing, setEditing] = useState<CustomerOperation | null>()
   const client = useQueryClient()
-  const query = useQuery({ queryKey: ['operations'], queryFn: () => crmApi.operations() })
-  const data = useMemo(() => (query.data ?? []).filter(item => {
-    const term = keyword.trim().toLowerCase()
-    return (!term || `${item.title}${item.customerName}`.toLowerCase().includes(term))
-      && (!owner || item.ownerUserId === owner) && (!customer || item.customerId === customer)
-      && (!stage || item.stage === stage) && (!status || item.status === status)
-  }), [query.data, keyword, owner, customer, stage, status])
+  const params = new URLSearchParams()
+  if (keyword.trim()) params.set('keyword', keyword.trim())
+  if (owner) params.set('ownerUserId', String(owner))
+  if (customer) params.set('customerId', String(customer))
+  if (stage) params.set('stage', stage)
+  if (status) params.set('status', status)
+  const queryString = params.toString() ? `?${params}` : ''
+  const query = useQuery({ queryKey: ['operations', queryString], queryFn: () => crmApi.operations(queryString) })
+  const data = query.data ?? []
   const owners = useMemo(() => { const values = new Map<number, string>(); (query.data ?? []).forEach(item => { if (item.ownerUserId) values.set(item.ownerUserId, item.ownerName ?? `用户 ${item.ownerUserId}`) }); return [...values].map(([value, label]) => ({ value, label })) }, [query.data])
   const customers = useMemo(() => { const values = new Map<number, string>(); (query.data ?? []).forEach(item => values.set(item.customerId, item.customerName)); return [...values].map(([value, label]) => ({ value, label })) }, [query.data])
   const advance = useMutation({ mutationFn: (item: CustomerOperation) => crmApi.advanceOperation(item.id, item.version),

@@ -57,6 +57,8 @@ class OpportunityHandoffIT {
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (600,600,'delivery-owner','交付负责人','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (602,600,'inactive-owner','停用负责人','INACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (601,601,'other-owner','其他负责人','ACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) values (600,600,'华东银行','ACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) values (602,600,'华南制造','ACTIVE')");
@@ -171,6 +173,47 @@ class OpportunityHandoffIT {
         .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("缺少必需产出物")));
     assertEquals(Integer.valueOf(0), jdbc.queryForObject(
         "select count(*) from delivery_project where code='PRJ-MISSING'", Integer.class));
+  }
+
+  @Test
+  void rejectsClosedProjectsInactiveReferencesAndContradictoryPayloads() throws Exception {
+    ProjectView closed = project("PRJ-CLOSED", 600, 600, 600);
+    jdbc.update("update delivery_project set current_stage='CLOSE',status='CLOSED' where id=?",
+        closed.getId());
+    long closedTarget = contractOpportunity("收尾项目不能交接", 600);
+    mvc.perform(post("/api/v1/opportunities/{id}/handoff", closedTarget)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content(linkRequest(closed.getId())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("已收尾项目不能作为交接目标"));
+
+    ProjectView active = project("PRJ-ACTIVE", 600, 600, 600);
+    long inactiveReference = contractOpportunity("停用负责人不能交接", 600);
+    jdbc.update("update sales_opportunity set operation_owner_user_id=602 where id=?",
+        inactiveReference);
+    mvc.perform(post("/api/v1/opportunities/{id}/handoff", inactiveReference)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content(linkRequest(active.getId())))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("负责人已停用"));
+
+    long contradictory = contractOpportunity("交接参数互斥", 600);
+    mvc.perform(post("/api/v1/opportunities/{id}/handoff", contradictory)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"mode\":\"LINK\",\"version\":0,\"projectId\":" + active.getId()
+                + ",\"project\":{\"code\":\"EXTRA\",\"name\":\"多余项目\","
+                + "\"productId\":600,\"productVersionId\":600,\"managerUserId\":600,"
+                + "\"startDate\":\"2026-07-16\",\"plannedEndDate\":\"2026-10-31\"}}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("交接参数不能同时包含新项目和已有项目"));
+
+    long missingDates = contractOpportunity("交接日期必填", 600);
+    mvc.perform(post("/api/v1/opportunities/{id}/handoff", missingDates)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"mode\":\"CREATE\",\"version\":0,\"project\":{"
+                + "\"code\":\"NO-DATE\",\"name\":\"缺少日期\",\"productId\":600,"
+                + "\"productVersionId\":600,\"managerUserId\":600}}"))
+        .andExpect(status().isBadRequest());
   }
 
   private long contractOpportunity(String title, long customerId) {

@@ -40,7 +40,7 @@ export function OpportunityEditor({ value, open, onClose }: {
     extra={<Button type="primary" aria-label="保存商机" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     <Form form={form} layout="vertical" onFinish={save.mutate}>
       <Form.Item name="customerId" label="客户" rules={[{ required: true, message: '请选择客户' }]}>
-        <Select showSearch optionFilterProp="label" virtual={false} loading={customers.isLoading}
+        <Select showSearch optionFilterProp="label" virtual={false} loading={customers.isLoading} disabled={Boolean(value)}
           options={(customers.data ?? []).map(item => ({ value: item.id, label: item.name }))} />
       </Form.Item>
       <Form.Item name="title" label="商机名称" rules={[{ required: true, message: '请输入商机名称' }]}>

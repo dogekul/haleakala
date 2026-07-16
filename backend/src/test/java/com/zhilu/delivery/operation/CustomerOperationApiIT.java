@@ -66,6 +66,7 @@ class CustomerOperationApiIT {
         + "values (801,801,'other-owner','其他负责人','ACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) values (800,800,'华东银行','ACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) values (802,800,'停用客户','INACTIVE')");
+    jdbc.update("insert into customer(id,organization_id,name,status) values (803,800,'华南制造','ACTIVE')");
     jdbc.update("insert into customer(id,organization_id,name,status) values (801,801,'其他客户','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,code,name,status) values (800,800,'CRM','智鹿 CRM','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,code,name,status) values (801,801,'OTHER','其他产品','ACTIVE')");
@@ -77,6 +78,9 @@ class CustomerOperationApiIT {
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,customer_id,"
         + "product_id,product_version_id,manager_user_id,created_by) "
         + "values (801,801,'PRJ-801','其他项目','其他客户',801,801,801,801,801)");
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,customer_id,"
+        + "product_id,product_version_id,manager_user_id,created_by) "
+        + "values (803,800,'PRJ-803','华南项目','华南制造',803,800,800,800,800)");
     jdbc.update("insert into sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,"
         + "title,amount,stage,status,project_id,operation_owner_user_id,created_by) "
         + "values (800,800,800,'华东银行','财务中台升级',100,'CONTRACT','WON',800,800,800)");
@@ -147,6 +151,32 @@ class CustomerOperationApiIT {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"customerId\":800,\"title\":\"关闭后更新\",\"version\":" + version + "}"))
         .andExpect(status().isConflict());
+  }
+
+  @Test
+  void updateCannotRewriteSourceLinksAndCreateRejectsAMixedChain() throws Exception {
+    String body = mvc.perform(post("/api/v1/operations").with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"customerId\":800,\"title\":\"来源链固定\","
+                + "\"projectId\":800,\"opportunityId\":800}"))
+        .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+    long id = json.readTree(body).get("id").asLong();
+
+    mvc.perform(put("/api/v1/operations/{id}", id).with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"customerId\":803,\"title\":\"只更新标题\",\"projectId\":803,"
+                + "\"opportunityId\":801,\"version\":0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("只更新标题"))
+        .andExpect(jsonPath("$.customerId").value(800))
+        .andExpect(jsonPath("$.projectId").value(800))
+        .andExpect(jsonPath("$.opportunityId").value(800));
+
+    mvc.perform(post("/api/v1/operations").with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"customerId\":800,\"title\":\"拼接错误来源\","
+                + "\"projectId\":803,\"opportunityId\":800}"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

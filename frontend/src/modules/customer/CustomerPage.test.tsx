@@ -23,11 +23,12 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
 
 function show(permissions = ['customer:read', 'customer:write']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>
+  const view = render(<QueryClientProvider client={client}>
     <AuthContext.Provider value={{ ...auth, me: { ...auth.me!, permissions } }}>
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CustomerPage /></MemoryRouter>
     </AuthContext.Provider>
   </QueryClientProvider>)
+  return { ...view, client }
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -55,7 +56,8 @@ it('新建和编辑只提交基本信息与乐观锁版本', async () => {
     ? json({ ...customers[0], id: 83 }) : json(customers))
   vi.stubGlobal('fetch', fetch)
   const user = userEvent.setup()
-  show()
+  const { client } = show()
+  client.setQueryData(['active-customers'], customers)
 
   await user.click(await screen.findByRole('button', { name: '新建客户' }))
   let drawer = screen.getByRole('dialog', { name: '新建客户' })
@@ -67,6 +69,8 @@ it('新建和编辑只提交基本信息与乐观锁版本', async () => {
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/customers', expect.objectContaining({
     method: 'POST', body: expect.stringContaining('"version":0'),
   })))
+  await screen.findByText('客户已创建')
+  expect(client.getQueryState(['active-customers'])?.isInvalidated).toBe(true)
 
   await user.click(await screen.findByRole('button', { name: '编辑华东银行' }))
   drawer = screen.getByRole('dialog', { name: '编辑客户' })

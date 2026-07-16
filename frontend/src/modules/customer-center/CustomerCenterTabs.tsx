@@ -6,7 +6,7 @@ const tabs = [
   { path: '/customers/opportunities', label: '商机总览', permission: 'crm:read' },
   { path: '/customers/presale', label: '售前推进', permission: 'crm:read' },
   { path: '/customers/implementation', label: '实施协同', permission: 'crm:read' },
-  { path: '/customers/cockpit', label: '实施驾驶舱', permission: 'crm:read' },
+  { path: '/customers/implementation-cockpit', label: '实施驾驶舱', permission: 'crm:read' },
   { path: '/customers/operations', label: '客户运营', permission: 'crm:read' },
 ]
 

@@ -140,3 +140,10 @@ export interface FullLink {
 }
 
 export interface OwnerOption { id: number; displayName: string }
+
+export interface UploadedFile {
+  id: number
+  originalName: string
+  fileVersion: number
+  sizeBytes?: number
+}

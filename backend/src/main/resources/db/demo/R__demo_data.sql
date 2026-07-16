@@ -59,39 +59,39 @@ INSERT IGNORE INTO file_object(id,organization_id,object_key,original_name,mime_
 VALUES (9000,100,'demo/customer-lifecycle.pdf','客户生命周期演示材料.pdf','application/pdf',128,
   '0000000000000000000000000000000000000000000000000000000000000000',1,100);
 
-INSERT INTO sales_opportunity(organization_id,customer_id,customer_name_snapshot,title,note,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,stage_entered_at,created_by)
-SELECT 100,c.id,c.name,'华东银行数据治理线索','客户数据治理专项',320000,100,100,101,105,102,101,'LEAD','OPEN',DATE_SUB(current_timestamp,INTERVAL 18 DAY),100
+INSERT INTO sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,title,note,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,stage_entered_at,created_by)
+SELECT 9100,100,c.id,c.name,'华东银行数据治理线索','客户数据治理专项',320000,100,100,101,105,102,101,'LEAD','OPEN',DATE_SUB(current_timestamp,INTERVAL 18 DAY),100
 FROM customer c WHERE c.organization_id=100 AND c.name='华东银行'
-  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE organization_id=100 AND title='华东银行数据治理线索');
-INSERT INTO sales_opportunity(organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
-SELECT 100,c.id,c.name,'海辰零售补货优化',450000,101,102,101,105,102,101,'OPPORTUNITY','OPEN',100
+  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE id=9100);
+INSERT INTO sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
+SELECT 9101,100,c.id,c.name,'海辰零售补货优化',450000,101,102,101,105,102,101,'OPPORTUNITY','OPEN',100
 FROM customer c WHERE c.organization_id=100 AND c.name='海辰零售'
-  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE organization_id=100 AND title='海辰零售补货优化');
-INSERT INTO sales_opportunity(organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
-SELECT 100,c.id,c.name,'星海制造合并报表 POC',680000,100,100,101,105,102,101,'POC','OPEN',100
+  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE id=9101);
+INSERT INTO sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
+SELECT 9102,100,c.id,c.name,'星海制造合并报表 POC',680000,100,100,101,105,102,101,'POC','OPEN',100
 FROM customer c WHERE c.organization_id=100 AND c.name='星海制造'
-  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE organization_id=100 AND title='星海制造合并报表 POC');
-INSERT INTO sales_opportunity(organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
-SELECT 100,c.id,c.name,'德润保险费控投标',920000,100,100,101,105,102,101,'BIDDING','OPEN',100
+  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE id=9102);
+INSERT INTO sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,created_by)
+SELECT 9103,100,c.id,c.name,'德润保险费控投标',920000,100,100,101,105,102,101,'BIDDING','OPEN',100
 FROM customer c WHERE c.organization_id=100 AND c.name='德润保险'
-  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE organization_id=100 AND title='德润保险费控投标');
-INSERT INTO sales_opportunity(organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,project_id,created_by)
-SELECT 100,c.id,c.name,'华东银行财务中台合同',1600000,100,100,101,105,102,101,'CONTRACT','WON',1000,100
+  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE id=9103);
+INSERT INTO sales_opportunity(id,organization_id,customer_id,customer_name_snapshot,title,amount,product_id,product_version_id,commercial_owner_user_id,solution_owner_user_id,project_manager_user_id,operation_owner_user_id,stage,status,project_id,created_by)
+SELECT 9104,100,c.id,c.name,'华东银行财务中台合同',1600000,100,100,101,105,102,101,'CONTRACT','WON',1000,100
 FROM customer c WHERE c.organization_id=100 AND c.name='华东银行'
-  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE organization_id=100 AND title='华东银行财务中台合同');
+  AND NOT EXISTS (SELECT 1 FROM sales_opportunity WHERE id=9104 OR project_id=1000);
 
-INSERT INTO customer_operation(organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
-SELECT 100,c.id,c.name,'海辰零售回款与维保','MAINTENANCE','OPEN',101,100
+INSERT INTO customer_operation(id,organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
+SELECT 9200,100,c.id,c.name,'海辰零售回款与维保','MAINTENANCE','OPEN',101,100
 FROM customer c WHERE c.organization_id=100 AND c.name='海辰零售'
-  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE organization_id=100 AND title='海辰零售回款与维保');
-INSERT INTO customer_operation(organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
-SELECT 100,c.id,c.name,'星海制造持续运营','OPERATING','OPEN',101,100
+  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE id=9200);
+INSERT INTO customer_operation(id,organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
+SELECT 9201,100,c.id,c.name,'星海制造持续运营','OPERATING','OPEN',101,100
 FROM customer c WHERE c.organization_id=100 AND c.name='星海制造'
-  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE organization_id=100 AND title='星海制造持续运营');
-INSERT INTO customer_operation(organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
-SELECT 100,c.id,c.name,'德润保险复购推进','REPURCHASE','OPEN',101,100
+  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE id=9201);
+INSERT INTO customer_operation(id,organization_id,customer_id,customer_name_snapshot,title,stage,status,owner_user_id,created_by)
+SELECT 9202,100,c.id,c.name,'德润保险复购推进','REPURCHASE','OPEN',101,100
 FROM customer c WHERE c.organization_id=100 AND c.name='德润保险'
-  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE organization_id=100 AND title='德润保险复购推进');
+  AND NOT EXISTS (SELECT 1 FROM customer_operation WHERE id=9202);
 
 INSERT IGNORE INTO project_member(project_id,user_id,project_role,allocation_percent) VALUES
   (1000,102,'DELIVERY_MANAGER',40),(1000,103,'DELIVERY_ENGINEER',70),(1000,104,'TECH_MANAGER',60),(1000,105,'PRODUCT_MANAGER',20),

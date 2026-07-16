@@ -1,14 +1,14 @@
-import { FileAddOutlined, RightOutlined } from '@ant-design/icons'
+import { FileAddOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Tag, Typography, message } from 'antd'
-import { useState } from 'react'
+import { Alert, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tag, Typography, Upload, message } from 'antd'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
 import { projectApi } from '../project/projectApi'
 import { crmApi } from './crmApi'
 import { opportunityStages, stageLabel } from './OpportunityOverviewPage'
-import type { Opportunity, OpportunityArtifact, OpportunityStage } from './types'
+import type { Opportunity, OpportunityArtifact, OpportunityStage, UploadedFile } from './types'
 
 const artifactTypes: Record<OpportunityStage, { value: string; label: string; file?: boolean }[]> = {
   LEAD: [{ value: 'RESEARCH_REPORT', label: '商机调研报告' }],
@@ -53,12 +53,12 @@ export function PresaleBoardPage() {
         <header><strong>{stage.label}</strong><span>{(query.data ?? []).filter(item => item.stage === stage.value).length}</span></header>
         {(query.data ?? []).filter(item => item.stage === stage.value).map(item => <Card key={item.id} size="small" className="presale-card">
           <Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><p>{item.customerName}</p>
-          <Space wrap><Button size="small" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>
+          <Space wrap>{canWrite && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
             {canWrite && <AdvanceButtons item={item} loading={advance.isPending} onAdvance={requestAdvance} />}</Space>
         </Card>)}
       </section>)}</div>
     </PageState>
-    <ArtifactDrawer opportunity={artifactFor} error={artifactError} onClose={() => setArtifactFor(undefined)} />
+    <ArtifactDrawer opportunity={artifactFor} error={artifactError} canWrite={canWrite} onClose={() => setArtifactFor(undefined)} />
     <HandoffDrawer opportunity={handoffFor} onClose={() => setHandoffFor(undefined)} />
   </div>
 }
@@ -71,24 +71,39 @@ function AdvanceButtons({ item, loading, onAdvance }: { item: Opportunity; loadi
   return <Button size="small" type="primary" loading={loading} icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => onAdvance(item)}>推进</Button>
 }
 
-function ArtifactDrawer({ opportunity, error, onClose }: { opportunity?: Opportunity; error: string; onClose: () => void }) {
+function ArtifactDrawer({ opportunity, error, canWrite, onClose }: { opportunity?: Opportunity; error: string; canWrite: boolean; onClose: () => void }) {
   const [form] = Form.useForm<Partial<OpportunityArtifact>>()
   const client = useQueryClient()
+  const [uploaded, setUploaded] = useState<UploadedFile>()
   const type = Form.useWatch('artifactType', form)
   const selected = opportunity && artifactTypes[opportunity.stage].find(item => item.value === type)
   const save = useMutation({
     mutationFn: (input: Partial<OpportunityArtifact>) => crmApi.createArtifact(opportunity!.id, input),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['opportunity-artifacts', opportunity?.id] }); message.success('产出物已保存'); form.resetFields(); onClose() },
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['opportunity-artifacts', opportunity?.id] }); message.success('产出物已保存'); form.resetFields(); setUploaded(undefined); onClose() },
     onError: (value: Error) => message.error(value.message),
   })
+  useEffect(() => { if (opportunity) { form.resetFields(); setUploaded(undefined) } }, [form, opportunity])
+  const upload = async (file: File) => {
+    const stored = await crmApi.uploadFile(file)
+    setUploaded(stored)
+    form.setFieldValue('fileId', stored.id)
+    message.success('文件已上传')
+    return stored
+  }
   return <Drawer title="补充产出物" open={Boolean(opportunity)} width={560} onClose={onClose}
-    extra={<Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存产出物</Button>}>
+    extra={canWrite ? <Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存产出物</Button> : undefined}>
     {error && <Alert className="crm-drawer-alert" type="warning" showIcon message={error} />}
     {opportunity && <><p><Tag>{stageLabel(opportunity.stage)}</Tag>{opportunity.title}</p>
-      <Form form={form} layout="vertical" onFinish={save.mutate}>
+      <Form form={form} layout="vertical" onFinish={save.mutate} onValuesChange={changed => {
+        if ('artifactType' in changed) { form.setFieldValue('fileId', undefined); setUploaded(undefined) }
+      }}>
         <Form.Item name="artifactType" label="产出物类型" rules={[{ required: true }]}><Select virtual={false} options={artifactTypes[opportunity.stage]} /></Form.Item>
         <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input maxLength={240} /></Form.Item>
-        {selected?.file ? <Form.Item name="fileId" label="文件 ID" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+        {selected?.file ? <><Form.Item name="fileId" hidden rules={[{ required: true, message: '请先上传文件' }]}><Input /></Form.Item>
+          {uploaded && <Alert showIcon type="success" message={`${uploaded.originalName} · 已上传`} description={`v${uploaded.fileVersion}${uploaded.sizeBytes ? ` · ${Math.ceil(uploaded.sizeBytes / 1024)} KB` : ''}`} />}
+          <Upload showUploadList={false} customRequest={({ file, onSuccess, onError }) => upload(file as File).then(value => onSuccess?.(value)).catch(onError)}>
+            <Button icon={<UploadOutlined />} aria-label="选择文件并上传">{uploaded ? '重新上传' : '选择文件并上传'}</Button>
+          </Upload></>
           : <Form.Item name="contentMarkdown" label="报告正文" rules={[{ required: true }]}><Input.TextArea rows={10} /></Form.Item>}
       </Form></>}
   </Drawer>
@@ -98,7 +113,17 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
   const [form] = Form.useForm()
   const client = useQueryClient()
   const mode = Form.useWatch('mode', form) ?? 'CREATE'
+  const productId = Form.useWatch('productId', form)
   const projects = useQuery({ queryKey: ['projects'], queryFn: projectApi.list, enabled: Boolean(opportunity) && mode === 'LINK' })
+  const products = useQuery({ queryKey: ['products', 'bindable'], queryFn: projectApi.bindableProducts, enabled: Boolean(opportunity) && mode === 'CREATE' })
+  const versions = useQuery({ queryKey: ['product-versions', productId], queryFn: () => projectApi.bindableVersions(productId!), enabled: Boolean(opportunity) && mode === 'CREATE' && Boolean(productId) })
+  const owners = useQuery({ queryKey: ['crm-owner-options'], queryFn: crmApi.ownerOptions, enabled: Boolean(opportunity) && mode === 'CREATE' })
+  useEffect(() => {
+    if (!opportunity) return
+    form.resetFields()
+    form.setFieldsValue({ mode: 'CREATE', gateMode: 'BLOCK', productId: opportunity.productId,
+      productVersionId: opportunity.productVersionId, managerUserId: opportunity.projectManagerUserId })
+  }, [form, opportunity])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => crmApi.handoff(opportunity!.id,
     input.mode === 'LINK'
       ? { mode: 'LINK', version: opportunity!.version, projectId: input.projectId }
@@ -115,8 +140,12 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
       {mode === 'LINK' ? <Form.Item name="projectId" label="同客户项目" rules={[{ required: true }]}><Select virtual={false}
         options={(projects.data ?? []).filter(item => item.customerId === opportunity?.customerId).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
         : <><Row gutter={12}><Col span={10}><Form.Item name="code" label="项目编码" rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={14}><Form.Item name="name" label="项目名称" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
-          <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品 ID" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item name="productVersionId" label="版本 ID" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col></Row>
-          <Row gutter={12}><Col span={12}><Form.Item name="managerUserId" label="项目经理 ID" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item name="gateMode" label="门禁模式"><Select virtual={false} options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '提醒' }]} /></Form.Item></Col></Row>
+          <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={products.isLoading}
+            onChange={() => form.setFieldValue('productVersionId', undefined)} options={(products.data ?? []).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="productVersionId" label="产品版本" rules={[{ required: true }]}><Select virtual={false} disabled={!productId} loading={versions.isLoading}
+            options={(versions.data ?? []).map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
+          <Row gutter={12}><Col span={12}><Form.Item name="managerUserId" label="项目经理" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={owners.isLoading}
+            options={(owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))} /></Form.Item></Col><Col span={12}><Form.Item name="gateMode" label="门禁模式"><Select virtual={false} options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '提醒' }]} /></Form.Item></Col></Row>
           <Row gutter={12}><Col span={12}><Form.Item name="startDate" label="开始日期" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col><Col span={12}><Form.Item name="plannedEndDate" label="计划结束" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col></Row></>}
     </Form>
   </Drawer>

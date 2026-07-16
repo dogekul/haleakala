@@ -2,7 +2,14 @@ import { api } from '../../services/api'
 import type {
   CustomerOperation, FullLink, ImplementationCockpit, ImplementationItem, OperationInput,
   Opportunity, OpportunityActivity, OpportunityArtifact, OpportunityInput, OwnerOption,
+  UploadedFile,
 } from './types'
+
+function fileBody(file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  return body
+}
 
 export const crmApi = {
   opportunities: (query = '') => api<Opportunity[]>(`/api/v1/opportunities${query}`),
@@ -31,6 +38,9 @@ export const crmApi = {
     api<OpportunityArtifact>(`/api/v1/opportunities/${id}/artifacts`, {
       method: 'POST', body: JSON.stringify(input),
     }),
+  uploadFile: (file: File) => api<UploadedFile>('/api/v1/files', {
+    method: 'POST', body: fileBody(file),
+  }),
   handoff: (id: number, input: object) => api<Opportunity>(`/api/v1/opportunities/${id}/handoff`, {
     method: 'POST', body: JSON.stringify(input),
   }),

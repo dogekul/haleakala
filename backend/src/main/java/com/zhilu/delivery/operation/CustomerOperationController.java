@@ -81,7 +81,7 @@ public class CustomerOperationController {
         String.valueOf(id), details);
   }
 
-  public static final class UpdateRequest extends CustomerOperationService.Input {
+  public static final class UpdateRequest extends CustomerOperationService.UpdateInput {
     @NotNull public Long version;
   }
 

@@ -11,7 +11,9 @@ import { PresaleBoardPage } from './PresaleBoardPage'
 const now = Date.now()
 const opportunities = [
   { id: 1, organizationId: 1, customerId: 10, customerName: '华东银行', title: '财务中台升级', amount: 100,
-    stage: 'LEAD', status: 'OPEN', commercialOwnerName: '王商务', stageEnteredAt: new Date(now - 20 * 86400000).toISOString(),
+    stage: 'LEAD', status: 'OPEN', commercialOwnerUserId: 101, commercialOwnerName: '王商务',
+    solutionOwnerUserId: 102, solutionOwnerName: '李方案', projectManagerUserId: 103, projectManagerName: '周项目',
+    operationOwnerUserId: 104, operationOwnerName: '孙运营', stageEnteredAt: new Date(now - 20 * 86400000).toISOString(),
     createdAt: '2026-06-01T08:00:00', updatedAt: '2026-07-01T08:00:00', version: 0 },
   { id: 2, organizationId: 1, customerId: 11, customerName: '华南制造', title: '制造执行平台', amount: 200,
     stage: 'POC', status: 'OPEN', productName: '智鹿 CRM', solutionOwnerName: '李方案', stageEnteredAt: new Date(now - 2 * 86400000).toISOString(),
@@ -69,6 +71,13 @@ it('商机筛选发送服务端查询且只读用户没有编辑入口', async (
   await screen.findByText('财务中台升级')
   await user.type(screen.getByPlaceholderText('搜索商机或客户'), '财务')
   await waitFor(() => expect(fetch.mock.calls.some(call => String(call[0]).includes('keyword=%E8%B4%A2%E5%8A%A1'))).toBe(true))
+  expect(screen.getByRole('combobox', { name: '商务负责人筛选' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '方案负责人筛选' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '项目经理筛选' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '运营负责人筛选' })).toBeInTheDocument()
+  await user.click(screen.getByRole('combobox', { name: '项目经理筛选' }))
+  await user.click(await screen.findByRole('option', { name: '周项目' }))
+  await waitFor(() => expect(fetch.mock.calls.some(call => String(call[0]).includes('projectManagerUserId=103'))).toBe(true))
   expect(screen.queryByRole('button', { name: '新建商机' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /编辑/ })).not.toBeInTheDocument()
 })
@@ -90,6 +99,59 @@ it('售前看板按五阶段分列且缺少产出物时打开补充抽屉', asyn
   const drawer = await screen.findByRole('dialog', { name: '补充产出物' })
   expect(within(drawer).getByText('缺少必需产出物：商机调研报告')).toBeVisible()
   expect(within(drawer).getByLabelText('报告正文')).toBeVisible()
+})
+
+it('文件产出物直接上传且交接使用产品版本和负责人选择器', async () => {
+  const contract = { ...opportunities[2], status: 'OPEN', productId: 20, productVersionId: 21,
+    projectManagerUserId: 30, title: '待交接合同' }
+  const fetch = vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
+    const value = String(path)
+    if (value.includes('/api/v1/files') && init?.method === 'POST') {
+      return json({ id: 77, originalName: '合同材料.pdf', fileVersion: 1, sizeBytes: 1024 })
+    }
+    if (value.includes('/artifacts') && init?.method === 'POST') {
+      return json({ id: 88, opportunityId: contract.id, stageFrom: 'CONTRACT', artifactType: 'CONTRACT', title: '合同', fileId: 77 })
+    }
+    if (value.includes('/api/v1/products/20/versions')) return json([{ id: 21, versionName: 'V5.0', status: 'RELEASED' }])
+    if (value.includes('/api/v1/products')) return json([{ id: 20, name: '企业财务云', status: 'ACTIVE' }])
+    if (value.includes('/api/v1/crm/owner-options')) return json([{ id: 30, displayName: '周项目' }])
+    if (value.includes('/api/v1/opportunities')) return json([contract])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  const view = show(<PresaleBoardPage />)
+
+  await screen.findByText('待交接合同')
+  await user.click(screen.getByRole('button', { name: '产出物' }))
+  const artifactDrawer = await screen.findByRole('dialog', { name: '补充产出物' })
+  await user.click(within(artifactDrawer).getByRole('combobox', { name: '产出物类型' }))
+  await user.click(await screen.findByText('合同', { selector: '.ant-select-item-option-content' }))
+  expect(within(artifactDrawer).queryByLabelText('文件 ID')).not.toBeInTheDocument()
+  const fileInput = artifactDrawer.querySelector<HTMLInputElement>('input[type="file"]')
+  expect(fileInput).not.toBeNull()
+  await user.upload(fileInput!, new File(['contract'], '合同材料.pdf', { type: 'application/pdf' }))
+  expect(await within(artifactDrawer).findByText(/合同材料\.pdf.*已上传/)).toBeVisible()
+
+  await user.click(within(artifactDrawer).getByRole('button', { name: 'Close' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '补充产出物' })).not.toBeInTheDocument())
+  view.unmount()
+  show(<PresaleBoardPage />)
+  await screen.findByText('待交接合同')
+  await user.click(screen.getByRole('button', { name: '转交待交接合同' }))
+  const handoff = await screen.findByRole('dialog', { name: '转交实施' })
+  expect(within(handoff).getByRole('combobox', { name: /^产品$/ })).toBeVisible()
+  expect(within(handoff).getByRole('combobox', { name: /^产品版本$/ })).toBeEnabled()
+  expect(within(handoff).getByLabelText('项目经理')).toBeVisible()
+  expect(within(handoff).queryByLabelText('产品 ID')).not.toBeInTheDocument()
+})
+
+it('CRM只读用户不能补产出物或转交', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => json(opportunities.filter(item => item.status === 'OPEN'))))
+  show(<PresaleBoardPage />, ['crm:read'])
+  await screen.findByText('财务中台升级')
+  expect(screen.queryByRole('button', { name: '产出物' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /推进|转交|丢单/ })).not.toBeInTheDocument()
 })
 
 it('商机详情展示活动产出物和客户到运营的全链深链', async () => {

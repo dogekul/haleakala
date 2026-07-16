@@ -22,7 +22,10 @@ export function OpportunityOverviewPage() {
   const [keyword, setKeyword] = useState('')
   const [customerId, setCustomerId] = useState<number>()
   const [productId, setProductId] = useState<number>()
-  const [ownerId, setOwnerId] = useState<number>()
+  const [commercialOwnerId, setCommercialOwnerId] = useState<number>()
+  const [solutionOwnerId, setSolutionOwnerId] = useState<number>()
+  const [projectManagerId, setProjectManagerId] = useState<number>()
+  const [operationOwnerId, setOperationOwnerId] = useState<number>()
   const [stage, setStage] = useState<OpportunityStage>()
   const [status, setStatus] = useState<OpportunityStatus>()
   const [editing, setEditing] = useState<Opportunity | null>()
@@ -30,7 +33,10 @@ export function OpportunityOverviewPage() {
   if (keyword.trim()) params.set('keyword', keyword.trim())
   if (customerId) params.set('customerId', String(customerId))
   if (productId) params.set('productId', String(productId))
-  if (ownerId) params.set('commercialOwnerUserId', String(ownerId))
+  if (commercialOwnerId) params.set('commercialOwnerUserId', String(commercialOwnerId))
+  if (solutionOwnerId) params.set('solutionOwnerUserId', String(solutionOwnerId))
+  if (projectManagerId) params.set('projectManagerUserId', String(projectManagerId))
+  if (operationOwnerId) params.set('operationOwnerUserId', String(operationOwnerId))
   if (stage) params.set('stage', stage)
   if (status) params.set('status', status)
   const queryString = params.toString() ? `?${params}` : ''
@@ -42,7 +48,10 @@ export function OpportunityOverviewPage() {
   const dimensions = useMemo(() => ({
     customers: unique(data, 'customerId', 'customerName'),
     products: unique(data.filter(item => item.productId), 'productId', 'productName'),
-    owners: unique(data.filter(item => item.commercialOwnerUserId), 'commercialOwnerUserId', 'commercialOwnerName'),
+    commercialOwners: unique(data.filter(item => item.commercialOwnerUserId), 'commercialOwnerUserId', 'commercialOwnerName'),
+    solutionOwners: unique(data.filter(item => item.solutionOwnerUserId), 'solutionOwnerUserId', 'solutionOwnerName'),
+    projectManagers: unique(data.filter(item => item.projectManagerUserId), 'projectManagerUserId', 'projectManagerName'),
+    operationOwners: unique(data.filter(item => item.operationOwnerUserId), 'operationOwnerUserId', 'operationOwnerName'),
   }), [data])
   const columns = [
     { title: '商机', key: 'title', render: (_: unknown, item: Opportunity) => <div className="crm-name-cell"><Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><span>{item.customerName}</span></div> },
@@ -75,7 +84,10 @@ export function OpportunityOverviewPage() {
       <Input allowClear prefix={<SearchOutlined />} placeholder="搜索商机或客户" value={keyword} onChange={event => setKeyword(event.target.value)} />
       <FilterSelect label="客户筛选" value={customerId} onChange={setCustomerId} options={dimensions.customers} />
       <FilterSelect label="产品筛选" value={productId} onChange={setProductId} options={dimensions.products} />
-      <FilterSelect label="负责人筛选" value={ownerId} onChange={setOwnerId} options={dimensions.owners} />
+      <FilterSelect label="商务负责人筛选" value={commercialOwnerId} onChange={setCommercialOwnerId} options={dimensions.commercialOwners} />
+      <FilterSelect label="方案负责人筛选" value={solutionOwnerId} onChange={setSolutionOwnerId} options={dimensions.solutionOwners} />
+      <FilterSelect label="项目经理筛选" value={projectManagerId} onChange={setProjectManagerId} options={dimensions.projectManagers} />
+      <FilterSelect label="运营负责人筛选" value={operationOwnerId} onChange={setOperationOwnerId} options={dimensions.operationOwners} />
       <Select aria-label="阶段筛选" allowClear placeholder="全部阶段" virtual={false} value={stage} onChange={setStage} options={opportunityStages} />
       <Select aria-label="状态筛选" allowClear placeholder="全部状态" virtual={false} value={status} onChange={setStatus}
         options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} />

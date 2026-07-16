@@ -102,7 +102,10 @@ function CustomerEditor({ value, onClose }: { value: Customer | null | undefined
   const save = useMutation({
     mutationFn: (input: Record<string, unknown>) => customerApi.save(value?.id, { ...input, version: value?.version ?? 0 }),
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ['customers'] })
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['customers'] }),
+        client.invalidateQueries({ queryKey: ['active-customers'] }),
+      ])
       message.success(value ? '客户已更新' : '客户已创建')
       onClose()
     },

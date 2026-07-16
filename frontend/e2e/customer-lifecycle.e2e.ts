@@ -43,29 +43,37 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
   expect(found).toHaveLength(1)
   let opportunity = await api<Opportunity>(page, `/api/v1/opportunities/${found[0].id}`)
 
-  await artifact(page, opportunity.id, 'RESEARCH_REPORT', '商机调研报告', false)
-  opportunity = await advanceOpportunity(page, opportunity)
-  await artifact(page, opportunity.id, 'DECISION_MINUTES', '决策评审纪要', false)
-  opportunity = await advanceOpportunity(page, opportunity, 'PASS')
-  for (const [type, title, file] of [
-    ['PRESENTATION', '讲解材料', true], ['CLIENT_REQUESTS', '甲方诉求清单', false],
-    ['POC_SCORE', 'POC 得分表', false], ['GAP_ANALYSIS', '差距分析报告', false],
-  ] as const) await artifact(page, opportunity.id, type, title, file)
-  opportunity = await advanceOpportunity(page, opportunity)
-  await artifact(page, opportunity.id, 'BID_DOCUMENT', '投标文件', true)
-  opportunity = await advanceOpportunity(page, opportunity, 'PASS')
-  for (const [type, title, file] of [
-    ['AWARD_NOTICE', '中标公示', true], ['CONTRACT', '合同', true],
-    ['REVIEW_MINUTES', '评审会议纪要', false], ['EMAIL_ARCHIVE', '邮件归档', true],
-    ['SEALED_CONTRACT', '已盖章合同', true],
-  ] as const) await artifact(page, opportunity.id, type, title, file)
+  await page.getByRole('link', { name: '售前推进', exact: true }).click()
+  await expect(page.getByText(opportunityTitle, { exact: true })).toBeVisible()
+  await addArtifact(page, opportunityTitle, '商机调研报告', false)
+  opportunity = await advanceOpportunity(page, opportunityTitle)
+  await addArtifact(page, opportunityTitle, '决策评审纪要', false)
+  opportunity = await advanceOpportunity(page, opportunityTitle)
+  for (const [title, file] of [
+    ['讲解材料', true], ['甲方诉求清单', false], ['POC 得分表', false], ['差距分析报告', false],
+  ] as const) await addArtifact(page, opportunityTitle, title, file)
+  opportunity = await advanceOpportunity(page, opportunityTitle)
+  await addArtifact(page, opportunityTitle, '投标文件', true)
+  opportunity = await advanceOpportunity(page, opportunityTitle)
+  for (const [title, file] of [
+    ['中标公示', true], ['合同', true], ['评审会议纪要', false], ['邮件归档', true], ['已盖章合同', true],
+  ] as const) await addArtifact(page, opportunityTitle, title, file)
 
-  opportunity = await api<Opportunity>(page, `/api/v1/opportunities/${opportunity.id}/handoff`, {
-    method: 'POST', body: { mode: 'CREATE', version: opportunity.version, project: {
-      code: projectCode, name: projectName, productId: 100, productVersionId: 100,
-      managerUserId: 100, startDate: '2026-07-16', plannedEndDate: '2026-12-31', gateMode: 'BLOCK',
-    } },
-  })
+  const opportunityCard = page.locator('.presale-card').filter({ hasText: opportunityTitle })
+  await opportunityCard.getByRole('button', { name: `转交${opportunityTitle}` }).click()
+  const handoff = page.getByRole('dialog', { name: '转交实施' })
+  await expect(handoff).toBeVisible()
+  await choose(page, handoff, 'productId', '企业财务云')
+  await choose(page, handoff, 'productVersionId', 'V5.0')
+  await choose(page, handoff, 'managerUserId', '系统管理员')
+  await handoff.getByLabel('项目编码').fill(projectCode)
+  await handoff.getByLabel('项目名称').fill(projectName)
+  await handoff.getByLabel('开始日期').fill('2026-07-16')
+  await handoff.getByLabel('计划结束').fill('2026-12-31')
+  const handoffResponse = page.waitForResponse(response => response.url().endsWith(`/api/v1/opportunities/${opportunity.id}/handoff`) && response.request().method() === 'POST')
+  await handoff.getByRole('button', { name: '确认转交' }).click()
+  opportunity = await (await handoffResponse).json() as Opportunity
+  await expect(page.getByText('已转交实施')).toBeVisible()
   expect(opportunity.status).toBe('WON')
   expect(opportunity.projectId).toBeGreaterThan(0)
 
@@ -82,7 +90,7 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
       method: 'POST', body: { targetStage, mode: 'BLOCK' },
     })
   }
-  const operationTitle = `${opportunityTitle}客户运营`
+  const operationTitle = projectName
   const allOperations = await api<CustomerOperation[]>(page, '/api/v1/operations')
   const linked = allOperations.filter(item => item.opportunityId === opportunity.id)
   expect(linked).toHaveLength(1)
@@ -94,11 +102,7 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
   await page.getByPlaceholder('搜索运营或客户').fill(operationTitle)
   await expect(page.getByText(operationTitle, { exact: true })).toBeVisible()
 
-  for (let index = 0; index < 3; index += 1) {
-    operation = await api<CustomerOperation>(page, `/api/v1/operations/${operation.id}/advance`, {
-      method: 'POST', body: { version: operation.version },
-    })
-  }
+  for (let index = 0; index < 3; index += 1) operation = await advanceOperation(page, operation)
   expect(operation.status).toBe('CLOSED')
   await page.reload()
   await page.getByPlaceholder('搜索运营或客户').fill(operationTitle)
@@ -108,25 +112,54 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
 })
 
 interface Opportunity { id: number; version: number; status: string; projectId: number }
-interface CustomerOperation { id: number; opportunityId?: number; stage: string; status: string; version: number }
+interface CustomerOperation { id: number; opportunityId?: number; title: string; stage: string; status: string; version: number }
 
 async function choose(page: Page, scope: Locator, fieldId: string, option: string) {
-  await scope.locator(`#${fieldId}`).click()
-  await page.locator(`[id^="${fieldId}_list_"][role="option"]`).filter({ hasText: option }).click()
+  const input = scope.locator(`#${fieldId}`)
+  await input.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " ant-select-selector ")]').click()
+  const choice = page.locator(`[id^="${fieldId}_list_"][role="option"]`).filter({
+    hasText: new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+  })
+  await choice.waitFor({ state: 'attached' })
+  await choice.evaluate(element => (element as HTMLElement).click())
 }
 
-async function artifact(page: Page, opportunityId: number, artifactType: string, title: string, file: boolean) {
-  await api(page, `/api/v1/opportunities/${opportunityId}/artifacts`, {
-    method: 'POST', body: file
-      ? { artifactType, title, fileId: 9000 }
-      : { artifactType, title, contentMarkdown: `${title} E2E 验收正文` },
-  })
+async function addArtifact(page: Page, opportunityTitle: string, title: string, file: boolean) {
+  const card = page.locator('.presale-card').filter({ hasText: opportunityTitle })
+  await card.getByRole('button', { name: '产出物' }).click()
+  const drawer = page.getByRole('dialog', { name: '补充产出物' })
+  await choose(page, drawer, 'artifactType', title)
+  await drawer.getByLabel('标题').fill(title)
+  if (file) {
+    await drawer.locator('input[type="file"]').setInputFiles({
+      name: `${title}.pdf`, mimeType: 'application/pdf', buffer: Buffer.from(`${title} E2E`),
+    })
+    await expect(drawer.getByText(new RegExp(`${title}\\.pdf.*已上传`))).toBeVisible()
+  } else {
+    await drawer.getByLabel('报告正文').fill(`${title} E2E 验收正文`)
+  }
+  const response = page.waitForResponse(value => value.url().includes('/artifacts') && value.request().method() === 'POST')
+  await drawer.getByRole('button', { name: '保存产出物' }).click()
+  expect((await response).ok()).toBe(true)
+  await expect(drawer).toBeHidden()
 }
 
-async function advanceOpportunity(page: Page, opportunity: Opportunity, decision?: 'PASS' | 'REJECT') {
-  return api<Opportunity>(page, `/api/v1/opportunities/${opportunity.id}/advance`, {
-    method: 'POST', body: { version: opportunity.version, decision },
-  })
+async function advanceOpportunity(page: Page, opportunityTitle: string) {
+  const card = page.locator('.presale-card').filter({ hasText: opportunityTitle })
+  const response = page.waitForResponse(value => value.url().includes('/advance') && value.request().method() === 'POST')
+  await card.getByRole('button', { name: `推进${opportunityTitle}` }).click()
+  const value = await response
+  expect(value.ok()).toBe(true)
+  return value.json() as Promise<Opportunity>
+}
+
+async function advanceOperation(page: Page, operation: CustomerOperation) {
+  const card = page.locator('.operation-card').filter({ hasText: operation.title })
+  const response = page.waitForResponse(value => value.url().endsWith(`/api/v1/operations/${operation.id}/advance`) && value.request().method() === 'POST')
+  await card.getByRole('button', { name: `推进${operation.title}` }).click()
+  const value = await response
+  expect(value.ok()).toBe(true)
+  return value.json() as Promise<CustomerOperation>
 }
 
 async function api<T = unknown>(page: Page, path: string, init: { method?: string; body?: unknown } = {}) {

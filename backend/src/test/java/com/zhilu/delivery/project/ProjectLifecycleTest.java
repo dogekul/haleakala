@@ -144,6 +144,8 @@ class ProjectLifecycleTest {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from customer_operation where project_id=? and stage='MAINTENANCE' "
             + "and status='OPEN'", Integer.class, project.getId()));
+    assertEquals("华东银行核心系统交付", jdbc.queryForObject(
+        "select title from customer_operation where project_id=?", String.class, project.getId()));
   }
 
   @Test

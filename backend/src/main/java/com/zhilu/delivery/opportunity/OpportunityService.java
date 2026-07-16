@@ -98,6 +98,9 @@ public class OpportunityService {
     if (((Number) current.get("version")).longValue() != version) {
       throw new ConflictException("数据已被更新，请刷新后重试");
     }
+    if (((Number) current.get("customerId")).longValue() != input.customerId.longValue()) {
+      throw new ConflictException("商机客户不能修改");
+    }
     References references = validateReferences(organizationId, input);
     int changed = jdbc.update("update sales_opportunity set customer_id=?,"
             + "customer_name_snapshot=?,title=?,note=?,amount=?,product_id=?,product_version_id=?,"
@@ -247,11 +250,13 @@ public class OpportunityService {
     if (!OpportunityStage.CONTRACT.name().equals(opportunity.get("stage"))) {
       throw new ConflictException("只有合同阶段可以转交实施");
     }
+    validateHandoffPayload(input);
     Map<String, Object> customer = customers.get(
         organizationId, ((Number) opportunity.get("customerId")).longValue());
     if (!"ACTIVE".equals(customer.get("status"))) {
       throw new IllegalArgumentException("客户已停用，不能转交实施");
     }
+    validateHandoffReferences(organizationId, opportunity);
     List<String> missing = gate.missingArtifacts(
         opportunityId, OpportunityStage.CONTRACT, "PASS");
     if (!missing.isEmpty()) {
@@ -267,12 +272,15 @@ public class OpportunityService {
             input.project.productVersionId, input.project.managerUserId, actorId,
             input.project.startDate, input.project.plannedEndDate, input.project.gateMode));
       } else if ("LINK".equals(input.mode)) {
-        if (input.projectId == null) throw new IllegalArgumentException("请选择已有项目");
         project = projects.getForOrganization(input.projectId.longValue(), organizationId);
         if (project.getCustomerId() == null
             || project.getCustomerId().longValue()
             != ((Number) opportunity.get("customerId")).longValue()) {
           throw new IllegalArgumentException("项目客户与商机客户不一致");
+        }
+        if ("CLOSE".equals(project.getCurrentStage()) || "CLOSED".equals(project.getStatus())
+            || "COMPLETED".equals(project.getStatus())) {
+          throw new ConflictException("已收尾项目不能作为交接目标");
         }
         Integer claimed = jdbc.queryForObject(
             "select count(*) from sales_opportunity where project_id=? and id<>?",
@@ -447,16 +455,54 @@ public class OpportunityService {
     if (productId == null && versionId == null) return;
     if (productId == null) throw new IllegalArgumentException("选择产品版本前必须选择产品");
     Integer products = jdbc.queryForObject(
-        "select count(*) from product where id=? and organization_id=?",
+        "select count(*) from product where id=? and organization_id=? and status='ACTIVE'",
         Integer.class, productId, organizationId);
-    if (products == null || products == 0) throw new NotFoundException("产品不存在");
+    if (products == null || products == 0) throw new NotFoundException("产品不存在或已归档");
     if (versionId == null) return;
     Integer versions = jdbc.queryForObject(
-        "select count(*) from product_version where id=? and product_id=?",
+        "select count(*) from product_version where id=? and product_id=? and status='RELEASED'",
         Integer.class, versionId, productId);
     if (versions == null || versions == 0) {
       throw new IllegalArgumentException("产品版本不属于所选产品");
     }
+  }
+
+  private void validateHandoffReferences(
+      long organizationId, Map<String, Object> opportunity) {
+    validateOwner(organizationId, nullableNumber(opportunity.get("commercialOwnerUserId")));
+    validateOwner(organizationId, nullableNumber(opportunity.get("solutionOwnerUserId")));
+    validateOwner(organizationId, nullableNumber(opportunity.get("projectManagerUserId")));
+    validateOwner(organizationId, nullableNumber(opportunity.get("operationOwnerUserId")));
+    validateProduct(organizationId, nullableNumber(opportunity.get("productId")),
+        nullableNumber(opportunity.get("productVersionId")));
+  }
+
+  private void validateHandoffPayload(HandoffInput input) {
+    if ("CREATE".equals(input.mode)) {
+      if (input.project == null) throw new IllegalArgumentException("请填写新项目资料");
+      if (input.projectId != null) {
+        throw new IllegalArgumentException("交接参数不能同时包含新项目和已有项目");
+      }
+      if (input.project.startDate == null || input.project.plannedEndDate == null) {
+        throw new IllegalArgumentException("项目开始和计划结束日期必填");
+      }
+      if (input.project.plannedEndDate.isBefore(input.project.startDate)) {
+        throw new IllegalArgumentException("计划结束日期不能早于开始日期");
+      }
+      return;
+    }
+    if ("LINK".equals(input.mode)) {
+      if (input.projectId == null) throw new IllegalArgumentException("请选择已有项目");
+      if (input.project != null) {
+        throw new IllegalArgumentException("交接参数不能同时包含新项目和已有项目");
+      }
+      return;
+    }
+    throw new IllegalArgumentException("转交模式不受支持");
+  }
+
+  private Long nullableNumber(Object value) {
+    return value == null ? null : ((Number) value).longValue();
   }
 
   private Map<String, Object> editableValues(Input input, References references) {
