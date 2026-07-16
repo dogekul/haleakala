@@ -338,6 +338,34 @@ class SchemaBaselineTest {
         Integer.class));
   }
 
+  @Test
+  void outlineDocumentCenterSchemaIsInstalled() {
+    assertEquals(Integer.valueOf(4), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name in ('outline_document_link','document_template_config',"
+            + "'project_document','document_job')", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='knowledge_item' and column_name='outline_link_id'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='delivery_project' and column_name='document_space_status'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='outline_document_link' "
+            + "and constraint_name='uk_outline_business_key'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='project_document' "
+            + "and constraint_name='uk_project_document_template'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='document_job' "
+            + "and constraint_name='uk_document_job_business_key'", Integer.class));
+  }
+
   private DriverManagerDataSource legacyDataSource(String name) {
     DriverManagerDataSource dataSource = new DriverManagerDataSource(
         "jdbc:h2:mem:" + name + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
