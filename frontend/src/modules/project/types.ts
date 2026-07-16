@@ -13,7 +13,7 @@ export interface Project {
   organizationId: number
   code: string
   name: string
-  customerId: number
+  customerId: number | null
   customerName: string
   productId: number
   productName: string

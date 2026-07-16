@@ -25,7 +25,7 @@ class DashboardQueryIT {
   @BeforeEach
   void seed() {
     jdbc.update("delete from project_risk"); jdbc.update("delete from project_member");
-    jdbc.update("delete from delivery_project"); jdbc.update("delete from product_version");
+    jdbc.update("delete from delivery_project"); jdbc.update("delete from customer"); jdbc.update("delete from product_version");
     jdbc.update("delete from product"); jdbc.update("delete from app_user");
     jdbc.update("delete from organization");
     jdbc.update("insert into organization(id,name,code) values (800,'智鹿','ZHILU-DASH')");
@@ -35,6 +35,26 @@ class DashboardQueryIT {
     project(800, "P-GREEN", "绿色项目", 800, "GREEN", "START");
     project(801, "P-RED", "红色项目", 801, "RED", "CUSTOM_DEV");
     jdbc.update("insert into project_risk(project_id,title,category,probability,impact,risk_level) values (801,'上线延期','进度',5,5,'RED')");
+  }
+
+  @Test
+  void usesCurrentCustomerNameForDisplayAndSearchWithSnapshotFallback() {
+    CurrentUser pmo = new CurrentUser(800L, 800L, "pmo", "PMO",
+        Arrays.asList("PMO"), Collections.singletonList("dashboard:read"));
+    jdbc.update("insert into customer(id,organization_id,name,status) values (850,800,'客户新名称','ACTIVE')");
+    jdbc.update("update delivery_project set customer_id=850,customer_name='客户旧名称' where id=800");
+
+    Map<String, Object> linked = dashboard.projects(pmo, new DashboardFilter()).stream()
+        .filter(value -> ((Number) value.get("id")).longValue() == 800L).findFirst().get();
+    Map<String, Object> legacy = dashboard.projects(pmo, new DashboardFilter()).stream()
+        .filter(value -> ((Number) value.get("id")).longValue() == 801L).findFirst().get();
+    assertEquals("客户新名称", linked.get("customerName"));
+    assertEquals("客户", legacy.get("customerName"));
+
+    DashboardFilter filter = new DashboardFilter();
+    filter.setKeyword("客户新名称");
+    assertEquals(1, dashboard.projects(pmo, filter).size());
+    assertEquals(800L, ((Number) dashboard.projects(pmo, filter).get(0).get("id")).longValue());
   }
 
   @Test

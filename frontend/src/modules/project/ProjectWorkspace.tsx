@@ -116,6 +116,9 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
         <Col span={14}><Form.Item label="项目名称" name="name" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>
         <Select showSearch optionFilterProp="label" loading={customers.isLoading} placeholder="选择启用客户"
+          notFoundContent={customers.isError ? '客户加载失败，请重试' : <div className="customer-select-empty">
+            <span>请先创建启用客户</span><Link to="/customers">前往客户管理</Link>
+          </div>}
           options={customers.data?.map(item => ({ value: item.id, label: `${item.name}${item.shortName ? ` · ${item.shortName}` : ''}` }))} />
       </Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="产品" name="productId" rules={[{ required: true }]}>

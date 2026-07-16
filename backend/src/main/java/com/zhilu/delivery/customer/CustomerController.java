@@ -7,6 +7,7 @@ import java.util.Map;
 import javax.validation.Valid;
 import javax.validation.constraints.Email;
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,7 +44,7 @@ public class CustomerController {
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   @Transactional
-  public Map<String, Object> create(@Valid @RequestBody CustomerRequest request,
+  public Map<String, Object> create(@Valid @RequestBody CreateCustomerRequest request,
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> value = customers.create(user.getOrganizationId(), request.name,
         request.shortName, request.contactName, request.phone, request.email, request.address,
@@ -55,10 +56,10 @@ public class CustomerController {
   @PutMapping("/{id}")
   @Transactional
   public Map<String, Object> update(@PathVariable long id,
-      @Valid @RequestBody CustomerRequest request, @AuthenticationPrincipal CurrentUser user) {
+      @Valid @RequestBody UpdateCustomerRequest request, @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> value = customers.update(user.getOrganizationId(), id, request.name,
         request.shortName, request.contactName, request.phone, request.email, request.address,
-        request.status, request.remark, request.version);
+        request.status, request.remark, request.version.longValue());
     record(user, "UPDATE", id, request.name + " · " + request.status);
     return value;
   }
@@ -68,15 +69,22 @@ public class CustomerController {
         String.valueOf(id), details);
   }
 
-  public static final class CustomerRequest {
+  public static class CustomerFields {
     @NotBlank @Size(max = 180) public String name;
     @Size(max = 100) public String shortName;
     @Size(max = 100) public String contactName;
     @Size(max = 40) public String phone;
     @Email @Size(max = 160) public String email;
     @Size(max = 500) public String address;
-    @NotBlank public String status = "ACTIVE";
     public String remark;
-    public long version;
+  }
+
+  public static final class CreateCustomerRequest extends CustomerFields {
+    public String status = "ACTIVE";
+  }
+
+  public static final class UpdateCustomerRequest extends CustomerFields {
+    @NotBlank public String status;
+    @NotNull public Long version;
   }
 }

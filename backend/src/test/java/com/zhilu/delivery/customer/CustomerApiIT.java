@@ -97,6 +97,21 @@ class CustomerApiIT {
   }
 
   @Test
+  void updateRequiresExplicitStatusAndVersion() throws Exception {
+    jdbc.update("insert into customer(id,organization_id,name,status) values (305,300,'华北银行','INACTIVE')");
+
+    mvc.perform(put("/api/v1/customers/305").with(actor(300, 300, "customer:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"华北银行\",\"version\":0}"))
+        .andExpect(status().isBadRequest());
+
+    mvc.perform(put("/api/v1/customers/305").with(actor(300, 300, "customer:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"华北银行\",\"status\":\"INACTIVE\"}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   void hidesCustomersFromOtherOrganizations() throws Exception {
     jdbc.update("insert into customer(id,organization_id,name,status) values (310,301,'其他客户','ACTIVE')");
 

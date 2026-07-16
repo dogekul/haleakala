@@ -15,6 +15,7 @@ test('admin can log in, explore the platform, and capture a requirement', async 
   await expect(page.getByRole('table').first()).toBeVisible()
 
   for (const module of [
+    { label: '客户管理', path: /\/customers/, heading: '客户管理' },
     { label: '项目空间', path: /\/projects$/, heading: '项目空间' },
     { label: '标准化中心', path: /\/standardization/, heading: '标准化中心' },
     { label: '知识库', path: /\/knowledge/, heading: '让交付经验成为可搜索、可复用的组织资产' },

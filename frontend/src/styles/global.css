@@ -380,6 +380,7 @@ button, input { font: inherit; }
 .customer-card-foot { padding-top: 10px; color: #8f959e; border-top: 1px solid #eff0f1; font-size: 11px; }
 .customer-card-foot .ant-btn { margin-left: auto; padding-inline: 3px; }
 .customer-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-select-empty { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px; color: #8f959e; }
 
 @media (max-width: 768px) {
   .customer-toolbar { align-items: flex-start; flex-direction: column; }

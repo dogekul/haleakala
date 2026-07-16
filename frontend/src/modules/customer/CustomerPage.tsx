@@ -111,12 +111,12 @@ function CustomerEditor({ value, onClose }: { value: Customer | null | undefined
   return <Drawer title={value ? '编辑客户' : '新建客户'} open={value !== undefined} width={600} onClose={onClose}
     extra={<Button type="primary" aria-label="保存" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     <Form form={form} layout="vertical" onFinish={save.mutate}>
-      <Form.Item label="客户名称" name="name" rules={[{ required: true, message: '请输入客户名称' }]}><Input maxLength={100} /></Form.Item>
-      <Row gutter={12}><Col span={12}><Form.Item label="客户简称" name="shortName"><Input maxLength={50} /></Form.Item></Col>
-        <Col span={12}><Form.Item label="联系人" name="contactName"><Input maxLength={50} /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item label="联系电话" name="phone"><Input maxLength={30} /></Form.Item></Col>
-        <Col span={12}><Form.Item label="邮箱" name="email" rules={[{ type: 'email', message: '请输入有效邮箱' }]}><Input maxLength={100} /></Form.Item></Col></Row>
-      <Form.Item label="地址" name="address"><Input maxLength={255} /></Form.Item>
+      <Form.Item label="客户名称" name="name" rules={[{ required: true, message: '请输入客户名称' }]}><Input maxLength={180} /></Form.Item>
+      <Row gutter={12}><Col span={12}><Form.Item label="客户简称" name="shortName"><Input maxLength={100} /></Form.Item></Col>
+        <Col span={12}><Form.Item label="联系人" name="contactName"><Input maxLength={100} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item label="联系电话" name="phone"><Input maxLength={40} /></Form.Item></Col>
+        <Col span={12}><Form.Item label="邮箱" name="email" rules={[{ type: 'email', message: '请输入有效邮箱' }]}><Input maxLength={160} /></Form.Item></Col></Row>
+      <Form.Item label="地址" name="address"><Input.TextArea rows={3} maxLength={500} /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} options={Object.entries(statusMeta).map(([status, meta]) => ({ value: status, label: meta.label }))} /></Form.Item>
       <Form.Item label="备注" name="remark"><Input.TextArea rows={4} maxLength={500} showCount /></Form.Item>
     </Form>
