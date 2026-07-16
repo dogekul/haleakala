@@ -6,6 +6,12 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import javax.annotation.PreDestroy;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
@@ -21,6 +27,12 @@ public class DocumentJobService {
   private final DocumentMigrationService migrations;
   private final OutlineProperties properties;
   private final AuditService audit;
+  private final ScheduledExecutorService heartbeatExecutor =
+      Executors.newSingleThreadScheduledExecutor(task -> {
+        Thread thread = new Thread(task, "document-job-heartbeat");
+        thread.setDaemon(true);
+        return thread;
+      });
 
   public DocumentJobService(
       JdbcTemplate jdbc, ProjectDocumentService projectDocuments,
@@ -67,20 +79,19 @@ public class DocumentJobService {
   }
 
   private void recoverStaleJobs() {
-    Timestamp staleBefore = Timestamp.from(
-        Instant.now().minus(properties.getStaleAfter()));
     jdbc.update("update document_job set status='RETRY',"
             + "next_attempt_at=current_timestamp,last_error='任务执行中断，已自动恢复',"
-            + "updated_at=current_timestamp,version=version+1 "
-            + "where status='RUNNING' and updated_at<?",
-        staleBefore);
+            + "lease_token=null,lease_expires_at=null,updated_at=current_timestamp,"
+            + "version=version+1 where status='RUNNING' "
+            + "and (lease_expires_at is null or lease_expires_at<current_timestamp)");
   }
 
   public void retryProjectInitialization(long organizationId, long projectId) {
     int changed = jdbc.update(
         "update document_job set status='PENDING',attempt_count=0,next_attempt_at=current_timestamp,"
             + "last_error=null,started_at=null,completed_at=null,updated_at=current_timestamp,"
-            + "version=version+1 where organization_id=? and job_type=? and business_id=? "
+            + "lease_token=null,lease_expires_at=null,version=version+1 "
+            + "where organization_id=? and job_type=? and business_id=? "
             + "and status in ('FAILED','RETRY')",
         organizationId, PROJECT_INIT, projectId);
     if (changed == 0) {
@@ -98,17 +109,20 @@ public class DocumentJobService {
   }
 
   private void run(long jobId) {
+    String leaseToken = UUID.randomUUID().toString();
     int claimed = jdbc.update(
         "update document_job set status='RUNNING',attempt_count=attempt_count+1,"
-            + "started_at=current_timestamp,last_error=null,updated_at=current_timestamp,"
+            + "started_at=current_timestamp,last_error=null,lease_token=?,lease_expires_at=?,"
+            + "updated_at=current_timestamp,"
             + "version=version+1 where id=? and status in ('PENDING','RETRY') "
             + "and next_attempt_at<=current_timestamp",
-        jobId);
+        leaseToken, leaseExpiry(), jobId);
     if (claimed == 0) return;
     Map<String, Object> job = jdbc.queryForMap(
         "select organization_id,job_type,business_id,attempt_count from document_job where id=?",
         jobId);
     long businessId = ((Number) job.get("business_id")).longValue();
+    ScheduledFuture<?> heartbeat = startHeartbeat(jobId, leaseToken);
     try {
       String jobType = String.valueOf(job.get("job_type"));
       if (PROJECT_INIT.equals(jobType)
@@ -120,9 +134,13 @@ public class DocumentJobService {
       } else {
         throw new IllegalArgumentException("不支持的文档任务类型：" + job.get("job_type"));
       }
-      jdbc.update("update document_job set status='DONE',completed_at=current_timestamp,"
-              + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
-          jobId);
+      int completed = jdbc.update(
+          "update document_job set status='DONE',completed_at=current_timestamp,"
+              + "last_error=null,lease_token=null,lease_expires_at=null,"
+              + "updated_at=current_timestamp,version=version+1 "
+              + "where id=? and status='RUNNING' and lease_token=?",
+          jobId, leaseToken);
+      if (completed == 0) return;
       audit.record(
           ((Number) job.get("organization_id")).longValue(), null,
           auditAction(String.valueOf(job.get("job_type"))), "DOCUMENT_JOB",
@@ -130,14 +148,48 @@ public class DocumentJobService {
     } catch (RuntimeException failure) {
       int attempts = ((Number) job.get("attempt_count")).intValue();
       String status = attempts >= properties.getMaxAttempts() ? "FAILED" : "RETRY";
-      jdbc.update("update document_job set status=?,next_attempt_at=?,last_error=?,"
-              + "updated_at=current_timestamp,version=version+1 where id=?",
-          status, nextAttempt(attempts), truncate(failure.getMessage()), jobId);
-      if (PROJECT_INIT.equals(job.get("job_type"))
-          || DocumentMigrationService.PROJECT_MIGRATION.equals(job.get("job_type"))) {
+      int failed = jdbc.update(
+          "update document_job set status=?,next_attempt_at=?,last_error=?,"
+              + "lease_token=null,lease_expires_at=null,updated_at=current_timestamp,"
+              + "version=version+1 where id=? and status='RUNNING' and lease_token=?",
+          status, nextAttempt(attempts), truncate(failure.getMessage()), jobId, leaseToken);
+      if (failed > 0 && (PROJECT_INIT.equals(job.get("job_type"))
+          || DocumentMigrationService.PROJECT_MIGRATION.equals(job.get("job_type")))) {
         projectDocuments.markFailure(businessId, failure);
       }
+    } finally {
+      heartbeat.cancel(false);
     }
+  }
+
+  private ScheduledFuture<?> startHeartbeat(long jobId, String leaseToken) {
+    long leaseMillis = leaseMillis();
+    long interval = Math.max(10L, leaseMillis / 3L);
+    return heartbeatExecutor.scheduleAtFixedRate(
+        () -> {
+          try {
+            jdbc.update(
+                "update document_job set lease_expires_at=?,updated_at=current_timestamp "
+                    + "where id=? and status='RUNNING' and lease_token=?",
+                leaseExpiry(), jobId, leaseToken);
+          } catch (RuntimeException ignored) {
+            // A later heartbeat can recover from a transient database failure.
+          }
+        },
+        interval, interval, TimeUnit.MILLISECONDS);
+  }
+
+  private Timestamp leaseExpiry() {
+    return Timestamp.from(Instant.now().plusMillis(leaseMillis()));
+  }
+
+  private long leaseMillis() {
+    return Math.max(100L, properties.getStaleAfter().toMillis());
+  }
+
+  @PreDestroy
+  public void shutdownHeartbeatExecutor() {
+    heartbeatExecutor.shutdownNow();
   }
 
   private String auditAction(String jobType) {

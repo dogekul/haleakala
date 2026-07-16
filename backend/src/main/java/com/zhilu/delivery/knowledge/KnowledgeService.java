@@ -194,18 +194,14 @@ public class KnowledgeService {
           user.getOrganizationId(), id, type, title,
           content == null ? string(current.get("content")) : content);
     } else {
-      try {
-        if (content == null) {
-          DocumentView currentDocument = documents.readKnowledge(id, user);
-          documents.updateKnowledge(
-              id, title, currentDocument.getMarkdown(), currentDocument.getRevision(), user);
-        } else {
-          long revision = documentRevision == null
-              ? number(current.get("documentRevision")) : documentRevision.longValue();
-          documents.updateKnowledge(id, title, content, revision, user);
-        }
-      } catch (OutlineException unavailable) {
-        return get(id, user);
+      if (content == null) {
+        DocumentView currentDocument = documents.readKnowledge(id, user);
+        documents.updateKnowledge(
+            id, title, currentDocument.getMarkdown(), currentDocument.getRevision(), user);
+      } else {
+        long revision = documentRevision == null
+            ? number(current.get("documentRevision")) : documentRevision.longValue();
+        documents.updateKnowledge(id, title, content, revision, user);
       }
     }
     return get(id, user);
@@ -223,8 +219,9 @@ public class KnowledgeService {
     jdbc.update("update knowledge_item set status='PUBLISHED',published_at=current_timestamp,updated_at=current_timestamp,version=version+1 where id=?", id);
     if ("TEMPLATE".equals(value.get("type"))) {
       jdbc.update("update document_template_config set published_revision=?,"
+              + "published_title_snapshot=?,published_markdown_snapshot=?,"
               + "updated_at=current_timestamp,version=version+1 where knowledge_item_id=?",
-          document.getRevision(), id);
+          document.getRevision(), document.getTitle(), document.getMarkdown(), id);
     }
     return get(id, user);
   }
@@ -242,6 +239,7 @@ public class KnowledgeService {
             + "updated_at=current_timestamp,version=version+1 where id=? and organization_id=?",
         title, id, user.getOrganizationId());
     jdbc.update("update document_template_config set published_revision=null,"
+            + "published_title_snapshot=null,published_markdown_snapshot=null,"
             + "updated_at=current_timestamp,version=version+1 where knowledge_item_id=?",
         id);
     return updated;

@@ -137,6 +137,36 @@ class KnowledgeServiceTest {
     Map<String,Object> published=knowledge.publish(id,user);
     assertEquals("PUBLISHED",published.get("status"));
     assertEquals(published.get("documentRevision"),published.get("publishedRevision"));
+    Map<String,Object> snapshot=jdbc.queryForMap(
+        "select published_title_snapshot,published_markdown_snapshot "
+            + "from document_template_config where knowledge_item_id=?", id);
+    assertEquals("项目启动检查单",snapshot.get("published_title_snapshot"));
+    assertEquals("# 项目启动检查单\n\n请补充项目目标",
+        snapshot.get("published_markdown_snapshot"));
+  }
+
+  @Test void failedOutlineUpdateRollsBackLocalMetadataAndFallbackBody() {
+    Map<String,Object> item=knowledge.create(user,"CASE","原案例","原摘要","原正文","案例",
+        1100L,1100L,"ORGANIZATION",null,null,null,null,null);
+    long id=((Number)item.get("id")).longValue();
+    assertEquals(1L,((Number)item.get("documentRevision")).longValue());
+    String documentId=jdbc.queryForObject(
+        "select d.outline_document_id from knowledge_item k "
+            + "join outline_document_link d on d.id=k.outline_link_id where k.id=?",
+        String.class,id);
+    doThrow(new OutlineException(OutlineException.Type.UNAVAILABLE,"Outline is unavailable"))
+        .when(outline).update(documentId,"修改案例","修改正文");
+
+    assertThrows(OutlineException.class,()->knowledge.update(
+        id,user,"CASE","修改案例","修改摘要","修改正文","案例",
+        1100L,1100L,"ORGANIZATION",null,null,null,null,null,
+        ((Number)item.get("version")).longValue()));
+
+    Map<String,Object> stored=jdbc.queryForMap(
+        "select title,summary,content_text from knowledge_item where id=?",id);
+    assertEquals("原案例",stored.get("title"));
+    assertEquals("原摘要",stored.get("summary"));
+    assertEquals("原正文",stored.get("content_text"));
   }
 
   @Test void outlineFailureKeepsTheLocalKnowledgeDraftForRetry() {

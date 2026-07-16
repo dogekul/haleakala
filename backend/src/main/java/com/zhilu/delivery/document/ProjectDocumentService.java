@@ -41,7 +41,9 @@ public class ProjectDocumentService {
           projectId, ((Number) template.get("id")).longValue(),
           String.valueOf(template.get("stage_code")),
           ((Number) template.get("published_revision")).longValue(),
-          String.valueOf(template.get("requirement")));
+          String.valueOf(template.get("requirement")),
+          String.valueOf(template.get("published_title_snapshot")),
+          String.valueOf(template.get("published_markdown_snapshot")));
     }
     jdbc.update("update delivery_project set document_snapshot_at=current_timestamp,"
             + "updated_at=current_timestamp where id=? and organization_id=? "
@@ -144,23 +146,19 @@ public class ProjectDocumentService {
       long projectId, long organizationId, Map<String, Object> template,
       Map<String, Long> stages) {
     long templateId = ((Number) template.get("id")).longValue();
-    long sourceLinkId = ((Number) template.get("outline_link_id")).longValue();
-    long publishedRevision = ((Number) template.get("published_revision")).longValue();
     String stageCode = String.valueOf(template.get("stage_code"));
     Long stageLinkId = stages.get(stageCode);
     if (stageLinkId == null) {
       throw new ConflictException("文档模版阶段不存在：" + stageCode);
     }
-    DocumentView source = documents.readLink(sourceLinkId, organizationId);
-    if (source.getRevision() != publishedRevision) {
-      throw new ConflictException("文档模版已在 Outline 更新，请重新发布：" + source.getTitle());
-    }
+    String title = String.valueOf(template.get("source_title_snapshot"));
+    String markdown = String.valueOf(template.get("source_markdown_snapshot"));
     long projectDocumentId = ((Number) template.get("project_document_id")).longValue();
     String businessKey = "PROJECT:" + projectId + ":DOC:" + templateId;
     try {
       long linkId = documents.createDocument(
           organizationId, businessKey, "PROJECT_DOCUMENT",
-          source.getTitle(), source.getMarkdown(), stageLinkId.longValue());
+          title, markdown, stageLinkId.longValue());
       jdbc.update("update project_document set outline_link_id=?,status='PENDING',"
               + "last_synced_at=current_timestamp,last_error=null,updated_at=current_timestamp,"
               + "version=version+1 where id=?",
@@ -175,7 +173,8 @@ public class ProjectDocumentService {
   }
 
   private long ensureProjectDocument(
-      long projectId, long templateId, String stageCode, long revision, String requirement) {
+      long projectId, long templateId, String stageCode, long revision, String requirement,
+      String titleSnapshot, String markdownSnapshot) {
     List<Long> existing = jdbc.queryForList(
         "select id from project_document where project_id=? and source_template_id=?",
         Long.class, projectId, templateId);
@@ -185,6 +184,8 @@ public class ProjectDocumentService {
     values.put("stage_code", stageCode);
     values.put("source_template_id", templateId);
     values.put("source_template_revision", revision);
+    values.put("source_title_snapshot", titleSnapshot);
+    values.put("source_markdown_snapshot", markdownSnapshot);
     values.put("requirement", requirement);
     values.put("status", "PENDING");
     try {
@@ -209,11 +210,13 @@ public class ProjectDocumentService {
 
   private List<Map<String, Object>> templates(long organizationId) {
     return jdbc.queryForList(
-        "select k.id,k.outline_link_id,c.stage_code,c.requirement,c.published_revision "
+        "select k.id,c.stage_code,c.requirement,c.published_revision,"
+            + "c.published_title_snapshot,c.published_markdown_snapshot "
             + "from knowledge_item k join document_template_config c on c.knowledge_item_id=k.id "
             + "where k.organization_id=? and k.type='TEMPLATE' and k.status='PUBLISHED' "
             + "and c.enabled=true and c.published_revision is not null "
-            + "and k.outline_link_id is not null order by k.id",
+            + "and c.published_title_snapshot is not null "
+            + "and c.published_markdown_snapshot is not null order by k.id",
         organizationId);
   }
 
@@ -221,8 +224,8 @@ public class ProjectDocumentService {
     return jdbc.queryForList(
         "select pd.id project_document_id,pd.source_template_id id,"
             + "pd.source_template_revision published_revision,pd.stage_code,pd.requirement,"
-            + "k.outline_link_id from project_document pd "
-            + "join knowledge_item k on k.id=pd.source_template_id "
+            + "pd.source_title_snapshot,pd.source_markdown_snapshot "
+            + "from project_document pd "
             + "where pd.project_id=? order by pd.id",
         projectId);
   }

@@ -3,6 +3,7 @@ package com.zhilu.delivery.document;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -29,6 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -53,6 +59,7 @@ import org.springframework.test.web.servlet.MockMvc;
     "delivery.outline.collection-id=a4296a54-2044-4529-ba86-d598a5322e06",
     "delivery.outline.max-attempts=2",
     "delivery.outline.initial-backoff=0s",
+    "delivery.outline.stale-after=300ms",
     "delivery.outline.job-scan-ms=3600000"
 })
 @AutoConfigureMockMvc
@@ -70,6 +77,9 @@ class ProjectDocumentInitializationTest {
       new ConcurrentHashMap<String, OutlineDocument>();
   private final AtomicLong outlineIds = new AtomicLong();
   private final AtomicBoolean outlineAvailable = new AtomicBoolean(true);
+  private final AtomicBoolean blockNextCreate = new AtomicBoolean(false);
+  private CountDownLatch blockedCreateStarted;
+  private CountDownLatch releaseBlockedCreate;
   private CurrentUser manager;
 
   @BeforeEach
@@ -97,6 +107,9 @@ class ProjectDocumentInitializationTest {
         Collections.singletonList("DELIVERY_MANAGER"),
         Collections.singletonList("project:write"));
     outlineAvailable.set(true);
+    blockNextCreate.set(false);
+    blockedCreateStarted = new CountDownLatch(1);
+    releaseBlockedCreate = new CountDownLatch(1);
     stubOutline();
   }
 
@@ -118,6 +131,8 @@ class ProjectDocumentInitializationTest {
     jdbc.update("update document_template_config set stage_code='REQUIREMENT',"
         + "requirement='OPTIONAL',enabled=false where knowledge_item_id=7802");
     seedTemplate(7104, "创建后发布的模板", "START", "REQUIRED", true, "PUBLISHED", 5);
+    outlineDocuments.put("template-7101", document(
+        "template-7101", null, "项目启动检查单（新版）", "# 新版正文", 8));
 
     jobs.runDueJobs();
 
@@ -190,8 +205,10 @@ class ProjectDocumentInitializationTest {
   @Test
   void recoversAJobLeftRunningByAStoppedProcess() {
     ProjectView project = projects.create(command("PRJ-703"));
-    jdbc.update("update document_job set status='RUNNING',started_at=?,updated_at=? "
+    jdbc.update("update document_job set status='RUNNING',lease_token='stale-worker',"
+            + "lease_expires_at=?,started_at=?,updated_at=? "
             + "where job_type='PROJECT_INIT' and business_id=?",
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)),
         java.sql.Timestamp.from(Instant.now().minusSeconds(600)),
         java.sql.Timestamp.from(Instant.now().minusSeconds(600)), project.getId());
 
@@ -199,6 +216,45 @@ class ProjectDocumentInitializationTest {
 
     assertEquals("DONE", jobStatus(project.getId()));
     assertEquals("READY", projects.get(project.getId()).getDocumentSpaceStatus());
+  }
+
+  @Test
+  void doesNotReclaimAJobWhoseLeaseIsStillActive() {
+    ProjectView project = projects.create(command("PRJ-704"));
+    jdbc.update("update document_job set status='RUNNING',lease_token='active-worker',"
+            + "lease_expires_at=?,started_at=?,updated_at=? "
+            + "where job_type='PROJECT_INIT' and business_id=?",
+        java.sql.Timestamp.from(Instant.now().plusSeconds(600)),
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)),
+        java.sql.Timestamp.from(Instant.now().minusSeconds(600)), project.getId());
+
+    jobs.runDueJobs();
+
+    assertEquals("RUNNING", jobStatus(project.getId()));
+    assertEquals("PENDING", projects.get(project.getId()).getDocumentSpaceStatus());
+  }
+
+  @Test
+  void heartbeatsPreventReclaimWhileAProjectInitializationIsStillRunning() throws Exception {
+    ProjectView project = projects.create(command("PRJ-705"));
+    blockNextCreate.set(true);
+    ExecutorService pool = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> running = pool.submit(() -> jobs.runDueJobs());
+      assertTrue(blockedCreateStarted.await(2, TimeUnit.SECONDS));
+      Thread.sleep(500);
+
+      jobs.runDueJobs();
+
+      assertEquals("RUNNING", jobStatus(project.getId()));
+      releaseBlockedCreate.countDown();
+      running.get(5, TimeUnit.SECONDS);
+      assertEquals("DONE", jobStatus(project.getId()));
+      assertEquals("READY", projects.get(project.getId()).getDocumentSpaceStatus());
+    } finally {
+      releaseBlockedCreate.countDown();
+      pool.shutdownNow();
+    }
   }
 
   private void seedTemplate(
@@ -219,8 +275,10 @@ class ProjectDocumentInitializationTest {
             + "values (?,701,'TEMPLATE',?,?,'legacy','模板',?,'ORGANIZATION',701,?)",
         knowledgeId, title, title + "摘要", status, id);
     jdbc.update("insert into document_template_config(knowledge_item_id,stage_code,requirement,"
-            + "enabled,published_revision) values (?,?,?,?,?)",
-        knowledgeId, stage, requirement, enabled, revision);
+            + "enabled,published_revision,published_title_snapshot,published_markdown_snapshot) "
+            + "values (?,?,?,?,?,?,?)",
+        knowledgeId, stage, requirement, enabled, revision, title,
+        "# " + title + "\n\n请补充项目目标");
   }
 
   private List<String> stageTitles(long projectId) {
@@ -274,6 +332,12 @@ class ProjectDocumentInitializationTest {
           String title = invocation.getArgument(1);
           String text = invocation.getArgument(2);
           String parent = invocation.getArgument(4);
+          if (blockNextCreate.compareAndSet(true, false)) {
+            blockedCreateStarted.countDown();
+            if (!releaseBlockedCreate.await(5, TimeUnit.SECONDS)) {
+              throw new AssertionError("timed out waiting to release blocked Outline create");
+            }
+          }
           outlineIds.incrementAndGet();
           OutlineDocument document = document(id, parent, title, text, 1);
           outlineDocuments.put(id, document);

@@ -85,7 +85,7 @@ docker compose config --quiet
 
 ### 私有化 Outline
 
-Outline 是知识库与项目文档的正文、目录和修订中心，MySQL 只保存业务关联、同步状态和确认版本。配置步骤：
+Outline 是知识库与项目文档的可编辑正文、目录和修订中心；MySQL 保存业务关联、同步状态、确认版本，以及模版发布/项目创建时仅供异步复制使用的不可变快照。配置步骤：
 
 1. 在 Outline 中为专用服务账号创建 API Key。
 2. 配置 `OUTLINE_BASE_URL`、`OUTLINE_API_TOKEN` 和 `OUTLINE_COLLECTION_ID`。

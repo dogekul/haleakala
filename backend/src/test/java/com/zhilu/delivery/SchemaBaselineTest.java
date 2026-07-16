@@ -356,6 +356,21 @@ class SchemaBaselineTest {
         "select count(*) from information_schema.columns where table_schema='public' "
             + "and table_name='delivery_project' and column_name='document_snapshot_at'",
         Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='document_template_config' "
+            + "and column_name in ('published_title_snapshot','published_markdown_snapshot')",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='project_document' "
+            + "and column_name in ('source_title_snapshot','source_markdown_snapshot')",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='document_job' "
+            + "and column_name in ('lease_token','lease_expires_at')",
+        Integer.class));
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.table_constraints "
             + "where table_schema='public' and table_name='outline_document_link' "

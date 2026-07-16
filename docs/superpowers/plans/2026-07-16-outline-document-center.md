@@ -335,7 +335,7 @@ KNOWLEDGE_TYPE:TEMPLATE
 
 - [ ] **Step 4: 发布时固化修订**
 
-`publish` 调用 `readLink`，非空后将知识状态设为 `PUBLISHED`；`TEMPLATE` 同事务写 `published_revision=document.revision`。模版被再次编辑时知识状态回到 `DRAFT`，但已创建项目的副本不变。
+`publish` 调用 `readLink`，非空后将知识状态设为 `PUBLISHED`；`TEMPLATE` 同事务写 `published_revision=document.revision`，并保存只用于异步复制的不可变标题/Markdown 快照。模版被再次编辑时知识状态回到 `DRAFT` 并清空发布快照，但已创建项目的副本输入不变。
 
 - [ ] **Step 5: 运行测试**
 
@@ -390,7 +390,7 @@ Expected: FAIL，项目未入队且无文档空间。
 documentJobs.enqueue("PROJECT_INIT", projectId, "PROJECT:" + projectId);
 ```
 
-`DocumentJobService` 使用 `@Scheduled(fixedDelayString=...)` 每批读取到期的 `PENDING/RETRY` 任务，通过条件更新抢占为 `RUNNING`，执行失败按 `initialBackoff * 2^(attempt-1)` 计算 `next_attempt_at`。测试直接调用 `runDueJobs()`，不等待定时器。
+`DocumentJobService` 使用 `@Scheduled(fixedDelayString=...)` 每批读取到期的 `PENDING/RETRY` 任务，通过条件更新抢占为 `RUNNING` 并写入租约令牌和到期时间。执行期间定时续租；只有过期租约可被回收，完成/失败写入必须匹配原令牌。执行失败按 `initialBackoff * 2^(attempt-1)` 计算 `next_attempt_at`。测试直接调用 `runDueJobs()`，不等待定时器。
 
 - [ ] **Step 4: 创建项目目录与七阶段目录**
 
@@ -403,7 +403,7 @@ PROJECT:<projectId>:STAGE:<stageCode>
 PROJECT:<projectId>:DOC:<templateId>
 ```
 
-项目和阶段目录是发布的索引文档；项目文档正文取模版发布修订对应的当前 Markdown，标题沿用模版标题。初始化成功更新 `delivery_project.document_space_status='READY'`。
+项目创建事务先把适用模版的 ID、发布修订、阶段、必需性和发布正文快照写入 `project_document`；项目和阶段目录是发布的索引文档，后台任务只复制这份不可变快照。初始化成功更新 `delivery_project.document_space_status='READY'`。
 
 - [ ] **Step 5: 暴露手动重试**
 

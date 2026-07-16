@@ -13,6 +13,15 @@ import static org.mockito.Mockito.when;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +105,58 @@ class DocumentCenterServiceTest {
         "select title_cache from outline_document_link where id=?", String.class, linkId));
     assertEquals(Long.valueOf(3), jdbc.queryForObject(
         "select revision from outline_document_link where id=?", Long.class, linkId));
+  }
+
+  @Test
+  void serializesConcurrentSavesUsingTheSameExpectedRevision() throws Exception {
+    long linkId = link(3100, "KNOWLEDGE:3", "原标题", DOCUMENT_ID, 1);
+    AtomicReference<OutlineDocument> remote =
+        new AtomicReference<OutlineDocument>(document("原标题", "原正文", 1));
+    AtomicInteger infoCalls = new AtomicInteger();
+    CountDownLatch firstInfo = new CountDownLatch(1);
+    CountDownLatch secondInfo = new CountDownLatch(1);
+    when(outline.info(DOCUMENT_ID)).thenAnswer(invocation -> {
+      int call = infoCalls.incrementAndGet();
+      if (call == 1) {
+        firstInfo.countDown();
+        secondInfo.await(500, TimeUnit.MILLISECONDS);
+      } else {
+        secondInfo.countDown();
+      }
+      return remote.get();
+    });
+    when(outline.update(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+      OutlineDocument current = remote.get();
+      OutlineDocument updated = document(
+          invocation.getArgument(1), invocation.getArgument(2), current.getRevision() + 1);
+      remote.set(updated);
+      return updated;
+    });
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      List<Future<Object>> results = new ArrayList<Future<Object>>();
+      results.add(pool.submit(() -> documents.updateLink(
+          linkId, 3100, "编辑一", "正文一", 1)));
+      firstInfo.await(2, TimeUnit.SECONDS);
+      results.add(pool.submit(() -> {
+        try {
+          return documents.updateLink(linkId, 3100, "编辑二", "正文二", 1);
+        } catch (ConflictException conflict) {
+          return conflict;
+        }
+      }));
+      int successes = 0;
+      int conflicts = 0;
+      for (Future<Object> result : results) {
+        Object value = result.get(5, TimeUnit.SECONDS);
+        if (value instanceof DocumentView) successes++;
+        if (value instanceof ConflictException) conflicts++;
+      }
+      assertEquals(1, successes);
+      assertEquals(1, conflicts);
+    } finally {
+      pool.shutdownNow();
+    }
   }
 
   @Test

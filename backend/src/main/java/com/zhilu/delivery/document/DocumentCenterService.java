@@ -16,6 +16,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DocumentCenterService {
@@ -100,9 +101,10 @@ public class DocumentCenterService {
     }
   }
 
+  @Transactional
   public DocumentView updateLink(
       long linkId, long organizationId, String title, String markdown, long expectedRevision) {
-    Link link = link(linkId, organizationId);
+    Link link = lockedLink(linkId, organizationId);
     if (blank(link.documentId)) {
       throw new ConflictException("文档尚未初始化");
     }
@@ -125,6 +127,7 @@ public class DocumentCenterService {
     return readLink(knowledgeLink(knowledgeId, user, false), user.getOrganizationId());
   }
 
+  @Transactional
   public DocumentView updateKnowledge(
       long knowledgeId, String title, String markdown, long revision, CurrentUser user) {
     return updateLink(
@@ -139,6 +142,7 @@ public class DocumentCenterService {
         projectDocumentLink(projectId, projectDocumentId), user.getOrganizationId());
   }
 
+  @Transactional
   public DocumentView updateProjectDocument(
       long projectId, long projectDocumentId, String title, String markdown, long revision,
       CurrentUser user) {
@@ -266,6 +270,16 @@ public class DocumentCenterService {
         "select id,organization_id,outline_document_id,title_cache,revision,sync_status,"
             + "last_error,outline_updated_at from outline_document_link "
             + "where id=? and organization_id=?",
+        (row, index) -> link(row), linkId, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("文档不存在");
+    return values.get(0);
+  }
+
+  private Link lockedLink(long linkId, long organizationId) {
+    List<Link> values = jdbc.query(
+        "select id,organization_id,outline_document_id,title_cache,revision,sync_status,"
+            + "last_error,outline_updated_at from outline_document_link "
+            + "where id=? and organization_id=? for update",
         (row, index) -> link(row), linkId, organizationId);
     if (values.isEmpty()) throw new NotFoundException("文档不存在");
     return values.get(0);

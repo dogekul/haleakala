@@ -124,7 +124,8 @@ public class DocumentMigrationService {
     int changed = jdbc.update(
         "update document_job set status='PENDING',attempt_count=0,"
             + "next_attempt_at=current_timestamp,last_error=null,started_at=null,"
-            + "completed_at=null,updated_at=current_timestamp,version=version+1 "
+            + "completed_at=null,lease_token=null,lease_expires_at=null,"
+            + "updated_at=current_timestamp,version=version+1 "
             + "where id=? and organization_id=? and status in ('FAILED','RETRY')",
         jobId, organizationId);
     if (changed == 0 && !"PENDING".equals(job.get("status"))) {
