@@ -20,12 +20,15 @@ public class DocumentCenterService {
   private final JdbcTemplate jdbc;
   private final OutlineClient outline;
   private final OutlineProperties properties;
+  private final MarkdownRenderer renderer;
 
   public DocumentCenterService(
-      JdbcTemplate jdbc, OutlineClient outline, OutlineProperties properties) {
+      JdbcTemplate jdbc, OutlineClient outline, OutlineProperties properties,
+      MarkdownRenderer renderer) {
     this.jdbc = jdbc;
     this.outline = outline;
     this.properties = properties;
+    this.renderer = renderer;
   }
 
   public long ensureIndex(
@@ -270,7 +273,8 @@ public class DocumentCenterService {
   private DocumentView view(
       long linkId, OutlineDocument document, String syncStatus, String lastError) {
     return new DocumentView(
-        linkId, document.getTitle(), document.getText(), document.getRevision(),
+        linkId, document.getTitle(), document.getText(),
+        renderer.renderFragment(document.getText()), document.getRevision(),
         document.getUpdatedAt(), syncStatus, lastError, outlineUrl(document));
   }
 

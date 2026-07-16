@@ -105,6 +105,8 @@ class DocumentApiIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.title").value("知识正文"))
         .andExpect(jsonPath("$.markdown").value("# 最新正文"))
+        .andExpect(jsonPath("$.renderedHtml").value(
+            org.hamcrest.Matchers.containsString("<h1>最新正文</h1>")))
         .andExpect(jsonPath("$.revision").value(3))
         .andExpect(jsonPath("$.outlineUrl").value(
             "http://outline.test/doc/test-" + DOCUMENT_ID));

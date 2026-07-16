@@ -29,7 +29,7 @@ public class MarkdownRenderer {
   }
 
   public String renderPage(String title, String markdown) {
-    String body = html.render(parse(markdown));
+    String body = renderFragment(markdown);
     return "<!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"zh-CN\">"
         + "<head><meta charset=\"UTF-8\" />"
         + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />"
@@ -52,6 +52,10 @@ public class MarkdownRenderer {
         + "border-radius:4px;padding:2px 5px}pre code{background:none;padding:0}"
         + "img{max-width:100%;height:auto}"
         + "</style></head><body>" + body + "</body></html>";
+  }
+
+  public String renderFragment(String markdown) {
+    return html.render(parse(markdown));
   }
 
   private String escape(String value) {
