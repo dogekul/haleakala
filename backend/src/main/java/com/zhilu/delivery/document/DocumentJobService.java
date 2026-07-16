@@ -17,12 +17,15 @@ public class DocumentJobService {
 
   private final JdbcTemplate jdbc;
   private final ProjectDocumentService projectDocuments;
+  private final DocumentMigrationService migrations;
   private final OutlineProperties properties;
 
   public DocumentJobService(
-      JdbcTemplate jdbc, ProjectDocumentService projectDocuments, OutlineProperties properties) {
+      JdbcTemplate jdbc, ProjectDocumentService projectDocuments,
+      DocumentMigrationService migrations, OutlineProperties properties) {
     this.jdbc = jdbc;
     this.projectDocuments = projectDocuments;
+    this.migrations = migrations;
     this.properties = properties;
   }
 
@@ -93,10 +96,16 @@ public class DocumentJobService {
         jobId);
     long businessId = ((Number) job.get("business_id")).longValue();
     try {
-      if (!PROJECT_INIT.equals(job.get("job_type"))) {
+      String jobType = String.valueOf(job.get("job_type"));
+      if (PROJECT_INIT.equals(jobType)
+          || DocumentMigrationService.PROJECT_MIGRATION.equals(jobType)) {
+        projectDocuments.initialize(businessId);
+      } else if (DocumentMigrationService.KNOWLEDGE_MIGRATION.equals(jobType)) {
+        migrations.migrateKnowledge(
+            ((Number) job.get("organization_id")).longValue(), businessId);
+      } else {
         throw new IllegalArgumentException("不支持的文档任务类型：" + job.get("job_type"));
       }
-      projectDocuments.initialize(businessId);
       jdbc.update("update document_job set status='DONE',completed_at=current_timestamp,"
               + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
           jobId);
@@ -106,7 +115,10 @@ public class DocumentJobService {
       jdbc.update("update document_job set status=?,next_attempt_at=?,last_error=?,"
               + "updated_at=current_timestamp,version=version+1 where id=?",
           status, nextAttempt(attempts), truncate(failure.getMessage()), jobId);
-      projectDocuments.markFailure(businessId, failure);
+      if (PROJECT_INIT.equals(job.get("job_type"))
+          || DocumentMigrationService.PROJECT_MIGRATION.equals(job.get("job_type"))) {
+        projectDocuments.markFailure(businessId, failure);
+      }
     }
   }
 
