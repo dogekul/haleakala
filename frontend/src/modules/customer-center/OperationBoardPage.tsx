@@ -10,8 +10,8 @@ import { OperationEditor } from './OperationEditor'
 import type { CustomerOperation, OperationStage, OperationStatus } from './types'
 
 export const operationStages: { value: OperationStage; label: string }[] = [
-  { value: 'MAINTENANCE', label: '客户维护' }, { value: 'OPERATING', label: '持续经营' },
-  { value: 'REPURCHASE', label: '复购推进' },
+  { value: 'MAINTENANCE', label: '回款/维保' }, { value: 'OPERATING', label: '持续运营' },
+  { value: 'REPURCHASE', label: '复购' },
 ]
 
 export function OperationBoardPage() {

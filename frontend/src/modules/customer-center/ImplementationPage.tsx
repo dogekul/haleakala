@@ -15,7 +15,7 @@ export function ImplementationPage() {
   const query = useQuery({ queryKey: ['implementation'], queryFn: crmApi.implementation })
   const columns = [
     { title: '客户 / 商机', key: 'customer', render: (_: unknown, item: ImplementationItem) => <div className="crm-name-cell"><strong>{item.customerName}</strong><span>{item.opportunityTitle}</span></div> },
-    { title: '实施项目', key: 'project', render: (_: unknown, item: ImplementationItem) => <div className="crm-name-cell"><strong>{item.projectName}</strong><span>{item.projectCode}</span></div> },
+    { title: '实施项目', key: 'project', render: (_: unknown, item: ImplementationItem) => <div className="crm-name-cell"><Link to={`/projects/${item.projectId}`}>{item.projectName}</Link><span>{item.projectCode}</span></div> },
     { title: '当前阶段', dataIndex: 'projectStage', render: (value: string) => <Tag color="blue">{projectStages[value] ?? value}</Tag> },
     { title: '负责人', dataIndex: 'managerName' },
     { title: '风险', key: 'risk', render: (_: unknown, item: ImplementationItem) => <Space direction="vertical" size={2}><Tag color={item.health === 'RED' ? 'error' : item.health === 'YELLOW' ? 'warning' : 'success'}>{healthLabels[item.health]}</Tag><span>{item.redRiskCount} 个红色风险</span></Space> },
