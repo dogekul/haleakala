@@ -73,6 +73,13 @@ public class DocumentCenterService {
     }
   }
 
+  public Long findLinkId(long organizationId, String businessKey) {
+    List<Long> values = jdbc.queryForList(
+        "select id from outline_document_link where organization_id=? and business_key=?",
+        Long.class, organizationId, businessKey);
+    return values.isEmpty() ? null : values.get(0);
+  }
+
   public DocumentView readLink(long linkId, long organizationId) {
     Link link = link(linkId, organizationId);
     if (blank(link.documentId)) {

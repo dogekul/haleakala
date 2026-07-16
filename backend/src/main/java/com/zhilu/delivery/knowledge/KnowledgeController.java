@@ -30,8 +30,8 @@ public class KnowledgeController {
       @RequestParam(required=false) String tag,@RequestParam(defaultValue="false") boolean publishedOnly,
       @AuthenticationPrincipal CurrentUser user){return knowledge.search(user,keyword,type,tag,publishedOnly);}
   @GetMapping("/{id}") public Map<String,Object> get(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){return knowledge.get(id,user);}
-  @PostMapping @ResponseStatus(HttpStatus.CREATED) public Map<String,Object> create(@Valid @RequestBody KnowledgeRequest request,@AuthenticationPrincipal CurrentUser user){Map<String,Object> value=knowledge.create(user,request.type,request.title,request.summary,request.content,request.tags,request.productId,request.productVersionId,request.visibility,request.language,request.codeText,request.detailText(),request.durationMinutes,request.fileObjectId);audit(user,"CREATE",value);return value;}
-  @PutMapping("/{id}") public Map<String,Object> update(@PathVariable long id,@Valid @RequestBody KnowledgeRequest request,@AuthenticationPrincipal CurrentUser user){Map<String,Object> value=knowledge.update(id,user,request.type,request.title,request.summary,request.content,request.tags,request.productId,request.productVersionId,request.visibility,request.language,request.codeText,request.detailText(),request.durationMinutes,request.fileObjectId,request.version);audit(user,"UPDATE",value);return value;}
+  @PostMapping @ResponseStatus(HttpStatus.CREATED) public Map<String,Object> create(@Valid @RequestBody KnowledgeRequest request,@AuthenticationPrincipal CurrentUser user){Map<String,Object> value=knowledge.create(user,request.type,request.title,request.summary,request.content,request.tags,request.productId,request.productVersionId,request.visibility,request.language,request.codeText,request.detailText(),request.durationMinutes,request.fileObjectId,request.stageCode,request.requirement,request.enabled);audit(user,"CREATE",value);return value;}
+  @PutMapping("/{id}") public Map<String,Object> update(@PathVariable long id,@Valid @RequestBody KnowledgeRequest request,@AuthenticationPrincipal CurrentUser user){Map<String,Object> value=knowledge.update(id,user,request.type,request.title,request.summary,request.content,request.tags,request.productId,request.productVersionId,request.visibility,request.language,request.codeText,request.detailText(),request.durationMinutes,request.fileObjectId,request.version,request.documentRevision,request.stageCode,request.requirement,request.enabled);audit(user,"UPDATE",value);return value;}
   @PostMapping("/{id}/publish") public Map<String,Object> publish(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){Map<String,Object> value=knowledge.publish(id,user);audit(user,"PUBLISH",value);return value;}
   private void audit(CurrentUser user,String action,Map<String,Object> value){audit.record(user.getOrganizationId(),user.getId(),action,"KNOWLEDGE_ITEM",String.valueOf(value.get("id")),String.valueOf(value.get("title")));}
 
@@ -40,6 +40,7 @@ public class KnowledgeController {
     @NotBlank public String content; public String tags; public Long productId; public Long productVersionId;
     public String visibility="ORGANIZATION"; public String language; public String codeText;
     public String usageNotes; public String audience; public Integer durationMinutes; public Long fileObjectId; public long version;
+    public Long documentRevision; public String stageCode; public String requirement; public Boolean enabled;
     String detailText(){return "CODE".equals(type)?usageNotes:audience;}
   }
 }
