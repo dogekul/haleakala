@@ -2,6 +2,7 @@ package com.zhilu.delivery.common.error;
 
 import com.zhilu.delivery.common.api.ApiError;
 import com.zhilu.delivery.automation.AiNotConfiguredException;
+import com.zhilu.delivery.document.OutlineException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +16,18 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  @ExceptionHandler(OutlineException.class)
+  public ResponseEntity<ApiError> handleOutline(OutlineException exception) {
+    HttpStatus status = exception.getType() == OutlineException.Type.INVALID_RESPONSE
+        ? HttpStatus.BAD_GATEWAY : HttpStatus.SERVICE_UNAVAILABLE;
+    ApiError body = new ApiError(
+        "OUTLINE_" + exception.getType().name(),
+        exception.getMessage(),
+        UUID.randomUUID().toString(),
+        null);
+    return ResponseEntity.status(status).body(body);
+  }
 
   @ExceptionHandler(AiNotConfiguredException.class)
   public ResponseEntity<ApiError> handleAiNotConfigured(AiNotConfiguredException exception) {
