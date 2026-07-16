@@ -78,6 +78,30 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void customerLifecycleSchemaAndPermissionsAreInstalled() {
+    assertEquals(Integer.valueOf(4), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name in ('sales_opportunity','opportunity_activity',"
+            + "'opportunity_artifact','customer_operation')", Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from permission where code in ('crm:read','crm:write')",
+        Integer.class));
+    assertEquals(Integer.valueOf(4), jdbc.queryForObject(
+        "select count(*) from role_permission rp join role r on r.id=rp.role_id "
+            + "join permission p on p.id=rp.permission_id "
+            + "where r.code in ('ADMIN','PMO') and p.code in ('crm:read','crm:write')",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='sales_opportunity' "
+            + "and constraint_name='uk_opportunity_project'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='customer_operation' "
+            + "and constraint_name='uk_operation_opportunity'", Integer.class));
+  }
+
+  @Test
   void v12BackfillsOneCustomerPerOrganizationAndLegacyName() {
     DriverManagerDataSource dataSource = new DriverManagerDataSource(
         "jdbc:h2:mem:legacy-customers;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
