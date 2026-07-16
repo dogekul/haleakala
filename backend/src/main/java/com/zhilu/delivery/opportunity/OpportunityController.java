@@ -74,12 +74,88 @@ public class OpportunityController {
     return value;
   }
 
+  @PostMapping("/{id}/advance")
+  @Transactional
+  public Map<String, Object> advance(@PathVariable long id,
+      @Valid @RequestBody AdvanceRequest request, @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = opportunities.advance(
+        user.getOrganizationId(), id, request.version.longValue(), request.decision);
+    record(user, "ADVANCE", id, value.get("stage") + " · " + value.get("status"));
+    return value;
+  }
+
+  @GetMapping("/{id}/activities")
+  public List<Map<String, Object>> activities(@PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    return opportunities.activities(user.getOrganizationId(), id);
+  }
+
+  @PostMapping("/{id}/activities")
+  @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
+  public Map<String, Object> addActivity(@PathVariable long id,
+      @Valid @RequestBody CreateActivityRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = opportunities.addActivity(
+        user.getOrganizationId(), id, user.getId(), request.title, request.sortOrder);
+    audit.record(user.getOrganizationId(), user.getId(), "CREATE", "OPPORTUNITY_ACTIVITY",
+        String.valueOf(value.get("id")), request.title);
+    return value;
+  }
+
+  @PutMapping("/{id}/activities/{activityId}")
+  @Transactional
+  public Map<String, Object> updateActivity(@PathVariable long id, @PathVariable long activityId,
+      @Valid @RequestBody UpdateActivityRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = opportunities.updateActivity(user.getOrganizationId(), id,
+        activityId, request.status, request.version.longValue());
+    audit.record(user.getOrganizationId(), user.getId(), "UPDATE", "OPPORTUNITY_ACTIVITY",
+        String.valueOf(activityId), request.status);
+    return value;
+  }
+
+  @GetMapping("/{id}/artifacts")
+  public List<Map<String, Object>> artifacts(@PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    return opportunities.artifacts(user.getOrganizationId(), id);
+  }
+
+  @PostMapping("/{id}/artifacts")
+  @ResponseStatus(HttpStatus.CREATED)
+  @Transactional
+  public Map<String, Object> addArtifact(@PathVariable long id,
+      @Valid @RequestBody OpportunityService.ArtifactInput request,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = opportunities.addArtifact(
+        user.getOrganizationId(), id, user.getId(), request);
+    audit.record(user.getOrganizationId(), user.getId(), "CREATE", "OPPORTUNITY_ARTIFACT",
+        String.valueOf(value.get("id")), request.title);
+    return value;
+  }
+
   private void record(CurrentUser user, String action, Object id, String details) {
     audit.record(user.getOrganizationId(), user.getId(), action, "OPPORTUNITY",
         String.valueOf(id), details);
   }
 
   public static final class UpdateOpportunityRequest extends OpportunityService.Input {
+    @NotNull public Long version;
+  }
+
+  public static final class AdvanceRequest {
+    @NotNull public Long version;
+    public String decision;
+  }
+
+  public static final class CreateActivityRequest {
+    @javax.validation.constraints.NotBlank @javax.validation.constraints.Size(max = 240)
+    public String title;
+    public int sortOrder;
+  }
+
+  public static final class UpdateActivityRequest {
+    @javax.validation.constraints.NotBlank public String status;
     @NotNull public Long version;
   }
 }

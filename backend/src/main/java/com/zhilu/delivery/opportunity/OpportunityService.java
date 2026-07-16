@@ -29,10 +29,13 @@ public class OpportunityService {
       new HashSet<String>(Arrays.asList("OPEN", "WON", "LOST"));
   private final JdbcTemplate jdbc;
   private final CustomerService customers;
+  private final OpportunityGate gate;
 
-  public OpportunityService(JdbcTemplate jdbc, CustomerService customers) {
+  public OpportunityService(
+      JdbcTemplate jdbc, CustomerService customers, OpportunityGate gate) {
     this.jdbc = jdbc;
     this.customers = customers;
+    this.gate = gate;
   }
 
   public List<Map<String, Object>> list(long organizationId, String keyword, Long customerId,
@@ -114,6 +117,121 @@ public class OpportunityService {
         }, organizationId);
   }
 
+  @Transactional
+  public Map<String, Object> advance(
+      long organizationId, long id, long version, String decision) {
+    Map<String, Object> current = get(organizationId, id);
+    assertVersion(current, version);
+    assertOpen(current);
+    OpportunityStage stage = OpportunityStage.valueOf(String.valueOf(current.get("stage")));
+    boolean decisionStage = stage == OpportunityStage.OPPORTUNITY
+        || stage == OpportunityStage.BIDDING || stage == OpportunityStage.CONTRACT;
+    if (decisionStage && !"PASS".equals(decision) && !"REJECT".equals(decision)) {
+      throw new IllegalArgumentException("当前阶段必须选择 PASS 或 REJECT");
+    }
+    if (!decisionStage && !blank(decision)) {
+      throw new IllegalArgumentException("当前阶段不接受关口决策");
+    }
+    if (stage == OpportunityStage.CONTRACT && "PASS".equals(decision)) {
+      throw new ConflictException("合同通过请使用转交实施操作");
+    }
+    List<String> missing = gate.missingArtifacts(id, stage, decision);
+    if (!missing.isEmpty()) {
+      throw new IllegalArgumentException("缺少必需产出物：" + join(missing));
+    }
+    boolean lost = "REJECT".equals(decision);
+    String targetStage = lost ? stage.name() : stage.next().name();
+    int changed = jdbc.update("update sales_opportunity set stage=?,status=?,"
+            + "stage_entered_at=case when ? then stage_entered_at else current_timestamp end,"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where id=? and organization_id=? and version=? and status='OPEN'",
+        targetStage, lost ? "LOST" : "OPEN", lost, id, organizationId, version);
+    if (changed == 0) throw new ConflictException("数据已被更新，请刷新后重试");
+    return get(organizationId, id);
+  }
+
+  public List<Map<String, Object>> activities(long organizationId, long opportunityId) {
+    get(organizationId, opportunityId);
+    return jdbc.query("select * from opportunity_activity where organization_id=? "
+            + "and opportunity_id=? order by sort_order,id",
+        (row, index) -> activityRow(row), organizationId, opportunityId);
+  }
+
+  @Transactional
+  public Map<String, Object> addActivity(long organizationId, long opportunityId,
+      long actorId, String title, int sortOrder) {
+    Map<String, Object> opportunity = get(organizationId, opportunityId);
+    assertOpen(opportunity);
+    Map<String, Object> values = new HashMap<String, Object>();
+    values.put("organization_id", organizationId);
+    values.put("opportunity_id", opportunityId);
+    values.put("stage_code", opportunity.get("stage"));
+    values.put("title", title.trim());
+    values.put("status", "TODO");
+    values.put("sort_order", sortOrder);
+    values.put("created_by", actorId);
+    long id = insert("opportunity_activity", values);
+    return activity(organizationId, opportunityId, id);
+  }
+
+  @Transactional
+  public Map<String, Object> updateActivity(long organizationId, long opportunityId,
+      long activityId, String status, long version) {
+    get(organizationId, opportunityId);
+    if (!"TODO".equals(status) && !"DONE".equals(status)) {
+      throw new IllegalArgumentException("活动状态不受支持");
+    }
+    Map<String, Object> current = activity(organizationId, opportunityId, activityId);
+    assertVersion(current, version);
+    int changed = jdbc.update("update opportunity_activity set status=?,"
+            + "completed_at=case when ?='DONE' then current_timestamp else null end,"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where id=? and organization_id=? and opportunity_id=? and version=?",
+        status, status, activityId, organizationId, opportunityId, version);
+    if (changed == 0) throw new ConflictException("数据已被更新，请刷新后重试");
+    return activity(organizationId, opportunityId, activityId);
+  }
+
+  public List<Map<String, Object>> artifacts(long organizationId, long opportunityId) {
+    get(organizationId, opportunityId);
+    return jdbc.query("select a.*,f.original_name file_name from opportunity_artifact a "
+            + "left join file_object f on f.id=a.file_id "
+            + "where a.organization_id=? and a.opportunity_id=? order by a.created_at,a.id",
+        (row, index) -> artifactRow(row), organizationId, opportunityId);
+  }
+
+  @Transactional
+  public Map<String, Object> addArtifact(long organizationId, long opportunityId,
+      long actorId, ArtifactInput input) {
+    Map<String, Object> opportunity = get(organizationId, opportunityId);
+    assertOpen(opportunity);
+    OpportunityStage stage = OpportunityStage.valueOf(String.valueOf(opportunity.get("stage")));
+    gate.validateArtifact(stage, input.artifactType, input.contentMarkdown, input.fileId);
+    if (input.fileId != null) {
+      Integer files = jdbc.queryForObject(
+          "select count(*) from file_object where id=? and organization_id=?",
+          Integer.class, input.fileId, organizationId);
+      if (files == null || files == 0) throw new NotFoundException("文件不存在");
+    }
+    if (!blank(input.decision)
+        && !"PASS".equals(input.decision) && !"REJECT".equals(input.decision)) {
+      throw new IllegalArgumentException("关口决策不受支持");
+    }
+    Map<String, Object> values = new HashMap<String, Object>();
+    values.put("organization_id", organizationId);
+    values.put("opportunity_id", opportunityId);
+    values.put("stage_from", stage.name());
+    values.put("artifact_type", input.artifactType);
+    values.put("title", input.title.trim());
+    values.put("content_markdown", gate.isFileType(input.artifactType)
+        ? null : input.contentMarkdown.trim());
+    values.put("file_id", input.fileId);
+    values.put("decision", clean(input.decision));
+    values.put("created_by", actorId);
+    long id = insert("opportunity_artifact", values);
+    return artifact(organizationId, opportunityId, id);
+  }
+
   private References validateReferences(long organizationId, Input input) {
     Map<String, Object> customer = customers.get(organizationId, input.customerId.longValue());
     if (!"ACTIVE".equals(customer.get("status"))) {
@@ -125,6 +243,83 @@ public class OpportunityService {
     validateOwner(organizationId, input.operationOwnerUserId);
     validateProduct(organizationId, input.productId, input.productVersionId);
     return new References(String.valueOf(customer.get("name")));
+  }
+
+  private Map<String, Object> activity(
+      long organizationId, long opportunityId, long activityId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select * from opportunity_activity where id=? and organization_id=? and opportunity_id=?",
+        (row, index) -> activityRow(row), activityId, organizationId, opportunityId);
+    if (values.isEmpty()) throw new NotFoundException("活动不存在");
+    return values.get(0);
+  }
+
+  private Map<String, Object> artifact(
+      long organizationId, long opportunityId, long artifactId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select a.*,f.original_name file_name from opportunity_artifact a "
+            + "left join file_object f on f.id=a.file_id "
+            + "where a.id=? and a.organization_id=? and a.opportunity_id=?",
+        (row, index) -> artifactRow(row), artifactId, organizationId, opportunityId);
+    if (values.isEmpty()) throw new NotFoundException("产出物不存在");
+    return values.get(0);
+  }
+
+  private Map<String, Object> activityRow(ResultSet row) throws SQLException {
+    Map<String, Object> value = new LinkedHashMap<String, Object>();
+    value.put("id", row.getLong("id"));
+    value.put("opportunityId", row.getLong("opportunity_id"));
+    value.put("stageCode", row.getString("stage_code"));
+    value.put("title", row.getString("title"));
+    value.put("status", row.getString("status"));
+    value.put("sortOrder", row.getInt("sort_order"));
+    value.put("createdAt", row.getTimestamp("created_at").toLocalDateTime());
+    value.put("completedAt", row.getTimestamp("completed_at") == null
+        ? null : row.getTimestamp("completed_at").toLocalDateTime());
+    value.put("version", row.getLong("version"));
+    return value;
+  }
+
+  private Map<String, Object> artifactRow(ResultSet row) throws SQLException {
+    Map<String, Object> value = new LinkedHashMap<String, Object>();
+    value.put("id", row.getLong("id"));
+    value.put("opportunityId", row.getLong("opportunity_id"));
+    value.put("stageFrom", row.getString("stage_from"));
+    value.put("artifactType", row.getString("artifact_type"));
+    value.put("title", row.getString("title"));
+    value.put("contentMarkdown", row.getString("content_markdown"));
+    value.put("fileId", nullableLong(row, "file_id"));
+    value.put("fileName", row.getString("file_name"));
+    value.put("decision", row.getString("decision"));
+    value.put("createdAt", row.getTimestamp("created_at").toLocalDateTime());
+    return value;
+  }
+
+  private long insert(String table, Map<String, Object> values) {
+    String[] columns = values.keySet().toArray(new String[values.size()]);
+    return new SimpleJdbcInsert(jdbc).withTableName(table).usingColumns(columns)
+        .usingGeneratedKeyColumns("id").executeAndReturnKey(values).longValue();
+  }
+
+  private void assertOpen(Map<String, Object> opportunity) {
+    if (!"OPEN".equals(opportunity.get("status"))) {
+      throw new ConflictException("终态商机不能继续推进");
+    }
+  }
+
+  private void assertVersion(Map<String, Object> value, long version) {
+    if (((Number) value.get("version")).longValue() != version) {
+      throw new ConflictException("数据已被更新，请刷新后重试");
+    }
+  }
+
+  private String join(List<String> values) {
+    StringBuilder result = new StringBuilder();
+    for (String value : values) {
+      if (result.length() > 0) result.append("、");
+      result.append(value);
+    }
+    return result.toString();
   }
 
   private void validateOwner(long organizationId, Long userId) {
@@ -249,6 +444,14 @@ public class OpportunityService {
     public Long solutionOwnerUserId;
     public Long projectManagerUserId;
     public Long operationOwnerUserId;
+  }
+
+  public static final class ArtifactInput {
+    @NotBlank public String artifactType;
+    @NotBlank @Size(max = 240) public String title;
+    public String contentMarkdown;
+    public Long fileId;
+    public String decision;
   }
 
   private static final class References {
