@@ -166,11 +166,23 @@ public class KnowledgeService {
     Map<String, Object> current = get(id, user);
     if (((Number) current.get("ownerUserId")).longValue() != user.getId()
         && !user.getPermissions().contains("system:manage")) throw new ConflictException("只能维护自己的知识条目");
-    validate(type, title, summary, content);
+    validateMetadata(type, title, summary);
+    if (content != null && blank(content)) {
+      throw new IllegalArgumentException("正文不能为空");
+    }
     validateReferences(user.getOrganizationId(), type, productId, productVersionId, fileObjectId);
     validateTemplate(type, stageCode, requirement);
-    int changed = jdbc.update("update knowledge_item set type=?,title=?,summary=?,content_text=?,tags_text=?,product_id=?,product_version_id=?,visibility=?,status='DRAFT',published_at=null,updated_at=current_timestamp,version=version+1 where id=? and version=?",
-        type,title,summary,content,tags,productId,productVersionId,blank(visibility)?"ORGANIZATION":visibility,id,version);
+    int changed = content == null
+        ? jdbc.update("update knowledge_item set type=?,title=?,summary=?,tags_text=?,product_id=?,"
+                + "product_version_id=?,visibility=?,status='DRAFT',published_at=null,"
+                + "updated_at=current_timestamp,version=version+1 where id=? and version=?",
+            type,title,summary,tags,productId,productVersionId,
+            blank(visibility)?"ORGANIZATION":visibility,id,version)
+        : jdbc.update("update knowledge_item set type=?,title=?,summary=?,content_text=?,tags_text=?,"
+                + "product_id=?,product_version_id=?,visibility=?,status='DRAFT',published_at=null,"
+                + "updated_at=current_timestamp,version=version+1 where id=? and version=?",
+            type,title,summary,content,tags,productId,productVersionId,
+            blank(visibility)?"ORGANIZATION":visibility,id,version);
     if (changed == 0) throw new ConflictException("知识条目已被更新，请刷新后重试");
     jdbc.update("delete from code_snippet where knowledge_item_id=?", id);
     jdbc.update("delete from training_material where knowledge_item_id=?", id);
@@ -178,12 +190,20 @@ public class KnowledgeService {
     saveDetail(id, type, language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId);
     saveTemplate(id, type, stageCode, requirement, enabled);
     if (current.get("outlineLinkId") == null) {
-      initializeDocument(user.getOrganizationId(), id, type, title, content);
+      initializeDocument(
+          user.getOrganizationId(), id, type, title,
+          content == null ? string(current.get("content")) : content);
     } else {
-      long revision = documentRevision == null
-          ? number(current.get("documentRevision")) : documentRevision.longValue();
       try {
-        documents.updateKnowledge(id, title, content, revision, user);
+        if (content == null) {
+          DocumentView currentDocument = documents.readKnowledge(id, user);
+          documents.updateKnowledge(
+              id, title, currentDocument.getMarkdown(), currentDocument.getRevision(), user);
+        } else {
+          long revision = documentRevision == null
+              ? number(current.get("documentRevision")) : documentRevision.longValue();
+          documents.updateKnowledge(id, title, content, revision, user);
+        }
       } catch (OutlineException unavailable) {
         return get(id, user);
       }
@@ -251,8 +271,13 @@ public class KnowledgeService {
   }
 
   private void validate(String type, String title, String summary, String content) {
+    validateMetadata(type, title, summary);
+    if (blank(content)) throw new IllegalArgumentException("正文不能为空");
+  }
+
+  private void validateMetadata(String type, String title, String summary) {
     if (!TYPES.contains(type)) throw new IllegalArgumentException("知识类型不受支持");
-    if (blank(title) || blank(summary) || blank(content)) throw new IllegalArgumentException("标题、摘要和正文不能为空");
+    if (blank(title) || blank(summary)) throw new IllegalArgumentException("标题和摘要不能为空");
   }
 
   private void validateReferences(long organizationId, String type, Long productId,

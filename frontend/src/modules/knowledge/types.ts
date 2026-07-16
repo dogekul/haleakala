@@ -1,9 +1,9 @@
 export interface KnowledgeItem {
   id: number
-  type: 'CASE' | 'CODE' | 'TRAINING'
+  type: 'CASE' | 'CODE' | 'TRAINING' | 'TEMPLATE'
   title: string
   summary: string
-  content: string
+  content?: string | null
   tags?: string
   productId?: number
   productVersionId?: number
@@ -24,6 +24,14 @@ export interface KnowledgeItem {
   fileOriginalName?: string
   fileVersion?: number
   fileSizeBytes?: number
+  documentStatus?: 'PENDING' | 'CREATING' | 'READY' | 'FAILED'
+  documentRevision?: number
+  documentError?: string
+  outlineUrl?: string
+  stageCode?: string
+  requirement?: 'REQUIRED' | 'OPTIONAL'
+  enabled?: boolean
+  publishedRevision?: number
 }
 
 export interface UploadedFile {

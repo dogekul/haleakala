@@ -37,7 +37,7 @@ public class KnowledgeController {
 
   public static final class KnowledgeRequest {
     @NotBlank public String type; @NotBlank public String title; @NotBlank public String summary;
-    @NotBlank public String content; public String tags; public Long productId; public Long productVersionId;
+    public String content; public String tags; public Long productId; public Long productVersionId;
     public String visibility="ORGANIZATION"; public String language; public String codeText;
     public String usageNotes; public String audience; public Integer durationMinutes; public Long fileObjectId; public long version;
     public Long documentRevision; public String stageCode; public String requirement; public Boolean enabled;

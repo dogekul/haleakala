@@ -80,3 +80,67 @@ it('已有培训附件可以下载并上传新版本', async () => {
   expect(requests).toContain('/api/v1/files/45/versions')
   vi.unstubAllGlobals()
 })
+
+it('展示文档模版并从卡片进入 Outline 文档工作区', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: string) => {
+    let body: unknown = []
+    if (input.includes('/api/v1/knowledge?')) body = [
+      {
+        id: 20, type: 'TEMPLATE', title: '项目启动检查单', summary: '启动阶段必需检查项',
+        content: null, tags: '启动,检查', status: 'PUBLISHED', ownerName: 'PMO', version: 2,
+        documentStatus: 'READY', documentRevision: 5, stageCode: 'START',
+        requirement: 'REQUIRED', enabled: true, publishedRevision: 5,
+      },
+      {
+        id: 21, type: 'CASE', title: '待迁移知识', summary: '等待 Outline 初始化',
+        content: '不应作为成功正文展示', status: 'DRAFT', ownerName: '顾问', version: 0,
+        documentStatus: 'PENDING',
+      },
+      {
+        id: 22, type: 'TRAINING', title: '同步失败培训', summary: '非常长的培训摘要'.repeat(20),
+        content: '旧正文', status: 'DRAFT', ownerName: '讲师', version: 0,
+        documentStatus: 'FAILED', documentError: 'Outline 暂不可用',
+      },
+    ]
+    else if (input === '/api/v1/knowledge/20/document') body = {
+      linkId: 20, title: '项目启动检查单', markdown: '# 启动检查\n\n- 范围已确认',
+      renderedHtml: '<h1>启动检查</h1><ul><li>范围已确认</li></ul>', revision: 5,
+      syncStatus: 'READY', outlineUrl: 'http://localhost:3000/doc/start-template',
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => body })
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><KnowledgePage /></MemoryRouter></QueryClientProvider>)
+
+  expect(await screen.findByText('项目启动检查单')).toBeVisible()
+  expect(screen.getByText('文档模版')).toBeVisible()
+  expect(screen.getByText('启动 · 必需')).toBeVisible()
+  expect(screen.getByText('修订 5')).toBeVisible()
+  expect(screen.getByText('待初始化')).toBeVisible()
+  expect(screen.getByText('同步失败')).toBeVisible()
+  expect(screen.queryByText('# 启动检查')).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByText('项目启动检查单'))
+  expect(await screen.findByText('范围已确认')).toBeVisible()
+  expect(screen.getByRole('link', { name: '在 Outline 中打开' }))
+    .toHaveAttribute('href', 'http://localhost:3000/doc/start-template')
+  vi.unstubAllGlobals()
+})
+
+it('创建文档模版时维护阶段、必需性和启用状态', async () => {
+  vi.stubGlobal('fetch', vi.fn(() =>
+    Promise.resolve({ ok: true, status: 200, json: async () => [] }),
+  ))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><KnowledgePage /></MemoryRouter></QueryClientProvider>)
+
+  await userEvent.click(screen.getByRole('button', { name: /创建知识/ }))
+  await userEvent.click(screen.getByLabelText('知识类型'))
+  const options = await screen.findAllByText('文档模版')
+  await userEvent.click(options[options.length - 1])
+
+  expect(screen.getByText('适用交付阶段')).toBeVisible()
+  expect(screen.getByText('项目必需性')).toBeVisible()
+  expect(screen.getByText('新项目自动应用')).toBeVisible()
+  vi.unstubAllGlobals()
+})
