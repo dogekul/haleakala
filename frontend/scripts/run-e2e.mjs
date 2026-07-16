@@ -9,6 +9,8 @@ import { ensureChromium } from './playwright-browser.mjs'
 
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = path.resolve(frontend, '..')
+const testArgs = process.argv.slice(2).filter((argument, index) =>
+  !(index === 0 && argument === '--'))
 
 try {
   ensureChromium({
@@ -26,7 +28,7 @@ try {
 }
 
 if (process.env.E2E_BASE_URL) {
-  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...process.argv.slice(2)], {
+  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...testArgs], {
     cwd: frontend,
     env: process.env,
     stdio: 'inherit',
@@ -44,6 +46,15 @@ const composeEnv = {
   MINIO_PORT: '0',
   MINIO_CONSOLE_PORT: '0',
   AGENT_PORT: '0',
+  OUTLINE_MOCK_PORT: '0',
+  OUTLINE_BASE_URL: 'http://mock-outline:3000',
+  OUTLINE_API_TOKEN: 'ol_api_e2e',
+  OUTLINE_COLLECTION_ID: 'a4296a54-2044-4529-ba86-d598a5322e06',
+  MOCK_OUTLINE_TOKEN: 'ol_api_e2e',
+  DELIVERY_OUTLINE_JOB_INITIAL_DELAY_MS: '1000',
+  DELIVERY_OUTLINE_JOB_SCAN_MS: '500',
+  OUTLINE_INITIAL_BACKOFF: '0s',
+  OUTLINE_MAX_ATTEMPTS: '1',
 }
 
 function compose(args, options = {}) {
@@ -90,9 +101,26 @@ try {
   const baseURL = `http://127.0.0.1:${match[1]}`
   await waitForHttp(baseURL)
 
-  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...process.argv.slice(2)], {
+  const outlinePublished = compose(['port', 'mock-outline', '3000'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  if (outlinePublished.status !== 0) throw new Error('Failed to resolve mock Outline port')
+  const outlineMatch = outlinePublished.stdout.trim().split(/\r?\n/)
+    .find(Boolean)?.match(/:(\d+)$/)
+  if (!outlineMatch) {
+    throw new Error(`Unexpected mock Outline port output: ${outlinePublished.stdout}`)
+  }
+  const outlineURL = `http://127.0.0.1:${outlineMatch[1]}`
+  await waitForHttp(`${outlineURL}/health`)
+
+  const test = spawnSync('pnpm', ['exec', 'playwright', 'test', ...testArgs], {
     cwd: frontend,
-    env: { ...process.env, E2E_BASE_URL: baseURL },
+    env: {
+      ...process.env,
+      E2E_BASE_URL: baseURL,
+      E2E_OUTLINE_URL: outlineURL,
+    },
     stdio: 'inherit',
   })
   exitCode = test.status ?? 1
