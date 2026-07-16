@@ -145,6 +145,12 @@ public class OpportunityController {
     return value;
   }
 
+  @GetMapping("/{id}/full-link")
+  public Map<String, Object> fullLink(@PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    return opportunities.fullLink(user.getOrganizationId(), id);
+  }
+
   private void record(CurrentUser user, String action, Object id, String details) {
     audit.record(user.getOrganizationId(), user.getId(), action, "OPPORTUNITY",
         String.valueOf(id), details);

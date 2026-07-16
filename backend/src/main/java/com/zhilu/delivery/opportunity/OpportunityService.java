@@ -295,6 +295,24 @@ public class OpportunityService {
     return get(organizationId, opportunityId);
   }
 
+  public Map<String, Object> fullLink(long organizationId, long opportunityId) {
+    Map<String, Object> opportunity = get(organizationId, opportunityId);
+    Map<String, Object> result = new LinkedHashMap<String, Object>();
+    Map<String, Object> customer = new LinkedHashMap<String, Object>();
+    customer.put("id", opportunity.get("customerId"));
+    customer.put("name", opportunity.get("customerName"));
+    result.put("customer", customer);
+    Map<String, Object> opportunityNode = new LinkedHashMap<String, Object>();
+    opportunityNode.put("id", opportunity.get("id"));
+    opportunityNode.put("title", opportunity.get("title"));
+    opportunityNode.put("stage", opportunity.get("stage"));
+    opportunityNode.put("status", opportunity.get("status"));
+    result.put("opportunity", opportunityNode);
+    result.put("project", projectNode(organizationId, (Long) opportunity.get("projectId")));
+    result.put("operation", operationNode(organizationId, opportunityId));
+    return result;
+  }
+
   private References validateReferences(long organizationId, Input input) {
     Map<String, Object> customer = customers.get(organizationId, input.customerId.longValue());
     if (!"ACTIVE".equals(customer.get("status"))) {
@@ -315,6 +333,37 @@ public class OpportunityService {
         (row, index) -> activityRow(row), activityId, organizationId, opportunityId);
     if (values.isEmpty()) throw new NotFoundException("活动不存在");
     return values.get(0);
+  }
+
+  private Map<String, Object> projectNode(long organizationId, Long projectId) {
+    if (projectId == null) return null;
+    List<Map<String, Object>> values = jdbc.query(
+        "select id,name,current_stage,status from delivery_project "
+            + "where id=? and organization_id=?",
+        (row, index) -> {
+          Map<String, Object> value = new LinkedHashMap<String, Object>();
+          value.put("id", row.getLong("id"));
+          value.put("name", row.getString("name"));
+          value.put("stage", row.getString("current_stage"));
+          value.put("status", row.getString("status"));
+          return value;
+        }, projectId, organizationId);
+    return values.isEmpty() ? null : values.get(0);
+  }
+
+  private Map<String, Object> operationNode(long organizationId, long opportunityId) {
+    List<Map<String, Object>> values = jdbc.query(
+        "select id,title,stage,status from customer_operation "
+            + "where opportunity_id=? and organization_id=?",
+        (row, index) -> {
+          Map<String, Object> value = new LinkedHashMap<String, Object>();
+          value.put("id", row.getLong("id"));
+          value.put("title", row.getString("title"));
+          value.put("stage", row.getString("stage"));
+          value.put("status", row.getString("status"));
+          return value;
+        }, opportunityId, organizationId);
+    return values.isEmpty() ? null : values.get(0);
   }
 
   private Map<String, Object> artifact(
