@@ -263,6 +263,7 @@ public class ProjectDocumentService {
     result.put("confirmedAt", localDateTime(row.get("confirmed_at")));
     result.put("outlineUrl", document == null ? null : document.getOutlineUrl());
     result.put("lastError", lastError);
+    result.put("lastSyncedAt", localDateTime(row.get("last_synced_at")));
     result.put("sourceTemplateId", row.get("source_template_id"));
     result.put("sourceTemplateRevision", row.get("source_template_revision"));
     return result;
