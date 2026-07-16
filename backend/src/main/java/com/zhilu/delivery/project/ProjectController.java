@@ -1,5 +1,6 @@
 package com.zhilu.delivery.project;
 
+import com.zhilu.delivery.document.ProjectDocumentService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/projects")
 public class ProjectController {
   private final ProjectService projects;
+  private final ProjectDocumentService projectDocuments;
 
-  public ProjectController(ProjectService projects) {
+  public ProjectController(ProjectService projects, ProjectDocumentService projectDocuments) {
     this.projects = projects;
+    this.projectDocuments = projectDocuments;
   }
 
   @GetMapping
@@ -64,6 +67,20 @@ public class ProjectController {
   public ProjectView retryDocuments(
       @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
     return projects.retryDocumentInitialization(id, user);
+  }
+
+  @GetMapping("/{id}/documents")
+  public List<Map<String, Object>> documents(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    return projectDocuments.list(id, user);
+  }
+
+  @PostMapping("/{id}/documents/{documentId}/confirm")
+  public Map<String, Object> confirmDocument(
+      @PathVariable long id,
+      @PathVariable long documentId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return projectDocuments.confirm(id, documentId, user);
   }
 
   @PutMapping("/{id}/stages/{stageCode}/gate")

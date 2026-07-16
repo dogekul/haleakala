@@ -2,7 +2,11 @@ package com.zhilu.delivery.document;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.project.DeliveryStage;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -60,6 +64,58 @@ public class ProjectDocumentService {
     jdbc.update("update delivery_project set document_space_status='FAILED',"
             + "document_space_error=?,updated_at=current_timestamp where id=?",
         truncate(failure.getMessage()), projectId);
+  }
+
+  public List<Map<String, Object>> list(long projectId, CurrentUser user) {
+    assertProjectAccess(projectId, user);
+    long organizationId = ((Number) project(projectId).get("organization_id")).longValue();
+    List<Long> ids = jdbc.queryForList(
+        "select id from project_document where project_id=? "
+            + "order by stage_code,id",
+        Long.class, projectId);
+    List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+    for (Long id : ids) result.add(refresh(id.longValue(), projectId, organizationId));
+    return result;
+  }
+
+  public Map<String, Object> confirm(
+      long projectId, long projectDocumentId, CurrentUser user) {
+    assertProjectAccess(projectId, user);
+    Map<String, Object> project = project(projectId);
+    long managerUserId = ((Number) project.get("manager_user_id")).longValue();
+    if (user.getId().longValue() != managerUserId
+        && !user.getPermissions().contains("system:manage")) {
+      throw new NotFoundException("项目文档不存在或无权确认");
+    }
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    Map<String, Object> current = refresh(
+        projectDocumentId, projectId, organizationId);
+    if ("COMPLETED".equals(current.get("status"))) return current;
+    if (!"PENDING_CONFIRMATION".equals(current.get("status"))) {
+      throw new ConflictException("项目文档尚未填写完成，不能确认");
+    }
+    long revision = ((Number) current.get("revision")).longValue();
+    jdbc.update("update project_document set status='COMPLETED',confirmed_revision=?,"
+            + "confirmed_by=?,confirmed_at=current_timestamp,last_error=null,"
+            + "updated_at=current_timestamp,version=version+1 where id=? and project_id=?",
+        revision, user.getId(), projectDocumentId, projectId);
+    return refresh(projectDocumentId, projectId, organizationId);
+  }
+
+  public List<Map<String, Object>> incompleteRequired(
+      long projectId, DeliveryStage stage) {
+    Map<String, Object> project = project(projectId);
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    List<Long> ids = jdbc.queryForList(
+        "select id from project_document where project_id=? and stage_code=? "
+            + "and requirement='REQUIRED' order by id",
+        Long.class, projectId, stage.name());
+    List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+    for (Long id : ids) {
+      Map<String, Object> item = refresh(id.longValue(), projectId, organizationId);
+      if (!"COMPLETED".equals(item.get("status"))) result.add(item);
+    }
+    return result;
   }
 
   private void copyTemplate(
@@ -124,7 +180,7 @@ public class ProjectDocumentService {
 
   private Map<String, Object> project(long projectId) {
     List<Map<String, Object>> values = jdbc.queryForList(
-        "select id,organization_id,code,name from delivery_project where id=?",
+        "select id,organization_id,code,name,manager_user_id from delivery_project where id=?",
         projectId);
     if (values.isEmpty()) throw new NotFoundException("项目不存在");
     return values.get(0);
@@ -138,6 +194,134 @@ public class ProjectDocumentService {
             + "and c.enabled=true and c.published_revision is not null "
             + "and k.outline_link_id is not null order by k.id",
         organizationId);
+  }
+
+  private Map<String, Object> refresh(
+      long projectDocumentId, long projectId, long organizationId) {
+    Map<String, Object> row = record(projectDocumentId, projectId);
+    Object linkValue = row.get("outline_link_id");
+    if (linkValue == null) return view(row, null, row.get("status"), row.get("last_error"));
+    try {
+      DocumentView document = documents.readLink(
+          ((Number) linkValue).longValue(), organizationId);
+      Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
+      String status = contentStatus(document.getTitle(), document.getMarkdown());
+      boolean completed = "PENDING_CONFIRMATION".equals(status)
+          && confirmedRevision != null
+          && confirmedRevision.longValue() == document.getRevision();
+      if (completed) {
+        status = "COMPLETED";
+        jdbc.update("update project_document set status='COMPLETED',last_synced_at=current_timestamp,"
+                + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
+            projectDocumentId);
+      } else {
+        jdbc.update("update project_document set status=?,confirmed_revision=null,"
+                + "confirmed_by=null,confirmed_at=null,last_synced_at=current_timestamp,"
+                + "last_error=null,updated_at=current_timestamp,version=version+1 where id=?",
+            status, projectDocumentId);
+      }
+      return view(record(projectDocumentId, projectId), document, status, null);
+    } catch (OutlineException failure) {
+      jdbc.update("update project_document set status='FAILED',last_error=?,"
+              + "updated_at=current_timestamp,version=version+1 where id=?",
+          truncate(failure.getMessage()), projectDocumentId);
+      return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
+    } catch (ConflictException failure) {
+      jdbc.update("update project_document set status='FAILED',last_error=?,"
+              + "updated_at=current_timestamp,version=version+1 where id=?",
+          truncate(failure.getMessage()), projectDocumentId);
+      return view(record(projectDocumentId, projectId), null, "FAILED", failure.getMessage());
+    }
+  }
+
+  private Map<String, Object> record(long projectDocumentId, long projectId) {
+    List<Map<String, Object>> values = jdbc.queryForList(
+        "select pd.*,k.title template_title,l.title_cache,l.revision cached_revision,"
+            + "l.outline_url_id,u.display_name confirmed_by_name "
+            + "from project_document pd join knowledge_item k on k.id=pd.source_template_id "
+            + "left join outline_document_link l on l.id=pd.outline_link_id "
+            + "left join app_user u on u.id=pd.confirmed_by "
+            + "where pd.id=? and pd.project_id=?",
+        projectDocumentId, projectId);
+    if (values.isEmpty()) throw new NotFoundException("项目文档不存在");
+    return values.get(0);
+  }
+
+  private Map<String, Object> view(
+      Map<String, Object> row, DocumentView document, Object status, Object lastError) {
+    Map<String, Object> result = new LinkedHashMap<String, Object>();
+    result.put("id", ((Number) row.get("id")).longValue());
+    result.put("stageCode", row.get("stage_code"));
+    result.put("title", document == null
+        ? value(row.get("title_cache"), row.get("template_title")) : document.getTitle());
+    result.put("requirement", row.get("requirement"));
+    result.put("status", status);
+    result.put("revision", document == null ? row.get("cached_revision") : document.getRevision());
+    result.put("confirmedRevision", row.get("confirmed_revision"));
+    result.put("confirmedBy", row.get("confirmed_by"));
+    result.put("confirmedByName", row.get("confirmed_by_name"));
+    result.put("confirmedAt", localDateTime(row.get("confirmed_at")));
+    result.put("outlineUrl", document == null ? null : document.getOutlineUrl());
+    result.put("lastError", lastError);
+    result.put("sourceTemplateId", row.get("source_template_id"));
+    result.put("sourceTemplateRevision", row.get("source_template_revision"));
+    return result;
+  }
+
+  private String contentStatus(String title, String markdown) {
+    if (markdown == null || markdown.trim().isEmpty()) return "TODO";
+    String expectedTitle = plain(title);
+    for (String sourceLine : markdown.split("\\r?\\n")) {
+      String line = plain(sourceLine);
+      if (line.isEmpty() || line.equals(expectedTitle) || hint(line)) continue;
+      if (line.matches("^[-:|\\s]+$") || line.endsWith("：") || line.endsWith(":")) continue;
+      return "PENDING_CONFIRMATION";
+    }
+    return "TODO";
+  }
+
+  private String plain(String value) {
+    if (value == null) return "";
+    return value.replaceAll("<!--.*?-->", "")
+        .replaceFirst("^\\s{0,3}#{1,6}\\s*", "")
+        .replaceFirst("^\\s*[-*+]\\s+", "")
+        .replace("**", "").replace("__", "").replace("`", "").trim();
+  }
+
+  private boolean hint(String line) {
+    String lower = line.toLowerCase();
+    return lower.contains("请补充") || lower.contains("待补充")
+        || lower.contains("请填写") || lower.contains("待填写")
+        || lower.contains("在此填写") || lower.contains("todo") || lower.contains("tbd");
+  }
+
+  private void assertProjectAccess(long projectId, CurrentUser user) {
+    Integer project = jdbc.queryForObject(
+        "select count(*) from delivery_project where id=? and organization_id=?",
+        Integer.class, projectId, user.getOrganizationId());
+    if (project == null || project == 0) {
+      throw new NotFoundException("项目不存在或无权访问");
+    }
+    if (user.getRoles().contains("ADMIN") || user.getRoles().contains("PMO")
+        || user.getPermissions().contains("system:manage")) return;
+    Integer member = jdbc.queryForObject(
+        "select count(*) from project_member where project_id=? and user_id=?",
+        Integer.class, projectId, user.getId());
+    if (member == null || member == 0) {
+      throw new NotFoundException("项目不存在或无权访问");
+    }
+  }
+
+  private Object value(Object preferred, Object fallback) {
+    return preferred == null ? fallback : preferred;
+  }
+
+  private Long nullableLong(Object value) {
+    return value == null ? null : ((Number) value).longValue();
+  }
+
+  private LocalDateTime localDateTime(Object value) {
+    return value == null ? null : ((Timestamp) value).toLocalDateTime();
   }
 
   private String truncate(String message) {
