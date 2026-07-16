@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { RequirePermission } from '../../app/AccessPages'
 import { CustomerPage } from '../customer/CustomerPage'
 import { CustomerCenterTabs } from './CustomerCenterTabs'
+import { OpportunityDetailPage } from './OpportunityDetailPage'
+import { OpportunityOverviewPage } from './OpportunityOverviewPage'
+import { PresaleBoardPage } from './PresaleBoardPage'
 
 function PendingPage({ title }: { title: string }) {
   return <div className="crm-page"><div className="page-heading compact"><div><h2>{title}</h2>
@@ -17,9 +20,9 @@ export function CustomerCenterRoutes() {
     <CustomerCenterTabs />
     <Routes>
       <Route index element={<RequirePermission code="customer:read"><CustomerPage /></RequirePermission>} />
-      <Route path="opportunities" element={<Crm><PendingPage title="商机总览" /></Crm>} />
-      <Route path="opportunities/:id" element={<Crm><PendingPage title="商机详情" /></Crm>} />
-      <Route path="presale" element={<Crm><PendingPage title="售前推进" /></Crm>} />
+      <Route path="opportunities" element={<Crm><OpportunityOverviewPage /></Crm>} />
+      <Route path="opportunities/:id" element={<Crm><OpportunityDetailPage /></Crm>} />
+      <Route path="presale" element={<Crm><PresaleBoardPage /></Crm>} />
       <Route path="implementation" element={<Crm><PendingPage title="实施协同" /></Crm>} />
       <Route path="cockpit" element={<Crm><PendingPage title="实施驾驶舱" /></Crm>} />
       <Route path="operations" element={<Crm><PendingPage title="客户运营" /></Crm>} />

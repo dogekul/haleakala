@@ -360,6 +360,49 @@ button, input { font: inherit; }
 .customer-center-tabs a { flex: 0 0 auto; padding: 10px 16px; color: #646a73; border-radius: 6px; text-decoration: none; }
 .customer-center-tabs a:hover, .customer-center-tabs a.active { color: #245bdb; background: #e8efff; }
 .customer-center-tabs a.active { font-weight: 600; }
+.crm-page { min-width: 0; }
+.crm-kpis { margin-bottom: 14px; }
+.crm-kpis .ant-card { height: 100%; border-color: #e5e6eb; }
+.crm-kpis .ant-card-body { padding: 15px 17px; }
+.crm-kpis .ant-statistic-content { font-size: 22px; }
+.opportunity-funnel { margin-bottom: 14px; border-color: #e5e6eb; }
+.funnel-inline { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.funnel-inline > div { display: flex; justify-content: space-between; max-width: 100%; min-height: 38px; padding: 9px 15px; color: #244baf; border-radius: 5px; background: linear-gradient(90deg,#e8efff,#f4f7ff); }
+.crm-filter { margin-bottom: 14px; border: 1px solid #e5e6eb; }
+.crm-filter .ant-card-body { padding: 11px 13px; }
+.crm-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.crm-toolbar .ant-input-affix-wrapper { width: 230px; }
+.crm-toolbar .ant-select { min-width: 120px; }
+.crm-name-cell, .crm-label-value { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.crm-name-cell a, .crm-name-cell span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-name-cell span, .crm-label-value span { color: #8f959e; font-size: 11px; }
+.crm-ellipsis-card { min-width: 0; height: 160px; overflow: hidden; border-color: #e5e6eb; }
+.crm-card-head, .crm-card-foot { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.crm-card-head a, .crm-ellipsis-card p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-ellipsis-card p { margin: 22px 0; color: #646a73; }
+.presale-board { display: grid; min-width: 1180px; grid-template-columns: repeat(5,1fr); gap: 10px; }
+.presale-page { overflow-x: auto; }
+.presale-column { min-height: 500px; padding: 10px; border-radius: 8px; background: #f5f6f7; }
+.presale-column > header { display: flex; justify-content: space-between; padding: 4px 3px 12px; }
+.presale-column > header span { color: #8f959e; }
+.presale-card { margin-bottom: 9px; border-color: #e5e6eb; }
+.presale-card a { display: block; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.presale-card p { overflow: hidden; margin: 7px 0 14px; color: #8f959e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.crm-drawer-alert { margin-bottom: 16px; }
+.crm-detail-hero { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; padding: 22px 24px; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
+.crm-detail-hero h2.ant-typography { margin: 10px 0 5px; }
+.crm-detail-hero p { margin: 0; color: #646a73; }
+.crm-detail-hero > strong { color: #245bdb; font-size: 24px; }
+.crm-basic-card, .crm-detail-grid .ant-card, .crm-full-link { border-color: #e5e6eb; }
+.crm-detail-grid { margin-top: 14px; }
+.crm-detail-grid .ant-card { height: 100%; }
+.crm-full-link { margin-top: 14px; }
+.full-link-track { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: stretch; gap: 12px; }
+.full-link-track > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 14px; border-radius: 7px; background: #f5f7fb; }
+.full-link-track span { color: #8f959e; font-size: 11px; }
+.full-link-track strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.full-link-track > i { align-self: center; color: #8f959e; font-style: normal; }
+.full-link-track em { color: #8f959e; font-style: normal; }
 .customer-kpis { margin-bottom: 14px; }
 .customer-kpis .ant-card { border-color: #e5e6eb; }
 .customer-kpis .ant-card-body { padding: 16px 18px; }
