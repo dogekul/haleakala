@@ -13,6 +13,7 @@ export interface Project {
   organizationId: number
   code: string
   name: string
+  customerId: number
   customerName: string
   productId: number
   productName: string

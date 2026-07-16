@@ -36,6 +36,9 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
     if (path === '/api/v1/dashboard/projects' || path === '/api/v1/dashboard/risk-heatmap' || path === '/api/v1/dashboard/matrix') {
       return Promise.resolve(new Response('[]', { status: 200 }))
     }
+    if (path === '/api/v1/customers?status=ACTIVE') return Promise.resolve(new Response(JSON.stringify([
+      { id: 81, name: '华东银行', shortName: '华东行', contactName: '王经理', status: 'ACTIVE' },
+    ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     if (path === '/api/v1/products?bindable=true') return Promise.resolve(new Response(JSON.stringify([
       { id: 1, code: 'ACTIVE', name: '生效产品', status: 'ACTIVE' },
       { id: 9, code: 'DRAFT', name: '规划产品', status: 'PLANNING' },
@@ -56,6 +59,11 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
 
   await user.click(await screen.findByRole('button', { name: /快速创建项目$/ }))
   const drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
+  await user.click(within(drawer).getByRole('combobox', { name: '客户' }))
+  expect(await screen.findByRole('option', { name: /华东银行.*华东行/ })).toBeInTheDocument()
+  await user.click(screen.getByText(/华东银行.*华东行/))
+  expect(requests).toContain('/api/v1/customers?status=ACTIVE')
+  expect(client.getQueryData(['active-customers'])).toBeDefined()
   await user.click(within(drawer).getByRole('combobox', { name: '产品' }))
   expect(await screen.findByRole('option', { name: 'ACTIVE · 生效产品' })).toBeVisible()
   expect(screen.queryByRole('option', { name: 'DRAFT · 规划产品' })).not.toBeInTheDocument()
