@@ -405,6 +405,8 @@ PROJECT:<projectId>:DOC:<templateId>
 
 项目创建事务先把适用模版的 ID、发布修订、阶段、必需性和发布正文快照写入 `project_document`；项目和阶段目录是发布的索引文档，后台任务只复制这份不可变快照。初始化成功更新 `delivery_project.document_space_status='READY'`。
 
+V15→V16 升级测试保留真实旧表数据并验证迁移。旧发布模版或待初始化项目缺失快照时，运行时读取其 Outline 源文档并严格比较原修订；一致才回填快照，不一致则以可操作错误中止，防止必需模版被过滤或 SQL `NULL` 被复制为文本 `"null"`。
+
 - [ ] **Step 5: 暴露手动重试**
 
 新增：

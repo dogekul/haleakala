@@ -37,13 +37,13 @@ public class ProjectDocumentService {
     if (projects.isEmpty()) throw new NotFoundException("项目不存在");
     if (projects.get(0).get("document_snapshot_at") != null) return;
     for (Map<String, Object> template : templates(organizationId)) {
+      Snapshot snapshot = publishedSnapshot(template, organizationId);
       ensureProjectDocument(
           projectId, ((Number) template.get("id")).longValue(),
           String.valueOf(template.get("stage_code")),
           ((Number) template.get("published_revision")).longValue(),
           String.valueOf(template.get("requirement")),
-          String.valueOf(template.get("published_title_snapshot")),
-          String.valueOf(template.get("published_markdown_snapshot")));
+          snapshot.title, snapshot.markdown);
     }
     jdbc.update("update delivery_project set document_snapshot_at=current_timestamp,"
             + "updated_at=current_timestamp where id=? and organization_id=? "
@@ -151,14 +151,13 @@ public class ProjectDocumentService {
     if (stageLinkId == null) {
       throw new ConflictException("文档模版阶段不存在：" + stageCode);
     }
-    String title = String.valueOf(template.get("source_title_snapshot"));
-    String markdown = String.valueOf(template.get("source_markdown_snapshot"));
     long projectDocumentId = ((Number) template.get("project_document_id")).longValue();
+    Snapshot snapshot = projectSnapshot(template, organizationId, projectDocumentId);
     String businessKey = "PROJECT:" + projectId + ":DOC:" + templateId;
     try {
       long linkId = documents.createDocument(
           organizationId, businessKey, "PROJECT_DOCUMENT",
-          title, markdown, stageLinkId.longValue());
+          snapshot.title, snapshot.markdown, stageLinkId.longValue());
       jdbc.update("update project_document set outline_link_id=?,status='PENDING',"
               + "last_synced_at=current_timestamp,last_error=null,updated_at=current_timestamp,"
               + "version=version+1 where id=?",
@@ -211,12 +210,11 @@ public class ProjectDocumentService {
   private List<Map<String, Object>> templates(long organizationId) {
     return jdbc.queryForList(
         "select k.id,c.stage_code,c.requirement,c.published_revision,"
-            + "c.published_title_snapshot,c.published_markdown_snapshot "
+            + "c.published_title_snapshot,c.published_markdown_snapshot,"
+            + "k.outline_link_id,k.title "
             + "from knowledge_item k join document_template_config c on c.knowledge_item_id=k.id "
             + "where k.organization_id=? and k.type='TEMPLATE' and k.status='PUBLISHED' "
-            + "and c.enabled=true and c.published_revision is not null "
-            + "and c.published_title_snapshot is not null "
-            + "and c.published_markdown_snapshot is not null order by k.id",
+            + "and c.enabled=true and c.published_revision is not null order by k.id",
         organizationId);
   }
 
@@ -224,10 +222,105 @@ public class ProjectDocumentService {
     return jdbc.queryForList(
         "select pd.id project_document_id,pd.source_template_id id,"
             + "pd.source_template_revision published_revision,pd.stage_code,pd.requirement,"
-            + "pd.source_title_snapshot,pd.source_markdown_snapshot "
-            + "from project_document pd "
+            + "pd.source_title_snapshot,pd.source_markdown_snapshot,pd.outline_link_id,"
+            + "project_link.outline_document_id project_outline_document_id,"
+            + "k.outline_link_id source_outline_link_id,k.title "
+            + "from project_document pd join knowledge_item k on k.id=pd.source_template_id "
+            + "left join outline_document_link project_link on project_link.id=pd.outline_link_id "
             + "where pd.project_id=? order by pd.id",
         projectId);
+  }
+
+  private Snapshot publishedSnapshot(Map<String, Object> template, long organizationId) {
+    if (template.get("published_title_snapshot") != null
+        && template.get("published_markdown_snapshot") != null) {
+      return new Snapshot(
+          String.valueOf(template.get("published_title_snapshot")),
+          String.valueOf(template.get("published_markdown_snapshot")));
+    }
+    long templateId = ((Number) template.get("id")).longValue();
+    long revision = ((Number) template.get("published_revision")).longValue();
+    Snapshot recovered = recoverSnapshot(
+        template.get("outline_link_id"), organizationId, revision,
+        "已发布文档模版“" + template.get("title")
+            + "”缺少升级快照且 Outline 修订已变化，请重新发布模版");
+    int changed = jdbc.update(
+        "update document_template_config set published_title_snapshot=?,"
+            + "published_markdown_snapshot=?,updated_at=current_timestamp,version=version+1 "
+            + "where knowledge_item_id=? and published_revision=? "
+            + "and (published_title_snapshot is null or published_markdown_snapshot is null)",
+        recovered.title, recovered.markdown, templateId, revision);
+    if (changed == 0) {
+      Map<String, Object> current = jdbc.queryForMap(
+          "select published_revision,published_title_snapshot,published_markdown_snapshot "
+              + "from document_template_config where knowledge_item_id=?",
+          templateId);
+      if (((Number) current.get("published_revision")).longValue() != revision
+          || current.get("published_title_snapshot") == null
+          || current.get("published_markdown_snapshot") == null) {
+        throw new ConflictException("文档模版发布状态已变化，请刷新后重试");
+      }
+      return new Snapshot(
+          String.valueOf(current.get("published_title_snapshot")),
+          String.valueOf(current.get("published_markdown_snapshot")));
+    }
+    return recovered;
+  }
+
+  private Snapshot projectSnapshot(
+      Map<String, Object> template, long organizationId, long projectDocumentId) {
+    if (template.get("source_title_snapshot") != null
+        && template.get("source_markdown_snapshot") != null) {
+      return new Snapshot(
+          String.valueOf(template.get("source_title_snapshot")),
+          String.valueOf(template.get("source_markdown_snapshot")));
+    }
+    if (template.get("project_outline_document_id") != null) {
+      return new Snapshot(String.valueOf(template.get("title")), "");
+    }
+    long revision = ((Number) template.get("published_revision")).longValue();
+    Snapshot recovered = recoverSnapshot(
+        template.get("source_outline_link_id"), organizationId, revision,
+        "项目文档模版“" + template.get("title")
+            + "”缺少升级快照且 Outline 修订已变化，无法安全初始化；请重新创建项目");
+    int changed = jdbc.update(
+        "update project_document set source_title_snapshot=?,source_markdown_snapshot=?,"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where id=? and source_template_revision=? "
+            + "and (source_title_snapshot is null or source_markdown_snapshot is null)",
+        recovered.title, recovered.markdown, projectDocumentId, revision);
+    if (changed == 0) {
+      Map<String, Object> current = jdbc.queryForMap(
+          "select source_template_revision,source_title_snapshot,source_markdown_snapshot "
+              + "from project_document where id=?",
+          projectDocumentId);
+      if (((Number) current.get("source_template_revision")).longValue() != revision
+          || current.get("source_title_snapshot") == null
+          || current.get("source_markdown_snapshot") == null) {
+        throw new ConflictException("项目文档快照状态已变化，请重试");
+      }
+      return new Snapshot(
+          String.valueOf(current.get("source_title_snapshot")),
+          String.valueOf(current.get("source_markdown_snapshot")));
+    }
+    return recovered;
+  }
+
+  private Snapshot recoverSnapshot(
+      Object linkValue, long organizationId, long expectedRevision, String conflictMessage) {
+    if (linkValue == null) {
+      throw new ConflictException(conflictMessage);
+    }
+    DocumentView current;
+    try {
+      current = documents.readLink(((Number) linkValue).longValue(), organizationId);
+    } catch (ConflictException missingDocument) {
+      throw new ConflictException(conflictMessage);
+    }
+    if (current.getRevision() != expectedRevision) {
+      throw new ConflictException(conflictMessage);
+    }
+    return new Snapshot(current.getTitle(), current.getMarkdown());
   }
 
   private Map<String, Object> refresh(
@@ -382,5 +475,15 @@ public class ProjectDocumentService {
   private String truncate(String message) {
     if (message == null) return "项目文档空间初始化失败";
     return message.length() <= 1000 ? message : message.substring(0, 1000);
+  }
+
+  private static final class Snapshot {
+    private final String title;
+    private final String markdown;
+
+    private Snapshot(String title, String markdown) {
+      this.title = title;
+      this.markdown = markdown;
+    }
   }
 }

@@ -174,6 +174,89 @@ class ProjectDocumentInitializationTest {
   }
 
   @Test
+  void hydratesLegacyPublishedTemplateSnapshotBeforeCreatingProject() {
+    seedTemplate(7151, "旧发布模板", "START", "REQUIRED", true, "PUBLISHED", 7);
+    jdbc.update("update document_template_config set published_title_snapshot=null,"
+        + "published_markdown_snapshot=null where knowledge_item_id=7852");
+
+    ProjectView project = projects.create(command("PRJ-LEGACY-TEMPLATE"));
+
+    Map<String, Object> published = jdbc.queryForMap(
+        "select published_title_snapshot,published_markdown_snapshot "
+            + "from document_template_config where knowledge_item_id=7852");
+    assertEquals("旧发布模板", published.get("published_title_snapshot"));
+    assertEquals("# 旧发布模板\n\n请补充项目目标",
+        published.get("published_markdown_snapshot"));
+    Map<String, Object> snapshot = jdbc.queryForMap(
+        "select source_title_snapshot,source_markdown_snapshot "
+            + "from project_document where project_id=?",
+        project.getId());
+    assertEquals("旧发布模板", snapshot.get("source_title_snapshot"));
+    assertEquals("# 旧发布模板\n\n请补充项目目标",
+        snapshot.get("source_markdown_snapshot"));
+  }
+
+  @Test
+  void rejectsLegacyPublishedTemplateWhenOutlineRevisionHasChanged() {
+    seedTemplate(7152, "无法恢复的旧模板", "START", "REQUIRED", true, "PUBLISHED", 7);
+    jdbc.update("update document_template_config set published_title_snapshot=null,"
+        + "published_markdown_snapshot=null where knowledge_item_id=7853");
+    outlineDocuments.put("template-7152", document(
+        "template-7152", null, "无法恢复的旧模板（已修改）", "# 新正文", 8));
+
+    ConflictException failure = assertThrows(
+        ConflictException.class, () -> projects.create(command("PRJ-LEGACY-CONFLICT")));
+
+    assertTrue(failure.getMessage().contains("重新发布"));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from delivery_project where code='PRJ-LEGACY-CONFLICT'",
+        Integer.class));
+  }
+
+  @Test
+  void hydratesLegacyPendingProjectSnapshotBeforeInitialization() {
+    ProjectView project = projects.create(command("PRJ-LEGACY-PENDING"));
+    seedTemplate(7153, "旧项目待初始化模板", "START", "REQUIRED", true, "PUBLISHED", 9);
+    jdbc.update("insert into project_document(project_id,stage_code,source_template_id,"
+            + "source_template_revision,requirement,status) values (?,?,?,?,?,'PENDING')",
+        project.getId(), "START", 7854, 9, "REQUIRED");
+
+    projectDocuments.initialize(project.getId());
+
+    Map<String, Object> snapshot = jdbc.queryForMap(
+        "select source_title_snapshot,source_markdown_snapshot,outline_link_id "
+            + "from project_document where project_id=?",
+        project.getId());
+    assertEquals("旧项目待初始化模板", snapshot.get("source_title_snapshot"));
+    assertEquals("# 旧项目待初始化模板\n\n请补充项目目标",
+        snapshot.get("source_markdown_snapshot"));
+    assertNotNull(snapshot.get("outline_link_id"));
+    assertTrue(outlineDocuments.values().stream().anyMatch(document ->
+        "旧项目待初始化模板".equals(document.getTitle())
+            && "# 旧项目待初始化模板\n\n请补充项目目标".equals(document.getText())
+            && !"template-7153".equals(document.getId())));
+  }
+
+  @Test
+  void rejectsLegacyPendingProjectWhenSourceRevisionCannotBeRecovered() {
+    ProjectView project = projects.create(command("PRJ-LEGACY-PENDING-CONFLICT"));
+    seedTemplate(7154, "旧项目冲突模板", "START", "REQUIRED", true, "PUBLISHED", 9);
+    jdbc.update("insert into project_document(project_id,stage_code,source_template_id,"
+            + "source_template_revision,requirement,status) values (?,?,?,?,?,'PENDING')",
+        project.getId(), "START", 7855, 9, "REQUIRED");
+    outlineDocuments.put("template-7154", document(
+        "template-7154", null, "旧项目冲突模板（已更新）", "# 新正文", 10));
+
+    ConflictException failure = assertThrows(
+        ConflictException.class, () -> projectDocuments.initialize(project.getId()));
+
+    assertTrue(failure.getMessage().contains("重新创建项目"));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from project_document where project_id=? and outline_link_id is not null",
+        Integer.class, project.getId()));
+  }
+
+  @Test
   void retriesUnavailableOutlineThenAllowsManualRecovery() throws Exception {
     seedTemplate(7201, "需求调研纪要", "REQUIREMENT", "REQUIRED", true, "PUBLISHED", 2);
     outlineAvailable.set(false);
