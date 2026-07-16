@@ -1,6 +1,7 @@
 import { api } from '../../services/api'
 import type {
-  AdminUser, AuditResult, Permission, Role, SystemSettings, Team,
+  AdminUser, AuditResult, DocumentCenterJob, DocumentCenterStatus, Permission, Role,
+  SystemSettings, Team,
 } from './types'
 
 export const adminApi = {
@@ -36,4 +37,22 @@ export const adminApi = {
   saveSettings: (input: SystemSettings) => api<SystemSettings>('/api/v1/admin/settings', {
     method: 'PUT', body: JSON.stringify(input),
   }),
+  documentCenterStatus: () => api<DocumentCenterStatus>(
+    '/api/v1/admin/document-center/status',
+  ),
+  documentCenterJobs: (status?: DocumentCenterJob['status']) => api<DocumentCenterJob[]>(
+    `/api/v1/admin/document-center/jobs${status ? `?status=${status}` : ''}`,
+  ),
+  initializeDocumentCenter: () => api<Record<string, unknown>>(
+    '/api/v1/admin/document-center/initialize', { method: 'POST' },
+  ),
+  migrateKnowledgeDocuments: () => api<{ enqueued: number }>(
+    '/api/v1/admin/document-center/migrate-knowledge', { method: 'POST' },
+  ),
+  migrateProjectDocuments: () => api<{ enqueued: number }>(
+    '/api/v1/admin/document-center/migrate-projects', { method: 'POST' },
+  ),
+  retryDocumentJob: (id: number) => api<{ id: number; status: string }>(
+    `/api/v1/admin/document-center/jobs/${id}/retry`, { method: 'POST' },
+  ),
 }

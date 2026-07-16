@@ -60,3 +60,31 @@ export interface SystemSettings {
   supportEmail: string
   agentTimeoutMinutes: number
 }
+
+export interface DocumentCenterJob {
+  id: number
+  jobType: 'PROJECT_INIT' | 'PROJECT_MIGRATION' | 'KNOWLEDGE_MIGRATION'
+  businessKey: string
+  businessId?: number
+  status: 'PENDING' | 'RUNNING' | 'RETRY' | 'DONE' | 'FAILED'
+  attemptCount: number
+  lastError?: string
+  startedAt?: string
+  completedAt?: string
+  updatedAt: string
+}
+
+export interface DocumentCenterStatus {
+  integrationStatus: 'NOT_CONFIGURED' | 'READY' | 'FAILED'
+  collectionId: string
+  knowledgeRoot: { linkId?: number; status: string; lastError?: string }
+  projectRoot: { linkId?: number; status: string; lastError?: string }
+  jobs: {
+    pending: number
+    running: number
+    success: number
+    failed: number
+  }
+  failedJobs: DocumentCenterJob[]
+  recentError?: string
+}

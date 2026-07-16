@@ -14,6 +14,7 @@ import { Link, useParams } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
 import { ApiError } from '../../services/api'
+import { ProjectDocuments } from './ProjectDocuments'
 import { projectApi } from './projectApi'
 import { stageNames, type Project } from './types'
 
@@ -38,8 +39,9 @@ function ProjectDetailContent({ project }: { project: Project }) {
     </div>
     <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'lifecycle', label: '七阶段看板', children: <Lifecycle project={project} /> },
+      { key: 'documents', label: <span><FileTextOutlined /> 项目文档</span>, children: <ProjectDocuments project={project} /> },
       { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
-      { key: 'templates', label: '模板中心', children: <Templates project={project} /> },
+      { key: 'templates', label: '模板中心', children: <Templates /> },
       { key: 'risks', label: `风险登记册 (${project.risks.length})`, children: <Risks project={project} /> },
       { key: 'milestones', label: '里程碑与时间线', children: <Milestones project={project} /> },
       { key: 'settings', label: <span><SettingOutlined /> 项目信息与设置</span>, children: <Settings project={project} /> },
@@ -51,13 +53,58 @@ function Lifecycle({ project }: { project: Project }) {
   const client = useQueryClient()
   const currentIndex = project.stages.findIndex(item => item.code === project.currentStage)
   const next = project.stages[currentIndex + 1]
-  const advance = useMutation({ mutationFn: (mode: string) => projectApi.advance(project.id, next.code, mode),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['project', project.id] }); message.success('阶段推进成功') },
-    onError: (error) => { if (error instanceof ApiError && error.status === 409) Modal.confirm({
-      title: '阶段门禁未通过', content: `${error.message}。是否以警告模式继续？`, okText: '记录警告并推进',
-      onOk: () => advance.mutate('WARNING'),
-    }) },
+  const documents = useQuery({
+    queryKey: ['project-documents', project.id],
+    queryFn: () => projectApi.documents(project.id),
+    enabled: project.gateMode === 'WARNING',
   })
+  const advance = useMutation({ mutationFn: () => projectApi.advance(project.id, next.code),
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['project', project.id] }); message.success('阶段推进成功') },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        const missing = gateMessages(error.message)
+        Modal.error({
+          title: '阶段门禁未通过',
+          content: <List
+            size="small"
+            dataSource={missing}
+            renderItem={item => <List.Item>{item}</List.Item>}
+          />,
+        })
+      }
+    },
+  })
+  const requestAdvance = () => {
+    if (project.gateMode !== 'WARNING') {
+      advance.mutate()
+      return
+    }
+    const current = project.stages[currentIndex]
+    const warnings = [
+      ...(current?.gateStatus === 'BLOCKING'
+        ? [current.gateMessage || '阶段门禁未通过']
+        : []),
+      ...(documents.data ?? [])
+        .filter(item => item.stageCode === project.currentStage
+          && item.requirement === 'REQUIRED' && item.status !== 'COMPLETED')
+        .map(item => `未完成必需文档：${item.title}`),
+    ]
+    if (!warnings.length) {
+      advance.mutate()
+      return
+    }
+    Modal.confirm({
+      title: '阶段存在未完成项',
+      content: <List
+        size="small"
+        dataSource={warnings}
+        renderItem={item => <List.Item>{item}</List.Item>}
+      />,
+      okText: '记录警告并推进',
+      cancelText: '继续完善',
+      onOk: () => advance.mutate(),
+    })
+  }
   return <div>
     <Card className="lifecycle-card">
       <Steps current={currentIndex} items={project.stages.map(stage => ({
@@ -67,7 +114,12 @@ function Lifecycle({ project }: { project: Project }) {
       }))} />
       <div className="stage-focus"><div><span>阶段 {currentIndex + 1} / 7</span><h3>{stageNames[project.currentStage]}</h3>
         <p>{project.stages[currentIndex]?.gateMessage ?? '按交付检查清单完成本阶段任务和产出物。'}</p></div>
-        {next ? <Button type="primary" loading={advance.isPending} onClick={() => advance.mutate('BLOCK')}>推进至 {next.name}</Button> : <Tag color="green">全部阶段已完成</Tag>}</div>
+        {next ? <Button
+          aria-label={`推进至${next.name}`}
+          type="primary"
+          loading={advance.isPending || documents.isLoading}
+          onClick={requestAdvance}
+        >推进至 {next.name}</Button> : <Tag color="green">全部阶段已完成</Tag>}</div>
     </Card>
     <Row gutter={16} className="detail-grid"><Col span={16}><Card title="最近活动">
       <Timeline items={project.activities.slice(0, 8).map(activity => ({ children: <div><strong>{String(activity.summary)}</strong><p>{String(activity.actorName ?? '系统')} · {String(activity.createdAt ?? '')}</p></div> }))} />
@@ -132,30 +184,24 @@ function Milestones({ project }: { project: Project }) {
   </Row>
 }
 
-function Templates({ project }: { project: Project }) {
-  const [editing, setEditing] = useState<Record<string, unknown> | null>()
-  const [form] = Form.useForm()
-  const client = useQueryClient()
-  const save = useMutation({ mutationFn: (values: Record<string, unknown>) => projectApi.saveTemplate(project.id,
-    editing?.id ? Number(editing.id) : null, { ...values, version: Number(editing?.version ?? 0) }),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['project', project.id] }); setEditing(undefined); message.success('模板已保存') },
-    onError: (error) => { if (error instanceof ApiError && error.status === 409) message.error(error.message) },
-  })
-  const presets = ['项目启动检查清单', '项目周报', '风险登记册', '需求采集单', '上线切换检查清单', '项目验收报告']
-  return <Card title="项目模板中心" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing({}); form.resetFields() }}>新建模板</Button>}>
-    <Row gutter={[16, 16]}>{project.templates.map(item => <Col span={8} key={Number(item.id)}><Card size="small" hoverable onClick={() => { setEditing(item); form.setFieldsValue(item) }}>
-      <FileTextOutlined className="template-icon" /><h4>{String(item.title)}</h4><Space><Tag>{String(item.status)}</Tag><span>v{Number(item.version) + 1}</span></Space></Card></Col>)}</Row>
-    {!project.templates.length && <Empty description="从 34 个交付模板中创建项目实例" />}
-    <Modal width={760} title={editing?.id ? '编辑模板' : '创建模板'} open={editing !== undefined} onCancel={() => setEditing(undefined)}
-      onOk={() => form.submit()} confirmLoading={save.isPending}>
-      <Form form={form} layout="vertical" onFinish={values => save.mutate(values)} initialValues={{ status: 'DRAFT' }}>
-        <Row gutter={12}><Col span={10}><Form.Item label="模板" name="templateKey" rules={[{ required: true }]}><Select options={presets.map(value => ({ value, label: value }))} /></Form.Item></Col>
-          <Col span={14}><Form.Item label="标题" name="title" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
-        <Form.Item label="Markdown 内容" name="contentMarkdown" rules={[{ required: true }]}><Input.TextArea rows={14} className="markdown-editor" /></Form.Item>
-        <Form.Item label="状态" name="status"><Radio.Group options={[{ value: 'DRAFT', label: '草稿' }, { value: 'REVIEWED', label: '已评审' }, { value: 'APPROVED', label: '已批准' }]} /></Form.Item>
-      </Form>
-    </Modal>
+function Templates() {
+  return <Card className="project-template-migration">
+    <FileTextOutlined />
+    <Typography.Title level={3}>项目文档模版已统一迁移到知识库</Typography.Title>
+    <Typography.Paragraph>
+      请在“知识库 → 文档模版”维护适用阶段、必需性和 Outline 正文。
+      新建项目会自动复制当前已发布模版，既有项目副本不会被后续模版修改覆盖。
+    </Typography.Paragraph>
+    <Button type="primary"><Link to="/knowledge">前往文档模版</Link></Button>
   </Card>
+}
+
+function gateMessages(messageText: string) {
+  return messageText.split('；').flatMap(part => {
+    const trimmed = part.trim()
+    if (!trimmed.startsWith('未完成必需文档')) return trimmed ? [trimmed] : []
+    return trimmed.replace(/^未完成必需文档[：:]/, '').split('、').filter(Boolean)
+  })
 }
 
 function Settings({ project }: { project: Project }) {

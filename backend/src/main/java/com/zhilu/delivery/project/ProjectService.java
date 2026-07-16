@@ -2,6 +2,8 @@ package com.zhilu.delivery.project;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.document.DocumentJobService;
+import com.zhilu.delivery.document.ProjectDocumentService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.operation.CustomerOperationService;
 import java.sql.Date;
@@ -24,10 +26,16 @@ public class ProjectService {
       Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
   private final CustomerOperationService operations;
+  private final DocumentJobService documentJobs;
+  private final ProjectDocumentService projectDocuments;
 
-  public ProjectService(JdbcTemplate jdbc, CustomerOperationService operations) {
+  public ProjectService(
+      JdbcTemplate jdbc, CustomerOperationService operations, DocumentJobService documentJobs,
+      ProjectDocumentService projectDocuments) {
     this.jdbc = jdbc;
     this.operations = operations;
+    this.documentJobs = documentJobs;
+    this.projectDocuments = projectDocuments;
   }
 
   @Transactional
@@ -80,6 +88,8 @@ public class ProjectService {
           projectId, command.getCreatedByUserId(), "DELIVERY_ENGINEER");
     }
     activity(projectId, command.getCreatedByUserId(), "PROJECT_CREATED", "创建项目并初始化七阶段", null);
+    projectDocuments.snapshotTemplates(projectId, command.getOrganizationId());
+    documentJobs.enqueueProjectInitialization(command.getOrganizationId(), projectId);
     return get(projectId);
   }
 
@@ -123,7 +133,9 @@ public class ProjectService {
             row.getString("product_name"), row.getLong("product_version_id"),
             row.getString("version_name"), row.getLong("manager_user_id"),
             row.getString("manager_name"), row.getString("status"), row.getString("current_stage"),
-            row.getString("risk_level"), row.getString("gate_mode"), localDate(row.getDate("start_date")),
+            row.getString("risk_level"), row.getString("gate_mode"),
+            row.getString("document_space_status"), row.getString("document_space_error"),
+            localDate(row.getDate("start_date")),
             localDate(row.getDate("planned_end_date")), row.getLong("version"),
             stages(projectId), members(projectId), risks(projectId), milestones(projectId),
             templates(projectId), artifacts(projectId), activities(projectId)), projectId);
@@ -145,6 +157,13 @@ public class ProjectService {
   }
 
   @Transactional
+  public ProjectView retryDocumentInitialization(long projectId, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    documentJobs.retryProjectInitialization(project.getOrganizationId(), projectId);
+    return get(projectId);
+  }
+
+  @Transactional
   public ProjectView advanceStage(
       long projectId, DeliveryStage target, CurrentUser user) {
     ProjectView project = get(projectId, user);
@@ -159,8 +178,22 @@ public class ProjectService {
         "select gate_status,gate_message from stage_instance where project_id=? and stage_code=?",
         projectId, current.name());
     boolean blocked = "BLOCKING".equals(gate.get("gate_status"));
-    if (blocked && GateMode.BLOCK.name().equals(project.getGateMode())) {
-      throw new ConflictException(String.valueOf(gate.get("gate_message")));
+    List<String> warnings = new ArrayList<String>();
+    if (blocked) {
+      Object gateMessage = gate.get("gate_message");
+      warnings.add(gateMessage == null ? "阶段门禁未通过" : String.valueOf(gateMessage));
+    }
+    List<Map<String, Object>> incompleteDocuments =
+        projectDocuments.incompleteRequired(projectId, current);
+    if (!incompleteDocuments.isEmpty()) {
+      List<String> titles = new ArrayList<String>();
+      for (Map<String, Object> document : incompleteDocuments) {
+        titles.add(String.valueOf(document.get("title")));
+      }
+      warnings.add("未完成必需文档：" + String.join("、", titles));
+    }
+    if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
+      throw new ConflictException(String.join("；", warnings));
     }
     jdbc.update("update stage_instance set status='COMPLETED',completed_at=current_timestamp,"
             + "updated_at=current_timestamp,version=version+1 where project_id=? and stage_code=?",
@@ -170,10 +203,11 @@ public class ProjectService {
         projectId, target.name());
     jdbc.update("update delivery_project set current_stage=?,updated_at=current_timestamp,"
             + "version=version+1 where id=?", target.name(), projectId);
+    boolean warned = !warnings.isEmpty();
     activity(projectId, user.getId(),
-        blocked ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
+        warned ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
         "项目阶段推进至" + target.getDisplayName(),
-        blocked ? String.valueOf(gate.get("gate_message")) : null);
+        warned ? String.join("；", warnings) : null);
     if (target == DeliveryStage.CLOSE) {
       operations.ensureForClosedProject(user.getOrganizationId(), projectId, user.getId());
     }

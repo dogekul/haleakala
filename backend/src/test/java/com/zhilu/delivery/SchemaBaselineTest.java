@@ -338,6 +338,110 @@ class SchemaBaselineTest {
         Integer.class));
   }
 
+  @Test
+  void outlineDocumentCenterSchemaIsInstalled() {
+    assertEquals(Integer.valueOf(4), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name in ('outline_document_link','document_template_config',"
+            + "'project_document','document_job')", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='knowledge_item' and column_name='outline_link_id'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='delivery_project' and column_name='document_space_status'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='delivery_project' and column_name='document_snapshot_at'",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='document_template_config' "
+            + "and column_name in ('published_title_snapshot','published_markdown_snapshot')",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='project_document' "
+            + "and column_name in ('source_title_snapshot','source_markdown_snapshot')",
+        Integer.class));
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='document_job' "
+            + "and column_name in ('lease_token','lease_expires_at')",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='outline_document_link' "
+            + "and constraint_name='uk_outline_business_key'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='project_document' "
+            + "and constraint_name='uk_project_document_template'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='document_job' "
+            + "and constraint_name='uk_document_job_business_key'", Integer.class));
+  }
+
+  @Test
+  void v16UpgradesPublishedTemplatesAndPendingProjectsCreatedOnV15() {
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        "jdbc:h2:mem:legacy-document-center;MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
+            + "DB_CLOSE_DELAY=-1",
+        "sa", "");
+    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("15"))
+        .load().migrate();
+    JdbcTemplate legacy = new JdbcTemplate(dataSource);
+    legacy.update("insert into organization(id,name,code) values (995,'旧文档组织','LEGACY-DOC')");
+    legacy.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (995,995,'legacy-doc','旧文档管理员','ACTIVE')");
+    legacy.update("insert into product(id,organization_id,code,name,status) "
+        + "values (995,995,'LEGACY-DOC','旧文档产品','ACTIVE')");
+    legacy.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (995,995,'V1','RELEASED')");
+    legacy.update("insert into customer(id,organization_id,name,status) "
+        + "values (995,995,'旧文档客户','ACTIVE')");
+    legacy.update("insert into delivery_project(id,organization_id,code,name,customer_name,"
+            + "customer_id,product_id,product_version_id,manager_user_id,status,current_stage,"
+            + "risk_level,gate_mode,created_by,document_snapshot_at) values "
+            + "(995,995,'LEGACY-DOC-PRJ','旧文档项目','旧文档客户',995,995,995,995,"
+            + "'ACTIVE','START','GREEN','BLOCK',995,current_timestamp)");
+    legacy.update("insert into outline_document_link(id,organization_id,business_key,purpose,"
+            + "outline_collection_id,outline_document_id,title_cache,revision,sync_status) "
+            + "values (995,995,'KNOWLEDGE:995','KNOWLEDGE_TEMPLATE','collection',"
+            + "'legacy-template','旧发布模板',7,'READY')");
+    legacy.update("insert into knowledge_item(id,organization_id,type,title,summary,content_text,"
+            + "visibility,status,owner_user_id,outline_link_id) values "
+            + "(995,995,'TEMPLATE','旧发布模板','摘要','# 旧正文','ORGANIZATION',"
+            + "'PUBLISHED',995,995)");
+    legacy.update("insert into document_template_config(knowledge_item_id,stage_code,"
+            + "requirement,enabled,published_revision) "
+            + "values (995,'START','REQUIRED',true,7)");
+    legacy.update("insert into project_document(id,project_id,stage_code,source_template_id,"
+            + "source_template_revision,requirement,status) "
+            + "values (995,995,'START',995,7,'REQUIRED','PENDING')");
+    legacy.update("insert into document_job(id,organization_id,job_type,business_key,business_id,"
+            + "status) values (995,995,'PROJECT_INIT','PROJECT:995',995,'PENDING')");
+
+    Flyway.configure().dataSource(dataSource).load().migrate();
+
+    assertEquals("16", legacy.queryForObject(
+        "select version from flyway_schema_history where success=true "
+            + "order by installed_rank desc limit 1",
+        String.class));
+    assertNull(legacy.queryForObject(
+        "select published_title_snapshot from document_template_config "
+            + "where knowledge_item_id=995",
+        String.class));
+    assertNull(legacy.queryForObject(
+        "select source_markdown_snapshot from project_document where id=995",
+        String.class));
+    assertEquals("PENDING", legacy.queryForObject(
+        "select status from document_job where id=995", String.class));
+  }
+
   private DriverManagerDataSource legacyDataSource(String name) {
     DriverManagerDataSource dataSource = new DriverManagerDataSource(
         "jdbc:h2:mem:" + name + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",

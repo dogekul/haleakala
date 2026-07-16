@@ -14,7 +14,7 @@ function LocationProbe() {
   return <span data-testid="location">{useLocation().pathname}</span>
 }
 
-it('提供四个可用的系统管理入口并默认进入用户团队', async () => {
+it('提供五个可用的系统管理入口并默认进入用户团队', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes('/settings')) return json({
@@ -32,13 +32,53 @@ it('提供四个可用的系统管理入口并默认进入用户团队', async (
 
   expect(await screen.findByRole('heading', { name: '用户与团队' })).toBeVisible()
   expect(screen.getByRole('link', { name: '用户与团队' })).toHaveClass('active')
-  for (const name of ['用户与团队', '角色权限', '审计日志', '系统设置']) {
+  for (const name of ['用户与团队', '角色权限', '审计日志', '文档中心', '系统设置']) {
     expect(screen.getByRole('link', { name })).toBeVisible()
   }
   expect(screen.queryByRole('link', { name: '产品目录' })).not.toBeInTheDocument()
 
   await userEvent.click(screen.getByRole('link', { name: '系统设置' }))
   expect(await screen.findByRole('heading', { name: '系统设置' })).toBeVisible()
+})
+
+it('文档中心展示连接、根目录和可重试任务', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/v1/admin/document-center/status') return json({
+      integrationStatus: 'READY',
+      collectionId: 'collection-id',
+      knowledgeRoot: { linkId: 11, status: 'READY' },
+      projectRoot: { linkId: 12, status: 'READY' },
+      jobs: { pending: 1, running: 0, success: 8, failed: 1 },
+      failedJobs: [{ id: 99 }],
+    })
+    if (url === '/api/v1/admin/document-center/jobs') return json([{
+      id: 99, jobType: 'PROJECT_INIT', businessKey: 'PROJECT:9', businessId: 9,
+      status: 'FAILED', attemptCount: 3, lastError: 'Outline 暂不可用',
+      updatedAt: '2026-07-16T08:00:00Z',
+    }])
+    if (url === '/api/v1/admin/document-center/jobs/99/retry' && init?.method === 'POST') {
+      return json({ id: 99, status: 'PENDING' })
+    }
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}>
+    <MemoryRouter initialEntries={['/admin/document-center']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Routes><Route path="/admin/*" element={<AdminPage />} /></Routes>
+    </MemoryRouter>
+  </QueryClientProvider>)
+
+  expect(await screen.findByRole('heading', { name: '文档中心' })).toBeVisible()
+  expect(screen.getByText('知识库根目录')).toBeVisible()
+  expect(screen.getByText('项目文档根目录')).toBeVisible()
+  expect(await screen.findByText('Outline 暂不可用')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: '重试' }))
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/jobs/99/retry',
+    expect.objectContaining({ method: 'POST' }),
+  )
 })
 
 it('旧产品目录地址单向重定向到产品中心', async () => {

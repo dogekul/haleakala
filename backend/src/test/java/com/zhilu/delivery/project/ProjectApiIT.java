@@ -36,6 +36,7 @@ class ProjectApiIT {
     jdbc.update("delete from stage_instance");
     jdbc.update("delete from project_member");
     jdbc.update("delete from delivery_project");
+    jdbc.update("delete from document_job");
     jdbc.update("delete from customer");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");

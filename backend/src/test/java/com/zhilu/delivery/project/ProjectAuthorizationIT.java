@@ -41,6 +41,7 @@ class ProjectAuthorizationIT {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {"project_activity", "project_artifact", "template_instance",
         "milestone", "project_risk", "stage_instance", "project_member", "delivery_project",
+        "document_job",
         "customer", "product_version", "product", "app_user", "organization"}) {
       jdbc.update("delete from " + table);
     }
@@ -79,6 +80,9 @@ class ProjectAuthorizationIT {
     mvc.perform(post("/api/v1/projects/{id}/advance", projectId).with(outsider).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"targetStage\":\"REQUIREMENT\",\"mode\":\"WARNING\"}"))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/projects/{id}/documents/retry", projectId)
+            .with(outsider).with(csrf()))
         .andExpect(status().isNotFound());
     mvc.perform(put("/api/v1/projects/{id}/stages/START/gate", projectId)
             .with(outsider).with(csrf()).contentType(MediaType.APPLICATION_JSON)

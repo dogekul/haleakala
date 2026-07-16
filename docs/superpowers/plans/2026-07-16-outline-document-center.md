@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将私有化 Outline 接入为知识库与项目文档的唯一正文、附件和修订中心，自动建立项目七阶段目录与模版副本，并完成系统内编辑预览、确认门禁、四种导出、历史迁移和失败重试。
+**Goal:** 将私有化 Outline 接入为知识库与项目文档的唯一正文、目录和修订中心，自动建立项目七阶段目录与模版副本，并完成系统内编辑预览、确认门禁、四种导出、历史迁移和失败重试。
 
 **Architecture:** 后端新增 `document` 包统一封装 Outline RPC API、业务映射、初始化任务、迁移和导出；MySQL 只保存业务关系、缓存、版本确认及任务状态，Outline 保存 Markdown 正文与修订。知识库和项目模块通过 `DocumentCenterService` 使用同一文档能力，React 复用一个文档编辑/预览组件，浏览器永远不接触 Outline API Key。
 
@@ -15,7 +15,7 @@
 - Outline 文档 `revision` 是并发保存、模版发布和项目文档确认的唯一版本依据。
 - 创建项目的本地事务不能依赖 Outline 可用性；只入队初始化任务并返回项目。
 - 目录是 Outline 索引文档，通过 `parentDocumentId` 建立层级；所有关系通过本地映射 ID 识别。
-- 现有 `knowledge_item.content_text`、`template_instance` 和培训附件只在迁移完成前作为只读回退，不再成为新正文来源。
+- 现有 `knowledge_item.content_text`、`template_instance` 只在迁移完成前作为只读回退，不再成为新正文来源。培训附件继续使用现有 MinIO 文件中心。
 - 文档模版后续修改不覆盖既有项目副本；项目记录固化来源模版与发布修订号。
 - 阶段推进由后端实时读取必需文档修订并检查确认状态；`BLOCK` 阻断，`WARNING` 记录清单后允许推进。
 - 每个行为先写失败测试，再写最小实现；每完成一个任务运行指定测试并提交。
@@ -335,7 +335,7 @@ KNOWLEDGE_TYPE:TEMPLATE
 
 - [ ] **Step 4: 发布时固化修订**
 
-`publish` 调用 `readLink`，非空后将知识状态设为 `PUBLISHED`；`TEMPLATE` 同事务写 `published_revision=document.revision`。模版被再次编辑时知识状态回到 `DRAFT`，但已创建项目的副本不变。
+`publish` 调用 `readLink`，非空后将知识状态设为 `PUBLISHED`；`TEMPLATE` 同事务写 `published_revision=document.revision`，并保存只用于异步复制的不可变标题/Markdown 快照。模版被再次编辑时知识状态回到 `DRAFT` 并清空发布快照，但已创建项目的副本输入不变。
 
 - [ ] **Step 5: 运行测试**
 
@@ -390,7 +390,7 @@ Expected: FAIL，项目未入队且无文档空间。
 documentJobs.enqueue("PROJECT_INIT", projectId, "PROJECT:" + projectId);
 ```
 
-`DocumentJobService` 使用 `@Scheduled(fixedDelayString=...)` 每批读取到期的 `PENDING/RETRY` 任务，通过条件更新抢占为 `RUNNING`，执行失败按 `initialBackoff * 2^(attempt-1)` 计算 `next_attempt_at`。测试直接调用 `runDueJobs()`，不等待定时器。
+`DocumentJobService` 使用 `@Scheduled(fixedDelayString=...)` 每批读取到期的 `PENDING/RETRY` 任务，通过条件更新抢占为 `RUNNING` 并写入租约令牌和到期时间。执行期间定时续租；只有过期租约可被回收，完成/失败写入必须匹配原令牌。执行失败按 `initialBackoff * 2^(attempt-1)` 计算 `next_attempt_at`。测试直接调用 `runDueJobs()`，不等待定时器。
 
 - [ ] **Step 4: 创建项目目录与七阶段目录**
 
@@ -403,7 +403,9 @@ PROJECT:<projectId>:STAGE:<stageCode>
 PROJECT:<projectId>:DOC:<templateId>
 ```
 
-项目和阶段目录是发布的索引文档；项目文档正文取模版发布修订对应的当前 Markdown，标题沿用模版标题。初始化成功更新 `delivery_project.document_space_status='READY'`。
+项目创建事务先把适用模版的 ID、发布修订、阶段、必需性和发布正文快照写入 `project_document`；项目和阶段目录是发布的索引文档，后台任务只复制这份不可变快照。初始化成功更新 `delivery_project.document_space_status='READY'`。
+
+V15→V16 升级测试保留真实旧表数据并验证迁移。旧发布模版或待初始化项目缺失快照时，运行时读取其 Outline 源文档并严格比较原修订；一致才回填快照，不一致则以可操作错误中止，防止必需模版被过滤或 SQL `NULL` 被复制为文本 `"null"`。
 
 - [ ] **Step 5: 暴露手动重试**
 
@@ -558,7 +560,7 @@ Expected: FAIL，依赖和导出服务不存在。
 
 - [ ] **Step 4: 实现安全渲染和导出**
 
-`MarkdownRenderer` 启用 GFM 表格，`HtmlRenderer` 使用 `escapeHtml(true)` 与 `sanitizeUrls(true)`。HTML 输出完整 UTF-8 页面与飞书风格基础排版。PDF 用 OpenHTMLToPDF 渲染同一 HTML；Word 遍历 CommonMark AST 写入标题、段落、列表、表格和代码块。图片首期只下载 Outline 同源 URL，其他来源保留安全链接文字，避免 SSRF。
+`MarkdownRenderer` 启用 GFM 表格，`HtmlRenderer` 使用 `escapeHtml(true)` 与 `sanitizeUrls(true)`。HTML 输出完整 UTF-8 页面与飞书风格基础排版。PDF 用 OpenHTMLToPDF 渲染同一 HTML；Word 遍历 CommonMark AST 写入标题、段落、列表、表格和代码块。服务端不主动下载远程图片，避免 SSRF；需要完整附件包时使用 Outline 原生集合导出。
 
 - [ ] **Step 5: 暴露导出接口**
 

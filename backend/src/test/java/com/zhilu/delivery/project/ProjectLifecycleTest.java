@@ -42,6 +42,7 @@ class ProjectLifecycleTest {
     jdbc.update("delete from stage_instance");
     jdbc.update("delete from project_member");
     jdbc.update("delete from delivery_project");
+    jdbc.update("delete from document_job");
     jdbc.update("delete from customer");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
@@ -66,6 +67,11 @@ class ProjectLifecycleTest {
         project.getStages().stream().map(StageView::getName).collect(Collectors.toList()));
     assertEquals("START", project.getCurrentStage());
     assertEquals("ACTIVE", project.getStatus());
+    assertEquals("PENDING", project.getDocumentSpaceStatus());
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from document_job where organization_id=600 "
+            + "and job_type='PROJECT_INIT' and business_key=?",
+        Integer.class, "PROJECT:" + project.getId()));
   }
 
   @Test
