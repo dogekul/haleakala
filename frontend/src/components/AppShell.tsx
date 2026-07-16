@@ -22,29 +22,29 @@ import { adminApi } from '../modules/admin/adminApi'
 interface ModuleNav {
   path: string
   label: string
-  permission: string
+  permissions: string[]
   icon: ReactNode
 }
 
 const modules: ModuleNav[] = [
-  { path: '/dashboard', label: '驾驶舱', permission: 'dashboard:read', icon: <DashboardOutlined /> },
-  { path: '/customers', label: '客户管理', permission: 'customer:read', icon: <ContactsOutlined /> },
-  { path: '/projects', label: '项目空间', permission: 'project:read', icon: <FolderOpenOutlined /> },
-  { path: '/products', label: '产品中心', permission: 'product:read', icon: <ShoppingOutlined /> },
-  { path: '/requirements', label: '需求工坊', permission: 'requirement:read', icon: <ToolOutlined /> },
-  { path: '/standardization', label: '标准化中心', permission: 'standardization:read', icon: <ProductOutlined /> },
-  { path: '/knowledge', label: '知识库', permission: 'knowledge:read', icon: <BookOutlined /> },
-  { path: '/resources', label: '资源中心', permission: 'resource:read', icon: <TeamOutlined /> },
-  { path: '/audit-logs', label: '审计日志', permission: 'audit:read', icon: <AuditOutlined /> },
-  { path: '/admin', label: '系统管理', permission: 'system:manage', icon: <SettingOutlined /> },
+  { path: '/dashboard', label: '驾驶舱', permissions: ['dashboard:read'], icon: <DashboardOutlined /> },
+  { path: '/customers', label: '客户中心', permissions: ['customer:read', 'crm:read'], icon: <ContactsOutlined /> },
+  { path: '/projects', label: '项目空间', permissions: ['project:read'], icon: <FolderOpenOutlined /> },
+  { path: '/products', label: '产品中心', permissions: ['product:read'], icon: <ShoppingOutlined /> },
+  { path: '/requirements', label: '需求工坊', permissions: ['requirement:read'], icon: <ToolOutlined /> },
+  { path: '/standardization', label: '标准化中心', permissions: ['standardization:read'], icon: <ProductOutlined /> },
+  { path: '/knowledge', label: '知识库', permissions: ['knowledge:read'], icon: <BookOutlined /> },
+  { path: '/resources', label: '资源中心', permissions: ['resource:read'], icon: <TeamOutlined /> },
+  { path: '/audit-logs', label: '审计日志', permissions: ['audit:read'], icon: <AuditOutlined /> },
+  { path: '/admin', label: '系统管理', permissions: ['system:manage'], icon: <SettingOutlined /> },
 ]
 
 export function AppShell({ children }: { children?: ReactNode }) {
   const { me, logout } = useAuth()
   const location = useLocation()
   const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: adminApi.runtimeSettings, enabled: Boolean(me) })
-  const visible = useMemo(() => modules.filter(item => me?.permissions.includes(item.permission)
-    && !(item.path === '/audit-logs' && me.permissions.includes('system:manage'))), [me])
+  const visible = useMemo(() => modules.filter(item => item.permissions.some(permission => me?.permissions.includes(permission))
+    && !(item.path === '/audit-logs' && me?.permissions.includes('system:manage'))), [me])
   const active = visible.find(item => location.pathname.startsWith(item.path)) ?? visible[0]
   const platformName = settings.data?.platformName ?? '智鹿交付'
   const environmentLabel = settings.data?.environmentLabel ?? '内部生产环境'

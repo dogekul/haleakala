@@ -355,6 +355,11 @@ button, input { font: inherit; }
 .admin-note { border-color: #e5e6eb; }
 
 .customer-page { max-width: 1500px; margin: 0 auto; }
+.customer-center { max-width: 1500px; margin: 0 auto; }
+.customer-center-tabs { display: flex; gap: 4px; overflow-x: auto; margin: -4px 0 22px; padding: 5px; border: 1px solid #e5e6eb; border-radius: 9px; background: #fff; }
+.customer-center-tabs a { flex: 0 0 auto; padding: 10px 16px; color: #646a73; border-radius: 6px; text-decoration: none; }
+.customer-center-tabs a:hover, .customer-center-tabs a.active { color: #245bdb; background: #e8efff; }
+.customer-center-tabs a.active { font-weight: 600; }
 .customer-kpis { margin-bottom: 14px; }
 .customer-kpis .ant-card { border-color: #e5e6eb; }
 .customer-kpis .ant-card-body { padding: 16px 18px; }
