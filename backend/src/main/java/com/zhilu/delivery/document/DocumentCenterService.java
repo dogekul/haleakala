@@ -149,6 +149,10 @@ public class DocumentCenterService {
       OutlineDocument current = outline.info(connection, link.documentId);
       sync(linkId, current);
       if (current.getRevision() != expectedRevision) {
+        if (value(title).equals(value(current.getTitle()))
+            && value(markdown).equals(value(current.getText()))) {
+          return view(connection, linkId, current, "READY", null);
+        }
         throw new ConflictException("文档已在 Outline 中更新，请刷新后合并");
       }
       OutlineDocument updated = outline.update(
