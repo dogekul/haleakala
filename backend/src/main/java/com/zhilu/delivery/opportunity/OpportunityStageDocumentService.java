@@ -363,7 +363,7 @@ public class OpportunityStageDocumentService {
     private final String generationError;
     private final List<String> warnings;
 
-    private PreparedDocument(DocumentView document, long sourceTemplateId,
+    public PreparedDocument(DocumentView document, long sourceTemplateId,
         long sourceTemplateRevision, String generationStatus, String generationError,
         List<String> warnings) {
       this.document = document;
@@ -386,7 +386,7 @@ public class OpportunityStageDocumentService {
     private final DocumentView document;
     private final Map<String, Object> opportunity;
 
-    private SubmitResult(DocumentView document, Map<String, Object> opportunity) {
+    public SubmitResult(DocumentView document, Map<String, Object> opportunity) {
       this.document = document;
       this.opportunity = new LinkedHashMap<String, Object>(opportunity);
     }

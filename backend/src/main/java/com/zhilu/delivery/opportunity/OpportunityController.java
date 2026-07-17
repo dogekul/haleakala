@@ -33,14 +33,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class OpportunityController {
   private final OpportunityService opportunities;
   private final OpportunityResearchReportService researchReports;
+  private final OpportunityStageDocumentService stageDocuments;
   private final DocumentExportService exports;
   private final AuditService audit;
 
   public OpportunityController(
       OpportunityService opportunities, OpportunityResearchReportService researchReports,
+      OpportunityStageDocumentService stageDocuments,
       DocumentExportService exports, AuditService audit) {
     this.opportunities = opportunities;
     this.researchReports = researchReports;
+    this.stageDocuments = stageDocuments;
     this.exports = exports;
     this.audit = audit;
   }
@@ -166,6 +169,83 @@ public class OpportunityController {
     return opportunities.fullLink(user.getOrganizationId(), id);
   }
 
+  @PostMapping("/{id}/documents/{artifactType}/prepare")
+  public Map<String, Object> prepareStageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @Valid @RequestBody PrepareDocumentRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    OpportunityStageDocumentService.PreparedDocument prepared = stageDocuments.prepare(
+        user.getOrganizationId(), id, artifactType, request.version.longValue());
+    return prepared(prepared);
+  }
+
+  @GetMapping("/{id}/documents/{artifactType}")
+  public DocumentView stageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @AuthenticationPrincipal CurrentUser user) {
+    return stageDocuments.read(user.getOrganizationId(), id, artifactType);
+  }
+
+  @PutMapping("/{id}/documents/{artifactType}")
+  public DocumentView saveStageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @Valid @RequestBody SaveDocumentRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    DocumentView saved = stageDocuments.saveDraft(user.getOrganizationId(), id, artifactType,
+        request.title, request.markdown, request.revision.longValue());
+    audit.record(user.getOrganizationId(), user.getId(), "EDIT", "OPPORTUNITY_DOCUMENT",
+        String.valueOf(id), artifactType + " · revision " + saved.getRevision());
+    return saved;
+  }
+
+  @PostMapping("/{id}/documents/{artifactType}/generate")
+  public Map<String, Object> generateStageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @Valid @RequestBody GenerateDocumentRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    OpportunityStageDocumentService.PreparedDocument prepared = stageDocuments.generate(
+        user.getOrganizationId(), id, artifactType, request.revision.longValue(),
+        request.confirmOverwrite);
+    audit.record(user.getOrganizationId(), user.getId(), "GENERATE", "OPPORTUNITY_DOCUMENT",
+        String.valueOf(id), artifactType + " · " + prepared.getGenerationStatus());
+    return prepared(prepared);
+  }
+
+  @PostMapping("/{id}/documents/{artifactType}/submit")
+  @Transactional
+  public Map<String, Object> submitStageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @Valid @RequestBody SubmitDocumentRequest request,
+      @AuthenticationPrincipal CurrentUser user) {
+    OpportunityStageDocumentService.SubmitResult submitted = stageDocuments.submit(
+        user.getOrganizationId(), id, user.getId(), artifactType,
+        request.opportunityVersion.longValue(), request.title, request.markdown,
+        request.revision.longValue());
+    audit.record(user.getOrganizationId(), user.getId(), "SUBMIT", "OPPORTUNITY_DOCUMENT",
+        String.valueOf(id), artifactType);
+    Map<String, Object> value = document(submitted.getDocument());
+    value.put("opportunity", submitted.getOpportunity());
+    return value;
+  }
+
+  @GetMapping("/{id}/documents/{artifactType}/export")
+  public ResponseEntity<byte[]> exportStageDocument(
+      @PathVariable long id, @PathVariable String artifactType,
+      @RequestParam(defaultValue = "md") String format,
+      @AuthenticationPrincipal CurrentUser user) {
+    DocumentView source = stageDocuments.read(user.getOrganizationId(), id, artifactType);
+    DocumentExportService.Result result = exports.export(source, format);
+    String fileName = safeName(source.getTitle()) + "." + result.getExtension();
+    audit.record(user.getOrganizationId(), user.getId(), "EXPORT", "OPPORTUNITY_DOCUMENT",
+        String.valueOf(id), artifactType + " · " + format);
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_TYPE, result.getContentType())
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"opportunity-document." + result.getExtension()
+                + "\"; filename*=UTF-8''" + encode(fileName))
+        .body(result.getBytes());
+  }
+
   @PostMapping("/{id}/research-report/prepare")
   public Map<String, Object> prepareResearchReport(
       @PathVariable long id, @Valid @RequestBody PrepareResearchReportRequest request,
@@ -241,6 +321,17 @@ public class OpportunityController {
     return value;
   }
 
+  private Map<String, Object> prepared(
+      OpportunityStageDocumentService.PreparedDocument prepared) {
+    Map<String, Object> value = document(prepared.getDocument());
+    value.put("sourceTemplateId", prepared.getSourceTemplateId());
+    value.put("sourceTemplateRevision", prepared.getSourceTemplateRevision());
+    value.put("generationStatus", prepared.getGenerationStatus());
+    value.put("generationError", prepared.getGenerationError());
+    value.put("warnings", prepared.getWarnings());
+    return value;
+  }
+
   private String safeName(String value) {
     String safe = value == null ? "需求调研报告"
         : value.replaceAll("[\\\\/:*?\"<>|\\r\\n]+", " ").trim();
@@ -271,6 +362,25 @@ public class OpportunityController {
 
   public static final class PrepareResearchReportRequest {
     @NotNull public Long version;
+  }
+
+  public static final class PrepareDocumentRequest {
+    @NotNull public Long version;
+  }
+
+  public static class SaveDocumentRequest {
+    @NotBlank public String title;
+    @NotBlank public String markdown;
+    @NotNull @Min(0) public Long revision;
+  }
+
+  public static final class GenerateDocumentRequest {
+    @NotNull @Min(0) public Long revision;
+    public boolean confirmOverwrite;
+  }
+
+  public static final class SubmitDocumentRequest extends SaveDocumentRequest {
+    @NotNull public Long opportunityVersion;
   }
 
   public static class SaveResearchReportRequest {
