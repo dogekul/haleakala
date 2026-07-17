@@ -34,6 +34,8 @@ management:
         include: health,info
 
 delivery:
+  settings:
+    encryption-key: ${SETTINGS_ENCRYPTION_KEY:${AGENT_SHARED_SECRET:change-me}}
   outline:
     base-url: ${OUTLINE_BASE_URL:http://localhost:3000}
     public-base-url: ${OUTLINE_PUBLIC_BASE_URL:}

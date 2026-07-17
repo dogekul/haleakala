@@ -1,5 +1,6 @@
 package com.zhilu.delivery.knowledge;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -11,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.document.OutlineClient;
+import com.zhilu.delivery.document.OutlineConnection;
 import com.zhilu.delivery.document.OutlineDocument;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.nio.charset.StandardCharsets;
@@ -94,21 +96,21 @@ class KnowledgeTemplateApiIT {
   private void stubOutline() {
     stored.clear();
     ids.set(0);
-    when(outline.create(anyString(),anyString(),anyString(),anyString(),
-        nullable(String.class),anyBoolean()))
+    when(outline.create(any(OutlineConnection.class),anyString(),anyString(),anyString(),
+        anyString(),nullable(String.class),anyBoolean()))
         .thenAnswer(invocation -> {
-          String id=invocation.getArgument(0);
-          String title=invocation.getArgument(1);
+          String id=invocation.getArgument(1);
+          String title=invocation.getArgument(2);
           ids.incrementAndGet();
           OutlineDocument document=new OutlineDocument(
-              id,"a4296a54-2044-4529-ba86-d598a5322e06",invocation.getArgument(4),
-              title,invocation.getArgument(2),"/doc/"+id,id.substring(0,8),1,
+              id,"a4296a54-2044-4529-ba86-d598a5322e06",invocation.getArgument(5),
+              title,invocation.getArgument(3),"/doc/"+id,id.substring(0,8),1,
               Instant.parse("2026-07-16T08:00:00Z"));
           stored.put(id,document);
           return document;
         });
-    when(outline.info(anyString())).thenAnswer(
-        invocation -> stored.get(invocation.getArgument(0)));
+    when(outline.info(any(OutlineConnection.class),anyString())).thenAnswer(
+        invocation -> stored.get(invocation.getArgument(1)));
   }
 
   private RequestPostProcessor actor() {

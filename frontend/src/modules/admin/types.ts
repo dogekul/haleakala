@@ -61,6 +61,28 @@ export interface SystemSettings {
   agentTimeoutMinutes: number
 }
 
+export interface OutlineConfiguration {
+  baseUrl: string
+  publicBaseUrl: string
+  collectionId: string
+  collectionName?: string
+  apiTokenConfigured: boolean
+  source: 'ENVIRONMENT' | 'ORGANIZATION' | 'MIXED'
+}
+
+export interface OutlineConfigurationInput {
+  baseUrl: string
+  publicBaseUrl: string
+  collectionId: string
+  apiToken?: string
+}
+
+export interface OutlineConnectionTest {
+  status: 'READY'
+  collectionId: string
+  collectionName: string
+}
+
 export interface DocumentCenterJob {
   id: number
   jobType: 'PROJECT_INIT' | 'PROJECT_MIGRATION' | 'KNOWLEDGE_MIGRATION'

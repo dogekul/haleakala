@@ -4,18 +4,23 @@ import java.util.List;
 
 public interface OutlineClient {
   OutlineDocument create(
-      String documentId, String title, String text, String collectionId,
+      OutlineConnection connection, String documentId, String title, String text,
+      String collectionId,
       String parentDocumentId, boolean publish);
 
-  OutlineDocument info(String documentId);
+  OutlineDocument info(OutlineConnection connection, String documentId);
 
-  List<OutlineDocument> children(String parentDocumentId);
+  List<OutlineDocument> children(
+      OutlineConnection connection, String parentDocumentId);
 
-  OutlineDocument update(String documentId, String title, String text);
+  OutlineDocument update(
+      OutlineConnection connection, String documentId, String title, String text);
 
-  void collectionInfo(String collectionId);
+  OutlineCollection collectionInfo(
+      OutlineConnection connection, String collectionReference);
 
-  String exportMarkdown(String documentId);
+  OutlineCollection testConnection(
+      OutlineConnection connection, String collectionReference);
 
-  boolean isConfigured();
+  String exportMarkdown(OutlineConnection connection, String documentId);
 }

@@ -38,7 +38,8 @@ public class HttpOutlineClient implements OutlineClient {
 
   @Override
   public OutlineDocument create(
-      String documentId, String title, String text, String collectionId,
+      OutlineConnection connection, String documentId, String title, String text,
+      String collectionId,
       String parentDocumentId, boolean publish) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
     if (!blank(documentId)) body.put("id", documentId);
@@ -47,24 +48,25 @@ public class HttpOutlineClient implements OutlineClient {
     body.put("collectionId", collectionId);
     if (!blank(parentDocumentId)) body.put("parentDocumentId", parentDocumentId);
     body.put("publish", publish);
-    return document(post("documents.create", body).path("data"));
+    return document(post(connection, "documents.create", body).path("data"));
   }
 
   @Override
-  public OutlineDocument info(String documentId) {
+  public OutlineDocument info(OutlineConnection connection, String documentId) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
     body.put("id", documentId);
-    return document(post("documents.info", body).path("data"));
+    return document(post(connection, "documents.info", body).path("data"));
   }
 
   @Override
-  public List<OutlineDocument> children(String parentDocumentId) {
+  public List<OutlineDocument> children(
+      OutlineConnection connection, String parentDocumentId) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
     body.put("parentDocumentId", parentDocumentId);
     body.put("limit", 100);
     body.put("offset", 0);
     body.put("statusFilter", Arrays.asList("published"));
-    JsonNode data = post("documents.list", body).path("data");
+    JsonNode data = post(connection, "documents.list", body).path("data");
     if (!data.isArray()) {
       throw new OutlineException(
           OutlineException.Type.INVALID_RESPONSE, "Outline returned an invalid document list");
@@ -75,30 +77,47 @@ public class HttpOutlineClient implements OutlineClient {
   }
 
   @Override
-  public OutlineDocument update(String documentId, String title, String text) {
+  public OutlineDocument update(
+      OutlineConnection connection, String documentId, String title, String text) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
     body.put("id", documentId);
     body.put("title", title);
     body.put("text", text);
-    return document(post("documents.update", body).path("data"));
+    return document(post(connection, "documents.update", body).path("data"));
   }
 
   @Override
-  public void collectionInfo(String collectionId) {
+  public OutlineCollection collectionInfo(
+      OutlineConnection connection, String collectionReference) {
+    return collection(connection, collectionReference);
+  }
+
+  @Override
+  public OutlineCollection testConnection(
+      OutlineConnection connection, String collectionReference) {
+    return collection(connection, collectionReference);
+  }
+
+  private OutlineCollection collection(
+      OutlineConnection connection, String collectionReference) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
-    body.put("id", collectionId);
-    JsonNode data = post("collections.info", body).path("data");
+    body.put("id", collectionReference);
+    JsonNode data = post(connection, "collections.info", body).path("data");
     if (!data.isObject() || blank(data.path("id").asText(null))) {
       throw new OutlineException(
           OutlineException.Type.INVALID_RESPONSE, "Outline returned an invalid collection");
     }
+    return new OutlineCollection(
+        data.path("id").asText(),
+        data.path("name").asText(""),
+        data.path("urlId").asText(""));
   }
 
   @Override
-  public String exportMarkdown(String documentId) {
+  public String exportMarkdown(OutlineConnection connection, String documentId) {
     Map<String, Object> body = new LinkedHashMap<String, Object>();
     body.put("id", documentId);
-    JsonNode data = post("documents.export", body).path("data");
+    JsonNode data = post(connection, "documents.export", body).path("data");
     if (!data.isTextual()) {
       throw new OutlineException(
           OutlineException.Type.INVALID_RESPONSE, "Outline returned an invalid export");
@@ -106,25 +125,20 @@ public class HttpOutlineClient implements OutlineClient {
     return data.asText();
   }
 
-  @Override
-  public boolean isConfigured() {
-    return !blank(properties.getBaseUrl())
-        && !blank(properties.getApiToken())
-        && !blank(properties.getCollectionId());
-  }
-
-  private JsonNode post(String method, Map<String, Object> body) {
-    if (!isConfigured()) {
+  private JsonNode post(
+      OutlineConnection connection, String method, Map<String, Object> body) {
+    if (connection == null || !connection.isConfigured()) {
       throw new OutlineException(
           OutlineException.Type.NOT_CONFIGURED, "Outline integration is not configured");
     }
     HttpHeaders headers = new HttpHeaders();
-    headers.setBearerAuth(properties.getApiToken());
+    headers.setBearerAuth(connection.getApiToken());
     headers.setContentType(MediaType.APPLICATION_JSON);
     headers.setAccept(Arrays.asList(MediaType.APPLICATION_JSON));
     try {
       ResponseEntity<String> response = http.postForEntity(
-          baseUrl() + "/api/" + method, new HttpEntity<Map<String, Object>>(body, headers),
+          baseUrl(connection) + "/api/" + method,
+          new HttpEntity<Map<String, Object>>(body, headers),
           String.class);
       return json.readTree(response.getBody());
     } catch (HttpStatusCodeException failure) {
@@ -171,8 +185,8 @@ public class HttpOutlineClient implements OutlineClient {
     return new OutlineException(type, "Outline request failed with status " + status, failure);
   }
 
-  private String baseUrl() {
-    String value = properties.getBaseUrl().trim();
+  private String baseUrl(OutlineConnection connection) {
+    String value = connection.getBaseUrl().trim();
     return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
   }
 

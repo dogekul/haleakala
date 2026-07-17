@@ -18,15 +18,15 @@ public class DocumentMigrationService {
   private final JdbcTemplate jdbc;
   private final DocumentCenterService documents;
   private final OutlineClient outline;
-  private final OutlineProperties properties;
+  private final OutlineConfigurationService configurations;
 
   public DocumentMigrationService(
       JdbcTemplate jdbc, DocumentCenterService documents, OutlineClient outline,
-      OutlineProperties properties) {
+      OutlineConfigurationService configurations) {
     this.jdbc = jdbc;
     this.documents = documents;
     this.outline = outline;
-    this.properties = properties;
+    this.configurations = configurations;
   }
 
   public Map<String, Object> initialize(long organizationId) {
@@ -91,21 +91,24 @@ public class DocumentMigrationService {
 
   public Map<String, Object> status(long organizationId) {
     Map<String, Object> result = new LinkedHashMap<String, Object>();
+    OutlineConnection connection = configurations.resolve(organizationId);
     String integrationStatus;
     String connectionError = null;
-    if (!outline.isConfigured()) {
+    if (!connection.isConfigured()) {
       integrationStatus = "NOT_CONFIGURED";
     } else {
       try {
-        outline.collectionInfo(properties.getCollectionId());
+        OutlineCollection collection = outline.collectionInfo(
+            connection, connection.getCollectionId());
         integrationStatus = "READY";
+        result.put("collectionName", collection.getName());
       } catch (OutlineException failure) {
         integrationStatus = "FAILED";
         connectionError = failure.getMessage();
       }
     }
     result.put("integrationStatus", integrationStatus);
-    result.put("collectionId", properties.getCollectionId());
+    result.put("collectionId", connection.getCollectionId());
     result.put("knowledgeRoot", rootStatus(organizationId, "KNOWLEDGE_ROOT"));
     result.put("projectRoot", rootStatus(organizationId, "PROJECT_ROOT"));
     result.put("jobs", jobCounts(organizationId));

@@ -2,10 +2,14 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
@@ -17,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -80,37 +85,27 @@ class DocumentMigrationServiceTest {
             + "(6101,6100,'PRJ-6101','项目二','客户',6100,6100,6100,6100,'ACTIVE','START',"
             + "'GREEN','BLOCK',6100)");
     remote.clear();
-    when(outline.isConfigured()).thenReturn(true);
-    when(outline.info(anyString())).thenAnswer(invocation -> {
-      OutlineDocument document = remote.get(invocation.getArgument(0));
+    when(outline.collectionInfo(any(OutlineConnection.class), eq(COLLECTION_ID)))
+        .thenReturn(new OutlineCollection(COLLECTION_ID, "文档中心", "delivery"));
+    when(outline.info(any(OutlineConnection.class), anyString())).thenAnswer(invocation -> {
+      OutlineDocument document = remote.get(invocation.getArgument(1));
       if (document == null) {
         throw new OutlineException(OutlineException.Type.NOT_FOUND, "document not found");
       }
       return document;
     });
     doAnswer(invocation -> {
-      String title = invocation.getArgument(1);
+      String title = invocation.getArgument(2);
       if ("失败知识".equals(title)) {
         throw new OutlineException(OutlineException.Type.UNAVAILABLE, "模拟单条失败");
       }
       OutlineDocument document = document(
-          invocation.getArgument(0), title, invocation.getArgument(2), 1);
+          invocation.getArgument(1), title, invocation.getArgument(3), 1);
       remote.put(document.getId(), document);
       return document;
     }).when(outline).create(
-        anyString(), anyString(), anyString(), anyString(), isNull(), anyBoolean());
-    doAnswer(invocation -> {
-      String title = invocation.getArgument(1);
-      if ("失败知识".equals(title)) {
-        throw new OutlineException(OutlineException.Type.UNAVAILABLE, "模拟单条失败");
-      }
-      OutlineDocument document = document(
-          invocation.getArgument(0), title, invocation.getArgument(2), 1);
-      remote.put(document.getId(), document);
-      return document;
-    })
-        .when(outline).create(
-            anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean());
+        any(OutlineConnection.class), anyString(), anyString(), anyString(), anyString(),
+        nullable(String.class), anyBoolean());
   }
 
   @Test
@@ -119,6 +114,12 @@ class DocumentMigrationServiceTest {
     assertEquals(0, migrations.startKnowledgeMigration(6100).get("enqueued"));
 
     jobs.runDueJobs();
+
+    ArgumentCaptor<OutlineConnection> connection =
+        ArgumentCaptor.forClass(OutlineConnection.class);
+    verify(outline, atLeastOnce()).info(connection.capture(), anyString());
+    assertEquals(6100L, connection.getValue().getOrganizationId());
+    assertEquals("ol_api_test", connection.getValue().getApiToken());
 
     assertEquals(1, jdbc.queryForObject(
         "select count(*) from document_job where job_type='KNOWLEDGE_MIGRATION' "

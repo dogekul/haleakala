@@ -3,12 +3,24 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { vi } from 'vitest'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { AdminPage } from './AdminPage'
 
 const json = (value: unknown) => Promise.resolve(new Response(JSON.stringify(value), {
   status: 200,
   headers: { 'Content-Type': 'application/json' },
 }))
+
+const auth: AuthState = {
+  loading: false,
+  me: {
+    id: 1, organizationId: 1, username: 'admin', displayName: '管理员',
+    roles: ['ADMIN'], permissions: ['admin:write'],
+  },
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
 
 function LocationProbe() {
   return <span data-testid="location">{useLocation().pathname}</span>
@@ -44,6 +56,14 @@ it('提供五个可用的系统管理入口并默认进入用户团队', async (
 it('文档中心展示连接、根目录和可重试任务', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url === '/api/v1/admin/document-center/config') return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      collectionName: '智鹿交付',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
     if (url === '/api/v1/admin/document-center/status') return json({
       integrationStatus: 'READY',
       collectionId: 'collection-id',
@@ -65,9 +85,11 @@ it('文档中心展示连接、根目录和可重试任务', async () => {
   vi.stubGlobal('fetch', fetch)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}>
-    <MemoryRouter initialEntries={['/admin/document-center']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Routes><Route path="/admin/*" element={<AdminPage />} /></Routes>
-    </MemoryRouter>
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={['/admin/document-center']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes><Route path="/admin/*" element={<AdminPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
   </QueryClientProvider>)
 
   expect(await screen.findByRole('heading', { name: '文档中心' })).toBeVisible()

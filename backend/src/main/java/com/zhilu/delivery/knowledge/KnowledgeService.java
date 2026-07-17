@@ -4,8 +4,9 @@ import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.document.DocumentCenterService;
 import com.zhilu.delivery.document.DocumentView;
+import com.zhilu.delivery.document.OutlineConfigurationService;
+import com.zhilu.delivery.document.OutlineConnection;
 import com.zhilu.delivery.document.OutlineException;
-import com.zhilu.delivery.document.OutlineProperties;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.project.DeliveryStage;
 import java.sql.ResultSet;
@@ -27,13 +28,14 @@ public class KnowledgeService {
   private final JdbcTemplate jdbc;
   private final SimpleJdbcInsert insert;
   private final DocumentCenterService documents;
-  private final OutlineProperties outlineProperties;
+  private final OutlineConfigurationService configurations;
 
   public KnowledgeService(
-      JdbcTemplate jdbc, DocumentCenterService documents, OutlineProperties outlineProperties) {
+      JdbcTemplate jdbc, DocumentCenterService documents,
+      OutlineConfigurationService configurations) {
     this.jdbc = jdbc;
     this.documents = documents;
-    this.outlineProperties = outlineProperties;
+    this.configurations = configurations;
     this.insert = new SimpleJdbcInsert(jdbc).withTableName("knowledge_item")
         .usingColumns("organization_id", "type", "title", "summary", "content_text",
             "tags_text", "product_id", "product_version_id", "visibility", "owner_user_id")
@@ -42,6 +44,7 @@ public class KnowledgeService {
 
   public List<Map<String, Object>> search(
       CurrentUser user, String keyword, String type, String tag, boolean publishedOnly) {
+    OutlineConnection connection = configurations.resolve(user.getOrganizationId());
     StringBuilder sql = new StringBuilder(
         "select k.*,p.name product_name,v.version_name,u.display_name owner_name,"
             + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id,"
@@ -76,10 +79,12 @@ public class KnowledgeService {
     }
     if (!blank(tag)) { sql.append(" and lower(k.tags_text) like ?"); args.add("%" + tag.trim().toLowerCase() + "%"); }
     sql.append(" order by case k.status when 'PUBLISHED' then 1 else 2 end,k.updated_at desc,k.id desc");
-    return jdbc.query(sql.toString(), (row, index) -> detail(row), args.toArray());
+    return jdbc.query(
+        sql.toString(), (row, index) -> detail(row, connection), args.toArray());
   }
 
   public Map<String, Object> get(long id, CurrentUser user) {
+    OutlineConnection connection = configurations.resolve(user.getOrganizationId());
     List<Map<String, Object>> values = jdbc.query(
         "select k.*,p.name product_name,v.version_name,u.display_name owner_name,"
             + "c.language,c.code_text,c.usage_notes,t.audience,t.duration_minutes,t.file_object_id,"
@@ -96,7 +101,7 @@ public class KnowledgeService {
             + "left join outline_document_link d on d.id=k.outline_link_id "
             + "left join document_template_config tc on tc.knowledge_item_id=k.id "
             + "where k.id=? and k.organization_id=?",
-        (row, index) -> detail(row), id, user.getOrganizationId());
+        (row, index) -> detail(row, connection), id, user.getOrganizationId());
     if (values.isEmpty()) throw new NotFoundException("知识条目不存在");
     Map<String, Object> value = values.get(0);
     if (!"PUBLISHED".equals(value.get("status"))
@@ -346,7 +351,8 @@ public class KnowledgeService {
     }
   }
 
-  private Map<String, Object> item(ResultSet row) throws SQLException {
+  private Map<String, Object> item(
+      ResultSet row, OutlineConnection connection) throws SQLException {
     Map<String, Object> value = new LinkedHashMap<String, Object>();
     Long outlineLinkId = nullableLong(row, "outline_link_id");
     String documentStatus = outlineLinkId == null ? "PENDING" : row.getString("document_sync_status");
@@ -365,7 +371,8 @@ public class KnowledgeService {
     value.put("documentStatus", documentStatus);
     value.put("documentRevision", nullableLong(row, "document_revision"));
     value.put("documentError", row.getString("document_error"));
-    value.put("outlineUrl", outlineUrl(row.getString("outline_url_id")));
+    value.put("outlineUrl",
+        configurations.documentUrl(connection, row.getString("outline_url_id")));
     value.put("stageCode", row.getString("stage_code"));
     value.put("requirement", row.getString("requirement"));
     value.put("enabled", row.getObject("enabled"));
@@ -373,8 +380,9 @@ public class KnowledgeService {
     return value;
   }
 
-  private Map<String, Object> detail(ResultSet row) throws SQLException {
-    Map<String, Object> value = item(row);
+  private Map<String, Object> detail(
+      ResultSet row, OutlineConnection connection) throws SQLException {
+    Map<String, Object> value = item(row, connection);
     value.put("language", row.getString("language")); value.put("codeText", row.getString("code_text"));
     value.put("usageNotes", row.getString("usage_notes")); value.put("audience", row.getString("audience"));
     value.put("durationMinutes", row.getObject("duration_minutes")); value.put("fileObjectId", row.getObject("file_object_id"));
@@ -392,13 +400,6 @@ public class KnowledgeService {
     if ("TRAINING".equals(type)) return "培训材料";
     if ("TEMPLATE".equals(type)) return "文档模版";
     throw new IllegalArgumentException("知识类型不受支持");
-  }
-  private String outlineUrl(String urlId) {
-    if (blank(urlId)) return null;
-    String base = outlineProperties.getPublicBaseUrl();
-    if (blank(base)) base = outlineProperties.getBaseUrl();
-    if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-    return base + "/doc/" + urlId;
   }
   private long number(Object value) {
     return value == null ? 0L : ((Number) value).longValue();

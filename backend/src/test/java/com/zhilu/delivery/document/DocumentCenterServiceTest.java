@@ -2,9 +2,11 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -15,6 +17,7 @@ import com.zhilu.delivery.common.error.NotFoundException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,12 +65,22 @@ class DocumentCenterServiceTest {
   }
 
   @Test
+  void generatesOutlineCompatibleDeterministicUuidV4() {
+    String first = DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT");
+
+    assertEquals(4, UUID.fromString(first).version());
+    assertEquals(first,
+        DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT"));
+  }
+
+  @Test
   void createsEachBusinessIndexExactlyOnce() {
     OutlineDocument created = document("知识库", "# 知识库", 1);
     String desiredId = DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT");
-    when(outline.create(desiredId, "知识库", "", COLLECTION_ID, null, true))
+    when(outline.create(any(OutlineConnection.class), eq(desiredId), eq("知识库"),
+        eq(""), eq(COLLECTION_ID), nullable(String.class), eq(true)))
         .thenReturn(created);
-    when(outline.info(DOCUMENT_ID)).thenReturn(created);
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID))).thenReturn(created);
 
     long first = documents.ensureIndex(3100, "KNOWLEDGE_ROOT", "知识库", null);
     long second = documents.ensureIndex(3100, "KNOWLEDGE_ROOT", "知识库", null);
@@ -76,25 +89,30 @@ class DocumentCenterServiceTest {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from outline_document_link where organization_id=3100 "
             + "and business_key='KNOWLEDGE_ROOT'", Integer.class));
-    verify(outline).create(desiredId, "知识库", "", COLLECTION_ID, null, true);
+    verify(outline).create(any(OutlineConnection.class), eq(desiredId), eq("知识库"),
+        eq(""), eq(COLLECTION_ID), nullable(String.class), eq(true));
   }
 
   @Test
   void rejectsStaleRevisionBeforeUpdatingOutline() {
     long linkId = link(3100, "KNOWLEDGE:1", "知识", DOCUMENT_ID, 3);
-    when(outline.info(DOCUMENT_ID)).thenReturn(document("知识", "最新正文", 3));
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("知识", "最新正文", 3));
 
     assertThrows(ConflictException.class,
         () -> documents.updateLink(linkId, 3100, "知识", "旧编辑", 2));
 
-    verify(outline, never()).update(anyString(), anyString(), anyString());
+    verify(outline, never()).update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString());
   }
 
   @Test
   void updatesOutlineAndRefreshesTheLocalRevisionCache() {
     long linkId = link(3100, "KNOWLEDGE:2", "原标题", DOCUMENT_ID, 2);
-    when(outline.info(DOCUMENT_ID)).thenReturn(document("原标题", "原正文", 2));
-    when(outline.update(DOCUMENT_ID, "新标题", "# 新正文"))
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("原标题", "原正文", 2));
+    when(outline.update(
+        any(OutlineConnection.class), eq(DOCUMENT_ID), eq("新标题"), eq("# 新正文")))
         .thenReturn(document("新标题", "# 新正文", 3));
 
     DocumentView updated = documents.updateLink(
@@ -115,7 +133,7 @@ class DocumentCenterServiceTest {
     AtomicInteger infoCalls = new AtomicInteger();
     CountDownLatch firstInfo = new CountDownLatch(1);
     CountDownLatch secondInfo = new CountDownLatch(1);
-    when(outline.info(DOCUMENT_ID)).thenAnswer(invocation -> {
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID))).thenAnswer(invocation -> {
       int call = infoCalls.incrementAndGet();
       if (call == 1) {
         firstInfo.countDown();
@@ -125,10 +143,12 @@ class DocumentCenterServiceTest {
       }
       return remote.get();
     });
-    when(outline.update(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+    when(outline.update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString()))
+        .thenAnswer(invocation -> {
       OutlineDocument current = remote.get();
       OutlineDocument updated = document(
-          invocation.getArgument(1), invocation.getArgument(2), current.getRevision() + 1);
+          invocation.getArgument(2), invocation.getArgument(3), current.getRevision() + 1);
       remote.set(updated);
       return updated;
     });
@@ -162,7 +182,8 @@ class DocumentCenterServiceTest {
   @Test
   void storesFailureForRetryAndKeepsTenantIsolation() {
     when(outline.create(
-        anyString(), anyString(), anyString(), anyString(), isNull(), anyBoolean()))
+        any(OutlineConnection.class), anyString(), anyString(), anyString(), anyString(),
+        nullable(String.class), anyBoolean()))
         .thenThrow(new OutlineException(
             OutlineException.Type.UNAVAILABLE, "Outline is unavailable"));
 
@@ -183,11 +204,12 @@ class DocumentCenterServiceTest {
     String desiredId = DocumentCenterService.deterministicDocumentId(3100, businessKey);
     OutlineDocument recovered = document(
         desiredId, "项目文档", "", 1);
-    when(outline.info(desiredId))
+    when(outline.info(any(OutlineConnection.class), eq(desiredId)))
         .thenThrow(new OutlineException(
             OutlineException.Type.NOT_FOUND, "document not found"))
         .thenReturn(recovered);
-    when(outline.create(desiredId, "项目文档", "", COLLECTION_ID, null, true))
+    when(outline.create(any(OutlineConnection.class), eq(desiredId), eq("项目文档"),
+        eq(""), eq(COLLECTION_ID), nullable(String.class), eq(true)))
         .thenThrow(new OutlineException(
             OutlineException.Type.TIMEOUT, "Outline request timed out"));
 
@@ -202,7 +224,8 @@ class DocumentCenterServiceTest {
         "select outline_document_id from outline_document_link where id=?",
         String.class, linkId));
     verify(outline, times(1))
-        .create(desiredId, "项目文档", "", COLLECTION_ID, null, true);
+        .create(any(OutlineConnection.class), eq(desiredId), eq("项目文档"),
+            eq(""), eq(COLLECTION_ID), nullable(String.class), eq(true));
   }
 
   @Test
@@ -214,9 +237,10 @@ class DocumentCenterServiceTest {
             + "values (3100,?,'INDEX',?,'知识库','CREATING',?)",
         businessKey, COLLECTION_ID,
         java.sql.Timestamp.from(Instant.now().minusSeconds(600)));
-    when(outline.info(desiredId)).thenThrow(new OutlineException(
+    when(outline.info(any(OutlineConnection.class), eq(desiredId))).thenThrow(new OutlineException(
         OutlineException.Type.NOT_FOUND, "document not found"));
-    when(outline.create(desiredId, "知识库", "", COLLECTION_ID, null, true))
+    when(outline.create(any(OutlineConnection.class), eq(desiredId), eq("知识库"),
+        eq(""), eq(COLLECTION_ID), nullable(String.class), eq(true)))
         .thenReturn(document(desiredId, "知识库", "", 1));
 
     long linkId = documents.ensureIndex(3100, businessKey, "知识库", null);
