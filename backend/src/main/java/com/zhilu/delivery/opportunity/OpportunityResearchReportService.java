@@ -134,7 +134,7 @@ public class OpportunityResearchReportService {
     private final long sourceTemplateId;
     private final long sourceTemplateRevision;
 
-    private PreparedReport(
+    public PreparedReport(
         DocumentView document, long sourceTemplateId, long sourceTemplateRevision) {
       this.document = document;
       this.sourceTemplateId = sourceTemplateId;
