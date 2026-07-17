@@ -109,6 +109,32 @@ public class DocumentCenterService {
   }
 
   @Transactional
+  public DocumentView moveBusinessDocument(
+      long organizationId, String businessKey, long parentLinkId) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    OutlineConnection connection = configurations.resolve(organizationId);
+    Link link = lockedLink(linkId.longValue(), connection.getOrganizationId());
+    if (blank(link.documentId)) throw new ConflictException("文档尚未初始化");
+    String parentDocumentId = parentDocumentId(Long.valueOf(parentLinkId), organizationId);
+    try {
+      OutlineDocument current = outline.info(connection, link.documentId);
+      if (parentDocumentId.equals(current.getParentDocumentId())) {
+        sync(link.id, current);
+        return view(connection, link.id, current, "READY", null);
+      }
+      OutlineDocument moved = outline.move(connection, link.documentId, parentDocumentId);
+      jdbc.update("update outline_document_link set parent_link_id=? where id=?",
+          parentLinkId, link.id);
+      sync(link.id, moved);
+      return view(connection, link.id, moved, "READY", null);
+    } catch (OutlineException failure) {
+      fail(link.id, failure);
+      throw failure;
+    }
+  }
+
+  @Transactional
   public DocumentView updateBusinessDocument(
       long organizationId, String businessKey, String title, String markdown,
       long expectedRevision) {

@@ -87,6 +87,15 @@ public class HttpOutlineClient implements OutlineClient {
   }
 
   @Override
+  public OutlineDocument move(
+      OutlineConnection connection, String documentId, String parentDocumentId) {
+    Map<String, Object> body = new LinkedHashMap<String, Object>();
+    body.put("id", documentId);
+    body.put("parentDocumentId", parentDocumentId);
+    return document(post(connection, "documents.move", body).path("data"));
+  }
+
+  @Override
   public OutlineCollection collectionInfo(
       OutlineConnection connection, String collectionReference) {
     return collection(connection, collectionReference);
