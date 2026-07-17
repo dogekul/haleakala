@@ -119,7 +119,7 @@ it('推进线索时从知识库模版填写并提交需求调研报告', async (
 
   await screen.findByText('财务中台升级')
   expect(screen.getAllByTestId(/presale-column-/)).toHaveLength(5)
-  const leadCard = screen.getByText('财务中台升级').closest('.presale-card')!
+  const leadCard = screen.getByText('财务中台升级').closest<HTMLElement>('.presale-card')!
   expect(within(leadCard).queryByRole('button', { name: '产出物' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '推进财务中台升级' }))
   const drawer = await screen.findByRole('dialog', { name: '填写需求调研报告' })
