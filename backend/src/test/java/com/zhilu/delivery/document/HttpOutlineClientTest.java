@@ -32,6 +32,7 @@ class HttpOutlineClientTest {
   private HttpServer server;
   private OutlineProperties properties;
   private HttpOutlineClient client;
+  private OutlineConnection connection;
 
   @BeforeEach
   void startServer() throws IOException {
@@ -40,12 +41,13 @@ class HttpOutlineClientTest {
     server.setExecutor(Executors.newCachedThreadPool());
     server.start();
     properties = new OutlineProperties();
-    properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-    properties.setApiToken("ol_api_test");
-    properties.setCollectionId(COLLECTION_ID);
     properties.setConnectTimeout(Duration.ofMillis(200));
     properties.setReadTimeout(Duration.ofMillis(200));
     client = new HttpOutlineClient(properties, json);
+    connection = new OutlineConnection(
+        8100, "http://127.0.0.1:" + server.getAddress().getPort(),
+        "http://outline.browser", "ol_api_test", COLLECTION_ID, "文档中心",
+        "ORGANIZATION");
   }
 
   @AfterEach
@@ -57,7 +59,7 @@ class HttpOutlineClientTest {
   void createsReadsUpdatesListsAndExportsDocuments() throws Exception {
     responses.put("/api/documents.create", ok(document("项目文档", "# 根目录", 1)));
     OutlineDocument created = client.create(
-        DOCUMENT_ID, "项目文档", "# 根目录", COLLECTION_ID, null, true);
+        connection, DOCUMENT_ID, "项目文档", "# 根目录", COLLECTION_ID, null, true);
 
     assertEquals(DOCUMENT_ID, created.getId());
     assertEquals(1L, created.getRevision());
@@ -69,10 +71,10 @@ class HttpOutlineClientTest {
     assertTrue(createRequest.path("publish").asBoolean());
 
     responses.put("/api/documents.info", ok(document("项目文档", "# 根目录", 1)));
-    assertEquals("# 根目录", client.info(DOCUMENT_ID).getText());
+    assertEquals("# 根目录", client.info(connection, DOCUMENT_ID).getText());
 
     responses.put("/api/documents.update", ok(document("新标题", "新正文", 2)));
-    OutlineDocument updated = client.update(DOCUMENT_ID, "新标题", "新正文");
+    OutlineDocument updated = client.update(connection, DOCUMENT_ID, "新标题", "新正文");
     assertEquals(2L, updated.getRevision());
     JsonNode updateRequest = json.readTree(requestBody.get());
     assertEquals(DOCUMENT_ID, updateRequest.path("id").asText());
@@ -80,7 +82,7 @@ class HttpOutlineClientTest {
 
     responses.put("/api/documents.list",
         new Response(200, "{\"data\":[" + document("子文档", "正文", 3) + "]}"));
-    List<OutlineDocument> children = client.children(DOCUMENT_ID);
+    List<OutlineDocument> children = client.children(connection, DOCUMENT_ID);
     assertEquals(1, children.size());
     assertEquals("子文档", children.get(0).getTitle());
     JsonNode listRequest = json.readTree(requestBody.get());
@@ -89,13 +91,17 @@ class HttpOutlineClientTest {
     assertEquals("published", listRequest.path("statusFilter").get(0).asText());
 
     responses.put("/api/documents.export", new Response(200, "{\"data\":\"# 导出正文\"}"));
-    assertEquals("# 导出正文", client.exportMarkdown(DOCUMENT_ID));
+    assertEquals("# 导出正文", client.exportMarkdown(connection, DOCUMENT_ID));
 
     responses.put("/api/collections.info",
         new Response(200, "{\"data\":{\"id\":\"" + COLLECTION_ID
-            + "\",\"name\":\"文档中心\"}}"));
-    client.collectionInfo(COLLECTION_ID);
-    assertEquals(COLLECTION_ID, json.readTree(requestBody.get()).path("id").asText());
+            + "\",\"name\":\"文档中心\",\"urlId\":\"delivery-D4rIACBrmU\"}}"));
+    OutlineCollection collection = client.testConnection(
+        connection, "delivery-D4rIACBrmU");
+    assertEquals(COLLECTION_ID, collection.getId());
+    assertEquals("文档中心", collection.getName());
+    assertEquals(
+        "delivery-D4rIACBrmU", json.readTree(requestBody.get()).path("id").asText());
   }
 
   @Test
@@ -110,20 +116,34 @@ class HttpOutlineClientTest {
     responses.put("/api/documents.info",
         new Response(200, okBody(document("超时", "正文", 1)), 500));
     OutlineException failure = assertThrows(
-        OutlineException.class, () -> client.info(DOCUMENT_ID));
+        OutlineException.class, () -> client.info(connection, DOCUMENT_ID));
     assertEquals(OutlineException.Type.TIMEOUT, failure.getType());
     assertFalse(failure.getMessage().contains("ol_api_test"));
 
-    assertTrue(client.isConfigured());
-    properties.setApiToken("");
-    assertFalse(new HttpOutlineClient(properties, json).isConfigured());
+    assertTrue(connection.isConfigured());
+    assertFalse(new OutlineConnection(
+        8100, connection.getBaseUrl(), connection.getPublicBaseUrl(), "",
+        COLLECTION_ID, "文档中心", "ORGANIZATION").isConfigured());
+  }
+
+  @Test
+  void rejectsUnconfiguredConnectionBeforeIssuingHttp() {
+    OutlineConnection unconfigured = new OutlineConnection(
+        8100, connection.getBaseUrl(), connection.getPublicBaseUrl(), "",
+        COLLECTION_ID, "文档中心", "ORGANIZATION");
+
+    OutlineException failure = assertThrows(
+        OutlineException.class, () -> client.info(unconfigured, DOCUMENT_ID));
+
+    assertEquals(OutlineException.Type.NOT_CONFIGURED, failure.getType());
+    assertEquals(null, authorization.get());
   }
 
   private void assertError(int status, OutlineException.Type type) {
     responses.put("/api/documents.info",
         new Response(status, "{\"error\":\"failure\",\"message\":\"request failed\"}"));
     OutlineException failure = assertThrows(
-        OutlineException.class, () -> client.info(DOCUMENT_ID));
+        OutlineException.class, () -> client.info(connection, DOCUMENT_ID));
     assertEquals(type, failure.getType());
     assertFalse(failure.getMessage().contains("ol_api_test"));
   }

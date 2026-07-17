@@ -3,6 +3,7 @@ package com.zhilu.delivery.document;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -120,8 +121,8 @@ class ProjectDocumentLifecycleIT {
         7320, "项目启动方案", "# 项目启动方案\n\n项目目标为完成核心系统升级。", 2, "REQUIRED");
     optionalDocumentId = projectDocument(
         7330, "参考资料", "# 参考资料\n\n请补充相关链接", 1, "OPTIONAL");
-    when(outline.info(anyString())).thenAnswer(
-        invocation -> outlineDocuments.get(invocation.getArgument(0)));
+    when(outline.info(any(OutlineConnection.class), anyString())).thenAnswer(
+        invocation -> outlineDocuments.get(invocation.getArgument(1)));
   }
 
   @Test
@@ -190,8 +191,8 @@ class ProjectDocumentLifecycleIT {
     CountDownLatch staleRefreshRead = new CountDownLatch(1);
     CountDownLatch continueStaleRefresh = new CountDownLatch(1);
     AtomicBoolean delayRequiredDocument = new AtomicBoolean(true);
-    when(outline.info(anyString())).thenAnswer(invocation -> {
-      String documentId = invocation.getArgument(0);
+    when(outline.info(any(OutlineConnection.class), anyString())).thenAnswer(invocation -> {
+      String documentId = invocation.getArgument(1);
       if ("project-document-7320".equals(documentId)
           && delayRequiredDocument.compareAndSet(true, false)) {
         staleRefreshRead.countDown();

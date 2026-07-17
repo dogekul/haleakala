@@ -1,6 +1,8 @@
 package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -89,7 +91,7 @@ class DocumentExportApiIT {
 
   @Test
   void exportsKnowledgeAndProjectDocumentsWithSafeHeaders() throws Exception {
-    when(outline.info(DOCUMENT_ID)).thenReturn(document());
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID))).thenReturn(document());
 
     mvc.perform(get("/api/v1/knowledge/5100/document/export?format=md")
             .with(actor(5100, 5100, "knowledge:read")))
@@ -120,7 +122,7 @@ class DocumentExportApiIT {
 
   @Test
   void outlineFailureDoesNotFallBackToLegacyBody() throws Exception {
-    when(outline.info(DOCUMENT_ID)).thenThrow(
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID))).thenThrow(
         new OutlineException(OutlineException.Type.UNAVAILABLE, "Outline 暂不可用"));
 
     mvc.perform(get("/api/v1/knowledge/5100/document/export?format=md")

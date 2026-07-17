@@ -10,8 +10,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
@@ -40,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -135,6 +139,12 @@ class ProjectDocumentInitializationTest {
         "template-7101", null, "项目启动检查单（新版）", "# 新版正文", 8));
 
     jobs.runDueJobs();
+
+    ArgumentCaptor<OutlineConnection> connection =
+        ArgumentCaptor.forClass(OutlineConnection.class);
+    verify(outline, atLeastOnce()).info(connection.capture(), anyString());
+    assertEquals(701L, connection.getValue().getOrganizationId());
+    assertEquals("ol_api_test", connection.getValue().getApiToken());
 
     ProjectView initialized = projects.get(project.getId());
     assertEquals("READY", initialized.getDocumentSpaceStatus());
@@ -405,16 +415,16 @@ class ProjectDocumentInitializationTest {
   private void stubOutline() {
     outlineDocuments.clear();
     outlineIds.set(0);
-    when(outline.create(anyString(), anyString(), anyString(), anyString(),
-        nullable(String.class), anyBoolean())).thenAnswer(invocation -> {
+    when(outline.create(any(OutlineConnection.class), anyString(), anyString(), anyString(),
+        anyString(), nullable(String.class), anyBoolean())).thenAnswer(invocation -> {
           if (!outlineAvailable.get()) {
             throw new OutlineException(
                 OutlineException.Type.UNAVAILABLE, "Outline is unavailable");
           }
-          String id = invocation.getArgument(0);
-          String title = invocation.getArgument(1);
-          String text = invocation.getArgument(2);
-          String parent = invocation.getArgument(4);
+          String id = invocation.getArgument(1);
+          String title = invocation.getArgument(2);
+          String text = invocation.getArgument(3);
+          String parent = invocation.getArgument(5);
           if (blockNextCreate.compareAndSet(true, false)) {
             blockedCreateStarted.countDown();
             if (!releaseBlockedCreate.await(5, TimeUnit.SECONDS)) {
@@ -426,14 +436,13 @@ class ProjectDocumentInitializationTest {
           outlineDocuments.put(id, document);
           return document;
         });
-    when(outline.info(anyString())).thenAnswer(invocation -> {
+    when(outline.info(any(OutlineConnection.class), anyString())).thenAnswer(invocation -> {
       if (!outlineAvailable.get()) {
         throw new OutlineException(
             OutlineException.Type.UNAVAILABLE, "Outline is unavailable");
       }
-      return outlineDocuments.get(invocation.getArgument(0));
+      return outlineDocuments.get(invocation.getArgument(1));
     });
-    when(outline.isConfigured()).thenReturn(true);
   }
 
   private OutlineDocument document(

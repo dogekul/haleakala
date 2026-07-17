@@ -1,8 +1,11 @@
 package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -18,6 +21,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -102,7 +106,8 @@ class DocumentApiIT {
 
   @Test
   void readsKnowledgeAndProjectDocumentsThroughBusinessIds() throws Exception {
-    when(outline.info(DOCUMENT_ID)).thenReturn(document("知识正文", "# 最新正文", 3));
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("知识正文", "# 最新正文", 3));
 
     mvc.perform(get("/api/v1/knowledge/{id}/document", knowledgeId)
             .with(actor(4100, 4100, "knowledge:read")))
@@ -120,11 +125,20 @@ class DocumentApiIT {
             .with(actor(4101, 4100, "project:read")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revision").value(3));
+
+    ArgumentCaptor<OutlineConnection> connection =
+        ArgumentCaptor.forClass(OutlineConnection.class);
+    verify(outline, times(2)).info(connection.capture(), eq(DOCUMENT_ID));
+    for (OutlineConnection snapshot : connection.getAllValues()) {
+      assertEquals(4100L, snapshot.getOrganizationId());
+      assertEquals("ol_api_test", snapshot.getApiToken());
+    }
   }
 
   @Test
   void staleKnowledgeSaveReturnsConflictWithoutUpdatingOutline() throws Exception {
-    when(outline.info(DOCUMENT_ID)).thenReturn(document("知识正文", "# 最新正文", 3));
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("知识正文", "# 最新正文", 3));
 
     mvc.perform(put("/api/v1/knowledge/{id}/document", knowledgeId)
             .with(actor(4100, 4100, "knowledge:write")).with(csrf())
@@ -132,13 +146,16 @@ class DocumentApiIT {
             .content("{\"title\":\"知识正文\",\"markdown\":\"# 我的编辑\",\"revision\":2}"))
         .andExpect(status().isConflict());
 
-    verify(outline, never()).update(anyString(), anyString(), anyString());
+    verify(outline, never()).update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString());
   }
 
   @Test
   void editingPublishedKnowledgeDocumentReturnsItToDraft() throws Exception {
-    when(outline.info(DOCUMENT_ID)).thenReturn(document("知识正文", "# 已发布正文", 2));
-    when(outline.update(DOCUMENT_ID, "知识正文", "# 修改后的正文"))
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("知识正文", "# 已发布正文", 2));
+    when(outline.update(any(OutlineConnection.class), eq(DOCUMENT_ID),
+        eq("知识正文"), eq("# 修改后的正文")))
         .thenReturn(document("知识正文", "# 修改后的正文", 3));
 
     mvc.perform(put("/api/v1/knowledge/{id}/document", knowledgeId)
