@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class KnowledgeService {
+  public static final String OPPORTUNITY_RESEARCH = "OPPORTUNITY_RESEARCH";
   private static final List<String> TYPES =
       Arrays.asList("CASE", "CODE", "TRAINING", "TEMPLATE");
   private final JdbcTemplate jdbc;
@@ -341,13 +342,18 @@ public class KnowledgeService {
 
   private void validateTemplate(String type, String stageCode, String requirement) {
     if (!"TEMPLATE".equals(type)) return;
-    try {
-      DeliveryStage.valueOf(stageCode);
-    } catch (RuntimeException invalidStage) {
-      throw new IllegalArgumentException("文档模版必须选择有效的交付阶段");
+    if (!OPPORTUNITY_RESEARCH.equals(stageCode)) {
+      try {
+        DeliveryStage.valueOf(stageCode);
+      } catch (RuntimeException invalidStage) {
+        throw new IllegalArgumentException("文档模版必须选择有效的交付阶段或业务场景");
+      }
     }
     if (!"REQUIRED".equals(requirement) && !"OPTIONAL".equals(requirement)) {
       throw new IllegalArgumentException("文档模版必需性只能是 REQUIRED 或 OPTIONAL");
+    }
+    if (OPPORTUNITY_RESEARCH.equals(stageCode) && !"REQUIRED".equals(requirement)) {
+      throw new IllegalArgumentException("需求调研报告模版必须设为必需");
     }
   }
 

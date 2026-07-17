@@ -214,7 +214,9 @@ public class ProjectDocumentService {
             + "k.outline_link_id,k.title "
             + "from knowledge_item k join document_template_config c on c.knowledge_item_id=k.id "
             + "where k.organization_id=? and k.type='TEMPLATE' and k.status='PUBLISHED' "
-            + "and c.enabled=true and c.published_revision is not null order by k.id",
+            + "and c.enabled=true and c.published_revision is not null "
+            + "and c.stage_code in ('START','REQUIREMENT','CUSTOM_DEV','GO_LIVE',"
+            + "'TRIAL_HANDOVER','STANDARDIZATION','CLOSE') order by k.id",
         organizationId);
   }
 

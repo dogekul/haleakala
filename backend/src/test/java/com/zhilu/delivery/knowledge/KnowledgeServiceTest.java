@@ -161,6 +161,16 @@ class KnowledgeServiceTest {
         snapshot.get("published_markdown_snapshot"));
   }
 
+  @Test void opportunityResearchTemplateUsesDedicatedScene() {
+    Map<String,Object> template=knowledge.create(user,"TEMPLATE","需求调研报告",
+        "商机调研","# {{客户名称}}需求调研报告","商机",
+        null,null,"ORGANIZATION",null,null,null,null,null,
+        "OPPORTUNITY_RESEARCH","REQUIRED",true);
+
+    assertEquals("OPPORTUNITY_RESEARCH",template.get("stageCode"));
+    assertEquals("REQUIRED",template.get("requirement"));
+  }
+
   @Test void failedOutlineUpdateRollsBackLocalMetadataAndFallbackBody() {
     Map<String,Object> item=knowledge.create(user,"CASE","原案例","原摘要","原正文","案例",
         1100L,1100L,"ORGANIZATION",null,null,null,null,null);
