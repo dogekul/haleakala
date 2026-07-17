@@ -17,6 +17,7 @@ import com.zhilu.delivery.common.error.NotFoundException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,6 +62,15 @@ class DocumentCenterServiceTest {
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values "
         + "(3100,'智鹿','DOC-ORG'),(3200,'其他组织','OTHER-DOC-ORG')");
+  }
+
+  @Test
+  void generatesOutlineCompatibleDeterministicUuidV4() {
+    String first = DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT");
+
+    assertEquals(4, UUID.fromString(first).version());
+    assertEquals(first,
+        DocumentCenterService.deterministicDocumentId(3100, "KNOWLEDGE_ROOT"));
   }
 
   @Test

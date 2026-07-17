@@ -252,9 +252,12 @@ public class DocumentCenterService {
   }
 
   static String deterministicDocumentId(long organizationId, String businessKey) {
-    return UUID.nameUUIDFromBytes(
+    UUID hashed = UUID.nameUUIDFromBytes(
         ("zhilu-outline:" + organizationId + ":" + businessKey)
-            .getBytes(StandardCharsets.UTF_8)).toString();
+            .getBytes(StandardCharsets.UTF_8));
+    long outlineCompatibleBits =
+        (hashed.getMostSignificantBits() & 0xffffffffffff0fffL) | 0x0000000000004000L;
+    return new UUID(outlineCompatibleBits, hashed.getLeastSignificantBits()).toString();
   }
 
   private long projectDocumentLink(long projectId, long projectDocumentId) {
