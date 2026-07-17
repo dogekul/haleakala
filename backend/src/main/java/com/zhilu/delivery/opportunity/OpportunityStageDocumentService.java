@@ -143,7 +143,7 @@ public class OpportunityStageDocumentService {
     String context = generationContext(
         organizationId, opportunityId, opportunity, warnings);
     try {
-      JsonNode generated = ai.completeJson(systemPrompt(definition),
+      JsonNode generated = ai.completeJson(organizationId, systemPrompt(definition),
           userPrompt(definition, opportunity, context, warnings), responseSchema());
       String title = requiredText(generated, "title");
       String markdown = requiredText(generated, "markdown");

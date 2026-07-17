@@ -59,7 +59,7 @@ class OpportunityStageDocumentServiceTest {
     Map<String, Object> opportunity = opportunity("POC", 3L);
     opportunity.put("productId", 41L);
     opportunity.put("productVersionId", 42L);
-    when(opportunities.get(7L, 9L)).thenReturn(opportunity);
+    when(opportunities.get(3100L, 9L)).thenReturn(opportunity);
     when(jdbc.queryForList(anyString(), anyLong(), anyString())).thenReturn(template());
     when(jdbc.queryForList(anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
       String sql = invocation.getArgument(0);
@@ -72,27 +72,27 @@ class OpportunityStageDocumentServiceTest {
         .thenReturn(51L, 52L);
     when(documents.createDocument(anyLong(), anyString(), anyString(), anyString(), anyString(),
         anyLong())).thenReturn(53L);
-    when(documents.readBusinessDocument(7L, "OPPORTUNITY:9:CLIENT_REQUESTS"))
+    when(documents.readBusinessDocument(3100L, "OPPORTUNITY:9:CLIENT_REQUESTS"))
         .thenReturn(view(53L, "甲方诉求清单", "# 模版", 1));
-    when(documents.readLink(71L, 7L))
+    when(documents.readLink(71L, 3100L))
         .thenReturn(view(71L, "需求调研报告", "需求调研报告正文", 4));
-    when(documents.readBusinessDocument(7L, "PRODUCT:41:FEATURE:61:SPEC"))
+    when(documents.readBusinessDocument(3100L, "PRODUCT:41:FEATURE:61:SPEC"))
         .thenReturn(view(81L, "功能 A Spec", "功能 A Spec 正文", 2));
     ObjectNode generated = json.createObjectNode();
     generated.put("title", "甲方诉求清单");
     generated.put("markdown", "# 已生成诉求");
-    when(ai.completeJson(anyString(), anyString(), any())).thenReturn(generated);
-    when(documents.updateBusinessDocument(eq(7L), eq("OPPORTUNITY:9:CLIENT_REQUESTS"),
+    when(ai.completeJson(eq(3100L), anyString(), anyString(), any())).thenReturn(generated);
+    when(documents.updateBusinessDocument(eq(3100L), eq("OPPORTUNITY:9:CLIENT_REQUESTS"),
         eq("甲方诉求清单"), eq("# 已生成诉求"), eq(1L)))
         .thenReturn(view(53L, "甲方诉求清单", "# 已生成诉求", 2));
 
     OpportunityStageDocumentService.PreparedDocument prepared =
-        service.prepare(7L, 9L, "CLIENT_REQUESTS", 3L);
+        service.prepare(3100L, 9L, "CLIENT_REQUESTS", 3L);
 
     assertEquals("AI", prepared.getGenerationStatus());
     assertEquals("# 已生成诉求", prepared.getDocument().getMarkdown());
     ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-    verify(ai).completeJson(anyString(), prompt.capture(), any());
+    verify(ai).completeJson(eq(3100L), anyString(), prompt.capture(), any());
     assertTrue(prompt.getValue().contains("需求调研报告正文"));
     assertTrue(prompt.getValue().contains("功能 A"));
     assertTrue(prompt.getValue().contains("INCLUDED"));
@@ -102,7 +102,7 @@ class OpportunityStageDocumentServiceTest {
   @Test
   void aiFailureKeepsEditableTemplateAndWarnings() {
     Map<String, Object> opportunity = opportunity("POC", 3L);
-    when(opportunities.get(7L, 9L)).thenReturn(opportunity);
+    when(opportunities.get(3100L, 9L)).thenReturn(opportunity);
     when(jdbc.queryForList(anyString(), anyLong(), anyString())).thenReturn(template());
     when(jdbc.queryForList(anyString(), anyLong(), anyLong()))
         .thenReturn(Collections.<Map<String, Object>>emptyList());
@@ -110,13 +110,13 @@ class OpportunityStageDocumentServiceTest {
         .thenReturn(51L, 52L);
     when(documents.createDocument(anyLong(), anyString(), anyString(), anyString(), anyString(),
         anyLong())).thenReturn(53L);
-    when(documents.readBusinessDocument(7L, "OPPORTUNITY:9:GAP_ANALYSIS"))
+    when(documents.readBusinessDocument(3100L, "OPPORTUNITY:9:GAP_ANALYSIS"))
         .thenReturn(view(53L, "差距分析报告", "# 模版", 1));
-    when(ai.completeJson(anyString(), anyString(), any()))
+    when(ai.completeJson(eq(3100L), anyString(), anyString(), any()))
         .thenThrow(new IllegalStateException("AI unavailable"));
 
     OpportunityStageDocumentService.PreparedDocument prepared =
-        service.prepare(7L, 9L, "GAP_ANALYSIS", 3L);
+        service.prepare(3100L, 9L, "GAP_ANALYSIS", 3L);
 
     assertEquals("FAILED", prepared.getGenerationStatus());
     assertEquals("# 模版", prepared.getDocument().getMarkdown());
@@ -140,7 +140,7 @@ class OpportunityStageDocumentServiceTest {
 
     assertEquals("MANUAL", prepared.getGenerationStatus());
     assertEquals("# 人工调整", prepared.getDocument().getMarkdown());
-    verify(ai, never()).completeJson(anyString(), anyString(), any());
+    verify(ai, never()).completeJson(anyLong(), anyString(), anyString(), any());
   }
 
   @Test

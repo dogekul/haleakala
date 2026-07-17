@@ -100,7 +100,9 @@ public class RequirementService {
     properties.putObject("confidence").put("type", "number");
     properties.putObject("reason").put("type", "string");
     schema.putArray("required").add("level").add("confidence").add("reason"); schema.put("additionalProperties", false);
-    JsonNode result = ai.completeJson("你是交付需求分类助手。L0=标品已有，L1=需要二开，L2=不在产品范围。只返回符合 schema 的 JSON。",
+    long organizationId = ((Number) requirement.get("organizationId")).longValue();
+    JsonNode result = ai.completeJson(organizationId,
+        "你是交付需求分类助手。L0=标品已有，L1=需要二开，L2=不在产品范围。只返回符合 schema 的 JSON。",
         "需求标题：" + requirement.get("title") + "\n需求描述：" + requirement.get("description"), schema);
     String level = result.path("level").asText(); double confidence = result.path("confidence").asDouble(); String reason = result.path("reason").asText();
     if (!LEVELS.contains(level) || confidence < 0 || confidence > 1 || blank(reason)) throw new IllegalStateException("AI 分类结果不符合约束");
