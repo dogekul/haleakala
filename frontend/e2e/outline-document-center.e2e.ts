@@ -31,11 +31,11 @@ test('Outline drives knowledge templates and project stage documents end to end'
   await expect(page.getByText('Outline 配置已保存')).toBeVisible()
 
   await page.reload()
-  await expect(page.getByText('API Token 已配置')).toBeVisible()
+  await expect(page.getByText('API Token 已配置', { exact: true })).toBeVisible()
   await expect(page.getByLabel('API Token')).toHaveValue('')
-  await expect(page.getByDisplayValue(
+  await expect(page.getByLabel('Collection 链接或 UUID')).toHaveValue(
     'a4296a54-2044-4529-ba86-d598a5322e06',
-  )).toBeVisible()
+  )
 
   await nav(page, '知识库').click()
   await page.getByRole('button', { name: '创建知识' }).click()
