@@ -60,6 +60,7 @@ class SecurityAccessTest {
     jdbc.update("delete from product_module");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
+    jdbc.update("delete from outline_document_link");
     jdbc.update("delete from user_role");
     jdbc.update("delete from role_permission");
     jdbc.update("delete from app_user");

@@ -48,7 +48,7 @@ class OpportunityHandoffIT {
         "audit_log", "customer_operation", "opportunity_artifact", "opportunity_activity",
         "sales_opportunity", "project_activity", "project_artifact", "template_instance",
         "milestone", "project_risk", "project_member", "stage_instance", "delivery_project",
-        "document_job",
+        "document_job", "outline_document_link",
         "file_object", "customer", "product_version", "product", "app_user", "organization")) {
       jdbc.update("delete from " + table);
     }
@@ -222,10 +222,20 @@ class OpportunityHandoffIT {
     for (String type : Arrays.asList("AWARD_NOTICE", "CONTRACT", "REVIEW_MINUTES",
         "EMAIL_ARCHIVE", "SEALED_CONTRACT")) {
       boolean report = "REVIEW_MINUTES".equals(type);
+      Long outlineLinkId = null;
+      if (report) {
+        jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+                + "outline_collection_id,title_cache,sync_status) values "
+                + "(600,?,'OPPORTUNITY_ARTIFACT','collection',?,'READY')",
+            "OPPORTUNITY:" + id + ":" + type, type);
+        outlineLinkId = jdbc.queryForObject(
+            "select id from outline_document_link where organization_id=600 and business_key=?",
+            Long.class, "OPPORTUNITY:" + id + ":" + type);
+      }
       jdbc.update("insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
-              + "artifact_type,title,content_markdown,file_id,created_by) "
-              + "values (600,?,'CONTRACT',?,?,?,?,600)",
-          id, type, type, report ? "评审通过" : null, report ? null : 600L);
+              + "artifact_type,title,content_markdown,file_id,outline_link_id,created_by) "
+              + "values (600,?,'CONTRACT',?,?,?,?,?,600)",
+          id, type, type, report ? "评审通过" : null, report ? null : 600L, outlineLinkId);
     }
     return id;
   }
