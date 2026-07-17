@@ -1,5 +1,6 @@
 package com.zhilu.delivery.opportunity;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,6 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class OpportunityLifecycleIT {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private OpportunityService opportunities;
   private final ObjectMapper json = new ObjectMapper();
 
   @BeforeEach
@@ -47,6 +49,8 @@ class OpportunityLifecycleIT {
     jdbc.update("delete from opportunity_activity");
     jdbc.update("delete from sales_opportunity");
     jdbc.update("delete from outline_document_link");
+    jdbc.update("delete from document_template_config");
+    jdbc.update("delete from knowledge_item");
     jdbc.update("delete from file_object");
     jdbc.update("delete from delivery_project");
     jdbc.update("delete from customer");
@@ -188,6 +192,32 @@ class OpportunityLifecycleIT {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void submitsLinkedTemplateDocumentsIdempotentlyAndOnlyAdvancesConfiguredStages() {
+    long decision = opportunity(500, 500, "决策纪要推进", "OPPORTUNITY");
+    long decisionLink = addDocumentLink(decision, "DECISION_MINUTES", "决策评审纪要");
+    long templateId = template("决策模板");
+
+    java.util.Map<String, Object> advanced = opportunities.submitDocumentArtifact(
+        500, decision, 500, 0, "DECISION_MINUTES", OpportunityStage.OPPORTUNITY,
+        decisionLink, templateId, 3, "决策评审纪要", true);
+    assertEquals("POC", advanced.get("stage"));
+    assertEquals("POC", opportunities.submitDocumentArtifact(
+        500, decision, 500, 0, "DECISION_MINUTES", OpportunityStage.OPPORTUNITY,
+        decisionLink, templateId, 3, "决策评审纪要", true).get("stage"));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from opportunity_artifact where opportunity_id=? "
+            + "and artifact_type='DECISION_MINUTES'", Integer.class, decision));
+
+    long poc = opportunity(500, 500, "POC 单材料", "POC");
+    long requestsLink = addDocumentLink(poc, "CLIENT_REQUESTS", "甲方诉求清单");
+    java.util.Map<String, Object> unchanged = opportunities.submitDocumentArtifact(
+        500, poc, 500, 0, "CLIENT_REQUESTS", OpportunityStage.POC,
+        requestsLink, templateId, 3, "甲方诉求清单", false);
+    assertEquals("POC", unchanged.get("stage"));
+    assertEquals(0L, ((Number) unchanged.get("version")).longValue());
+  }
+
   private org.springframework.test.web.servlet.ResultActions addReport(
       long id, String type, String title, String content) throws Exception {
     return mvc.perform(post("/api/v1/opportunities/{id}/artifacts", id)
@@ -221,6 +251,26 @@ class OpportunityLifecycleIT {
     jdbc.update("insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
         + "artifact_type,title,outline_link_id,created_by) "
         + "values (500,?,?,?,?,?,500)", opportunityId, stage, artifactType, title, linkId);
+  }
+
+  private long addDocumentLink(long opportunityId, String artifactType, String title) {
+    String businessKey = "OPPORTUNITY:" + opportunityId + ":" + artifactType;
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+        + "outline_collection_id,outline_document_id,title_cache,revision,sync_status) "
+        + "values (500,?,?,'collection',?,?,1,'READY')",
+        businessKey, artifactType, "document-" + opportunityId + "-" + artifactType, title);
+    return jdbc.queryForObject(
+        "select id from outline_document_link where organization_id=500 and business_key=?",
+        Long.class, businessKey);
+  }
+
+  private long template(String title) {
+    jdbc.update("insert into knowledge_item(organization_id,type,title,summary,content_text,"
+        + "visibility,status,owner_user_id) values (500,'TEMPLATE',?,'模板','# 模板',"
+        + "'ORGANIZATION','PUBLISHED',500)", title);
+    return jdbc.queryForObject(
+        "select id from knowledge_item where organization_id=500 and title=?",
+        Long.class, title);
   }
 
   private org.springframework.test.web.servlet.ResultActions advance(
