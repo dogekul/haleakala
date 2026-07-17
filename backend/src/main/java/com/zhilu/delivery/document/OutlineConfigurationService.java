@@ -99,11 +99,12 @@ public class OutlineConfigurationService {
     if (blank(effectiveToken)) {
       throw new IllegalArgumentException("Outline API Token 不能为空");
     }
+    String normalizedCollectionReference = normalizeCollectionReference(collectionReference);
     OutlineConnection connection = new OutlineConnection(
         organizationId, normalizedBaseUrl, normalizedPublicBaseUrl, effectiveToken,
-        current.getCollectionId(), current.getCollectionName(), current.getSource());
+        normalizedCollectionReference, current.getCollectionName(), current.getSource());
     return new OutlineConfigurationDraft(
-        connection, normalizeCollectionReference(collectionReference), tokenChanged);
+        connection, normalizedCollectionReference, tokenChanged);
   }
 
   @Transactional
