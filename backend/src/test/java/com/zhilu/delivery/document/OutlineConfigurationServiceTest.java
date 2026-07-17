@@ -2,16 +2,22 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.security.SettingSecretCipher;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
@@ -30,6 +36,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OutlineConfigurationServiceTest {
   @Autowired OutlineConfigurationService configurations;
   @Autowired JdbcTemplate jdbc;
+  @Autowired SettingSecretCipher cipher;
 
   @BeforeEach
   void seed() {
@@ -47,6 +54,135 @@ class OutlineConfigurationServiceTest {
     assertEquals("ol_api_env", value.getApiToken());
     assertEquals("ENVIRONMENT", value.getSource());
     assertTrue(value.isConfigured());
+  }
+
+  @Test
+  void resolvesOrganizationFieldsIndependentlyWithEnvironmentFallback() {
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.baseUrl','http://outline.one',false)");
+
+    OutlineConnection mixed = configurations.resolve(8100);
+    assertEquals("http://outline.one", mixed.getBaseUrl());
+    assertEquals("http://outline-browser.env", mixed.getPublicBaseUrl());
+    assertEquals("ol_api_env", mixed.getApiToken());
+    assertEquals("a4296a54-2044-4529-ba86-d598a5322e06", mixed.getCollectionId());
+    assertEquals("MIXED", mixed.getSource());
+  }
+
+  @Test
+  void reportsOrganizationAfterAllConnectionFieldsAreStored() {
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.baseUrl','http://outline.one',false)");
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.publicBaseUrl','http://browser.one',false)");
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.collectionId',"
+        + "'11111111-1111-4111-8111-111111111111',false)");
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.apiToken',?,true)", cipher.encrypt("ol_api_one"));
+
+    OutlineConnection organization = configurations.resolve(8100);
+    assertEquals("http://outline.one", organization.getBaseUrl());
+    assertEquals("http://browser.one", organization.getPublicBaseUrl());
+    assertEquals("ol_api_one", organization.getApiToken());
+    assertEquals("11111111-1111-4111-8111-111111111111",
+        organization.getCollectionId());
+    assertEquals("ORGANIZATION", organization.getSource());
+  }
+
+  @Test
+  void rejectsStoredApiTokensThatAreNotMarkedEncrypted() {
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (8100,'outline.apiToken','ol_api_plaintext',false)");
+
+    IllegalStateException failure = assertThrows(
+        IllegalStateException.class, () -> configurations.resolve(8100));
+    assertTrue(failure.getMessage().contains("必须以密文存储"));
+  }
+
+  @Test
+  void defaultsBlankPublicUrlToTheNormalizedBaseUrl() {
+    OutlineConfigurationDraft draft = configurations.draft(
+        8100, "http://outline.one/", "  ", "ol_api_one", "D4rIACBrmU");
+
+    assertEquals("http://outline.one", draft.getConnection().getBaseUrl());
+    assertEquals("http://outline.one", draft.getConnection().getPublicBaseUrl());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "ftp://outline.one",
+      "http:/",
+      "http://user:pass@outline.one",
+      "http://outline.one?check=true",
+      "http://outline.one/#section",
+      "http://outline.one/api"
+  })
+  void rejectsEveryInvalidBaseUrlShape(String baseUrl) {
+    assertThrows(IllegalArgumentException.class, () -> configurations.draft(
+        8100, baseUrl, "http://browser.one", "ol_api_one", "D4rIACBrmU"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "/collection/D4rIACBrmU",
+      "file:///collection/D4rIACBrmU",
+      "http:/collection/D4rIACBrmU",
+      "http://user:pass@browser.one/collection/D4rIACBrmU",
+      "http://browser.one/collection/D4rIACBrmU?check=true",
+      "http://browser.one/collection/D4rIACBrmU#section",
+      "http://browser.one/doc/D4rIACBrmU",
+      "http://browser.one/collection/",
+      "http://browser.one/collection/D4rIACBrmU/extra"
+  })
+  void rejectsEveryInvalidFullCollectionLinkShape(String collectionReference) {
+    assertThrows(IllegalArgumentException.class, () -> configurations.draft(
+        8100, "http://outline.one", "http://browser.one",
+        "ol_api_one", collectionReference));
+  }
+
+  @Test
+  void exposesExactlyThePublicConfigurationViewContract() {
+    Map<String, Object> view = configurations.view(8100);
+
+    assertEquals(new LinkedHashSet<String>(Arrays.asList(
+        "baseUrl", "publicBaseUrl", "collectionId", "collectionName",
+        "apiTokenConfigured", "source")), view.keySet());
+    assertEquals(6, view.size());
+    assertEquals(Boolean.TRUE, view.get("apiTokenConfigured"));
+    assertFalse(view.containsKey("apiToken"));
+  }
+
+  @Test
+  void buildsDocumentUrlsFromTheCallerResolvedConnection() {
+    OutlineConnection connection = new OutlineConnection(
+        8100, "http://outline.one", "http://browser.one", "ol_api_one",
+        "11111111-1111-4111-8111-111111111111", "交付一", "ORGANIZATION");
+
+    assertEquals("http://browser.one/doc/D4rIACBrmU",
+        configurations.documentUrl(connection, "D4rIACBrmU"));
+    assertNull(configurations.documentUrl(connection, "  "));
+  }
+
+  @Test
+  void rollsBackEarlierSettingUpsertsWhenALaterUpsertFails() {
+    OutlineConfigurationDraft draft = configurations.draft(
+        8100, "http://outline.one", "http://browser.one",
+        "ol_api_one", "D4rIACBrmU");
+    jdbc.execute("alter table system_setting add constraint reject_outline_collection_name "
+        + "check (setting_key <> 'outline.collectionName')");
+    try {
+      assertThrows(DataIntegrityViolationException.class, () -> configurations.saveValidated(
+          8100, draft,
+          new OutlineCollection(
+              "11111111-1111-4111-8111-111111111111", "交付一", "D4rIACBrmU")));
+      assertEquals(0, jdbc.queryForObject(
+          "select count(*) from system_setting where organization_id=8100",
+          Integer.class));
+    } finally {
+      jdbc.execute("alter table system_setting drop constraint "
+          + "reject_outline_collection_name");
+    }
   }
 
   @Test
