@@ -91,7 +91,8 @@ class OpportunityResearchReportApiIT {
             .content("{\"title\":\"需求调研报告\",\"markdown\":\"# 完成\","
                 + "\"revision\":4,\"opportunityVersion\":0}"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.stage").value("OPPORTUNITY"));
+        .andExpect(jsonPath("$.opportunity.stage").value("OPPORTUNITY"))
+        .andExpect(jsonPath("$.markdown").value("# 需求调研"));
   }
 
   @Test void exportsAndEnforcesReadWritePermissions() throws Exception {

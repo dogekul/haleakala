@@ -1,9 +1,15 @@
 import { api } from '../../services/api'
+import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
 import type {
   CustomerOperation, FullLink, ImplementationCockpit, ImplementationItem, OperationInput,
   Opportunity, OpportunityActivity, OpportunityArtifact, OpportunityInput, OwnerOption,
   UploadedFile,
 } from './types'
+
+export interface PreparedResearchReport extends DocumentContent {
+  sourceTemplateId: number
+  sourceTemplateRevision: number
+}
 
 function fileBody(file: File) {
   const body = new FormData()
@@ -24,6 +30,24 @@ export const crmApi = {
     api<Opportunity>(`/api/v1/opportunities/${id}/advance`, {
       method: 'POST', body: JSON.stringify({ version, decision }),
     }),
+  prepareResearchReport: (id: number, version: number) =>
+    api<PreparedResearchReport>(`/api/v1/opportunities/${id}/research-report/prepare`, {
+      method: 'POST', body: JSON.stringify({ version }),
+    }),
+  researchReport: (id: number) =>
+    api<DocumentContent>(`/api/v1/opportunities/${id}/research-report`),
+  saveResearchReport: (id: number, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/opportunities/${id}/research-report`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
+  submitResearchReport: (id: number, opportunityVersion: number, input: SaveDocumentInput) =>
+    api<DocumentContent & { opportunity: Opportunity }>(
+      `/api/v1/opportunities/${id}/research-report/submit`, {
+        method: 'POST', body: JSON.stringify({ ...input, opportunityVersion }),
+      },
+    ),
+  researchReportExportUrl: (id: number, format: DocumentFormat) =>
+    `/api/v1/opportunities/${id}/research-report/export?format=${format}`,
   activities: (id: number) => api<OpportunityActivity[]>(`/api/v1/opportunities/${id}/activities`),
   createActivity: (id: number, title: string, sortOrder = 0) =>
     api<OpportunityActivity>(`/api/v1/opportunities/${id}/activities`, {

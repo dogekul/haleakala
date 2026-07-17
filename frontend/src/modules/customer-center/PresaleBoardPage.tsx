@@ -5,13 +5,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { projectApi } from '../project/projectApi'
 import { crmApi } from './crmApi'
 import { opportunityStages, stageLabel } from './OpportunityOverviewPage'
 import type { Opportunity, OpportunityArtifact, OpportunityStage, UploadedFile } from './types'
 
 const artifactTypes: Record<OpportunityStage, { value: string; label: string; file?: boolean }[]> = {
-  LEAD: [{ value: 'RESEARCH_REPORT', label: '商机调研报告' }],
+  LEAD: [],
   OPPORTUNITY: [{ value: 'DECISION_MINUTES', label: '决策评审纪要' }],
   POC: [{ value: 'PRESENTATION', label: '讲解材料', file: true }, { value: 'CLIENT_REQUESTS', label: '甲方诉求清单' }, { value: 'POC_SCORE', label: 'POC 得分表' }, { value: 'GAP_ANALYSIS', label: '差距分析报告' }],
   BIDDING: [{ value: 'BID_DOCUMENT', label: '投标文件', file: true }],
@@ -26,6 +27,7 @@ export function PresaleBoardPage() {
   const [artifactFor, setArtifactFor] = useState<Opportunity>()
   const [artifactError, setArtifactError] = useState('')
   const [handoffFor, setHandoffFor] = useState<Opportunity>()
+  const [researchFor, setResearchFor] = useState<Opportunity>()
 
   const advance = useMutation({
     mutationFn: ({ item, decision }: { item: Opportunity; decision?: 'PASS' | 'REJECT' }) => crmApi.advanceOpportunity(item.id, item.version, decision),
@@ -37,6 +39,7 @@ export function PresaleBoardPage() {
   })
 
   const requestAdvance = (item: Opportunity, decision?: 'PASS' | 'REJECT') => {
+    if (item.stage === 'LEAD') { setResearchFor(item); return }
     if (item.stage === 'CONTRACT' && decision !== 'REJECT') { setHandoffFor(item); return }
     if (decision === 'REJECT') {
       Modal.confirm({ title: '确认丢单？', content: '丢单后商机不可继续推进。', okText: '确认丢单', okButtonProps: { danger: true }, onOk: () => advance.mutate({ item, decision }) })
@@ -53,14 +56,62 @@ export function PresaleBoardPage() {
         <header><strong>{stage.label}</strong><span>{(query.data ?? []).filter(item => item.stage === stage.value).length}</span></header>
         {(query.data ?? []).filter(item => item.stage === stage.value).map(item => <Card key={item.id} size="small" className="presale-card">
           <Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><p>{item.customerName}</p>
-          <Space wrap>{canWrite && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
+          <Space wrap>{canWrite && artifactTypes[item.stage].length > 0 && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
             {canWrite && <AdvanceButtons item={item} loading={advance.isPending} onAdvance={requestAdvance} />}</Space>
         </Card>)}
       </section>)}</div>
     </PageState>
     <ArtifactDrawer opportunity={artifactFor} error={artifactError} canWrite={canWrite} onClose={() => setArtifactFor(undefined)} />
+    <ResearchReportDrawer opportunity={researchFor} onClose={() => setResearchFor(undefined)} />
     <HandoffDrawer opportunity={handoffFor} onClose={() => setHandoffFor(undefined)} />
   </div>
+}
+
+function ResearchReportDrawer({
+  opportunity, onClose,
+}: {
+  opportunity?: Opportunity
+  onClose(): void
+}) {
+  const client = useQueryClient()
+  return <Drawer
+    title="填写需求调研报告"
+    open={Boolean(opportunity)}
+    width="min(1180px, 94vw)"
+    onClose={onClose}
+    destroyOnClose
+  >
+    {opportunity && <>
+      <Alert
+        className="crm-drawer-alert"
+        type="info"
+        showIcon
+        message={`${opportunity.customerName} · ${opportunity.title}`}
+        description="报告由知识库已发布模版生成。可随时保存草稿，提交后商机将推进到商机阶段。"
+      />
+      <DocumentWorkspace
+        key={opportunity.id}
+        title="需求调研报告"
+        load={() => crmApi.prepareResearchReport(opportunity.id, opportunity.version)}
+        save={input => crmApi.saveResearchReport(opportunity.id, input)}
+        submit={input => crmApi.submitResearchReport(
+          opportunity.id, opportunity.version, input,
+        )}
+        submitLabel="提交报告并推进"
+        exportUrl={format => crmApi.researchReportExportUrl(opportunity.id, format)}
+        canEdit
+        onSubmitted={() => {
+          void Promise.all([
+            client.invalidateQueries({ queryKey: ['opportunities'] }),
+            client.invalidateQueries({ queryKey: ['opportunity', opportunity.id] }),
+            client.invalidateQueries({ queryKey: ['opportunity-artifacts', opportunity.id] }),
+          ])
+          message.success('需求调研报告已提交，商机阶段已推进')
+          onClose()
+        }}
+      />
+    </>}
+  </Drawer>
 }
 
 function AdvanceButtons({ item, loading, onAdvance }: { item: Opportunity; loading: boolean; onAdvance: (item: Opportunity, decision?: 'PASS' | 'REJECT') => void }) {

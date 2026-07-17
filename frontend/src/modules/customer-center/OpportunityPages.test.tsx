@@ -82,10 +82,34 @@ it('商机筛选发送服务端查询且只读用户没有编辑入口', async (
   expect(screen.queryByRole('button', { name: /编辑/ })).not.toBeInTheDocument()
 })
 
-it('售前看板按五阶段分列且缺少产出物时打开补充抽屉', async () => {
+it('推进线索时从知识库模版填写并提交需求调研报告', async () => {
+  const requests: Array<{ path: string; body?: string }> = []
   const fetch = vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
-    if (String(path).includes('/advance') && init?.method === 'POST') {
-      return json({ code: 'INVALID_ARGUMENT', message: '缺少必需产出物：商机调研报告' }, 400)
+    const value = String(path)
+    if (value.endsWith('/research-report/prepare')) {
+      return json({
+        linkId: 91,
+        title: '银行需求调研报告',
+        markdown: '# {{调研结论}}',
+        renderedHtml: '<h1>需求调研报告</h1><p>请填写调研结论</p>',
+        revision: 4,
+        syncStatus: 'READY',
+        sourceTemplateId: 20,
+        sourceTemplateRevision: 3,
+      })
+    }
+    if (value.endsWith('/research-report/submit')) {
+      requests.push({ path: value, body: String(init?.body) })
+      const body = JSON.parse(String(init?.body))
+      return json({
+        linkId: 91,
+        title: body.title,
+        markdown: body.markdown,
+        renderedHtml: '<h1>已完成调研</h1>',
+        revision: 5,
+        syncStatus: 'READY',
+        opportunity: { ...opportunities[0], stage: 'OPPORTUNITY', version: 1 },
+      })
     }
     return json(opportunities)
   })
@@ -95,10 +119,29 @@ it('售前看板按五阶段分列且缺少产出物时打开补充抽屉', asyn
 
   await screen.findByText('财务中台升级')
   expect(screen.getAllByTestId(/presale-column-/)).toHaveLength(5)
+  const leadCard = screen.getByText('财务中台升级').closest('.presale-card')!
+  expect(within(leadCard).queryByRole('button', { name: '产出物' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '推进财务中台升级' }))
-  const drawer = await screen.findByRole('dialog', { name: '补充产出物' })
-  expect(within(drawer).getByText('缺少必需产出物：商机调研报告')).toBeVisible()
-  expect(within(drawer).getByLabelText('报告正文')).toBeVisible()
+  const drawer = await screen.findByRole('dialog', { name: '填写需求调研报告' })
+  expect(await within(drawer).findByText('请填写调研结论')).toBeVisible()
+  expect(within(drawer).queryByLabelText('报告正文')).not.toBeInTheDocument()
+  await user.click(within(drawer).getByRole('button', { name: '编辑' }))
+  const title = within(drawer).getByRole('textbox', { name: '文档标题' })
+  const editor = within(drawer).getByRole('textbox', { name: 'Markdown 正文' })
+  await user.clear(title)
+  await user.type(title, '银行需求调研报告')
+  await user.clear(editor)
+  await user.type(editor, '# 已完成调研')
+  await user.click(within(drawer).getByRole('button', { name: '提交报告并推进' }))
+  await waitFor(() => expect(requests).toContainEqual({
+    path: '/api/v1/opportunities/1/research-report/submit',
+    body: JSON.stringify({
+      title: '银行需求调研报告',
+      markdown: '# 已完成调研',
+      revision: 4,
+      opportunityVersion: 0,
+    }),
+  }))
 })
 
 it('文件产出物直接上传且交接使用产品版本和负责人选择器', async () => {
@@ -157,8 +200,15 @@ it('CRM只读用户不能补产出物或转交', async () => {
 it('商机详情展示活动产出物和客户到运营的全链深链', async () => {
   vi.stubGlobal('fetch', vi.fn((path: RequestInfo | URL) => {
     const value = String(path)
+    if (value.endsWith('/research-report')) return json({
+      linkId: 93, title: '需求调研报告', markdown: '# Outline 报告正文',
+      renderedHtml: '<h1>Outline 报告正文</h1>', revision: 5, syncStatus: 'READY',
+    })
     if (value.endsWith('/activities')) return json([{ id: 91, opportunityId: 1, stageCode: 'LEAD', title: '确认关键联系人', status: 'TODO', sortOrder: 0, createdAt: '2026-07-01', version: 0 }])
-    if (value.endsWith('/artifacts')) return json([{ id: 92, opportunityId: 1, stageFrom: 'LEAD', artifactType: 'RESEARCH_REPORT', title: '商机调研报告', contentMarkdown: '调研结论', createdAt: '2026-07-01' }])
+    if (value.endsWith('/artifacts')) return json([
+      { id: 92, opportunityId: 1, stageFrom: 'LEAD', artifactType: 'RESEARCH_REPORT', title: '历史调研报告', contentMarkdown: '调研结论', createdAt: '2026-07-01' },
+      { id: 93, opportunityId: 1, stageFrom: 'LEAD', artifactType: 'RESEARCH_REPORT', title: '需求调研报告', outlineLinkId: 93, sourceTemplateRevision: 3, createdAt: '2026-07-02' },
+    ])
     if (value.endsWith('/full-link')) return json({ customer: { id: 10, name: '华东银行' }, opportunity: { id: 1, title: '财务中台升级', stage: 'LEAD', status: 'OPEN' }, project: { id: 88, name: '财务中台项目', stage: 'REQUIREMENT', status: 'ACTIVE' }, operation: { id: 89, title: '华东银行运营', stage: 'MAINTENANCE', status: 'OPEN' } })
     return json(opportunities[0])
   }))
@@ -169,6 +219,8 @@ it('商机详情展示活动产出物和客户到运营的全链深链', async (
   expect(await screen.findByText('确认关键联系人')).toBeVisible()
   expect(screen.getByRole('button', { name: '完成确认关键联系人' })).toBeVisible()
   expect(await screen.findByText('调研结论')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: '预览报告' }))
+  expect(await screen.findByText('Outline 报告正文')).toBeVisible()
   expect(await screen.findByRole('link', { name: '进入项目' })).toHaveAttribute('href', '/projects/88')
   expect(screen.getByRole('link', { name: '进入运营' })).toHaveAttribute('href', '/customers/operations/89')
 })

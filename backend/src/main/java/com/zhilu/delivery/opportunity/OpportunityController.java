@@ -201,10 +201,12 @@ public class OpportunityController {
   public Map<String, Object> submitResearchReport(
       @PathVariable long id, @Valid @RequestBody SubmitResearchReportRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    Map<String, Object> value = researchReports.submit(
+    Map<String, Object> opportunity = researchReports.submit(
         user.getOrganizationId(), id, user.getId(), request.opportunityVersion.longValue(),
         request.title, request.markdown, request.revision.longValue());
-    record(user, "ADVANCE", id, "提交需求调研报告 · " + value.get("stage"));
+    record(user, "ADVANCE", id, "提交需求调研报告 · " + opportunity.get("stage"));
+    Map<String, Object> value = document(researchReports.read(user.getOrganizationId(), id));
+    value.put("opportunity", opportunity);
     return value;
   }
 
