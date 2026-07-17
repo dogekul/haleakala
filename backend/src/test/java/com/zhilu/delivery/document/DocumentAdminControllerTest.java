@@ -38,6 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class DocumentAdminControllerTest {
   @Autowired private MockMvc mvc;
   @MockBean private DocumentMigrationService migrations;
+  @MockBean private OutlineConfigurationService configurations;
   @MockBean private AuditService audit;
 
   @Test
@@ -56,12 +57,20 @@ class DocumentAdminControllerTest {
         .thenReturn(Collections.singletonMap("status", "PENDING"));
     when(migrations.jobs(7100, "FAILED"))
         .thenReturn(Collections.singletonList(Collections.singletonMap("id", 99)));
+    when(configurations.view(7100)).thenReturn(Collections.singletonMap(
+        "apiTokenConfigured", false));
 
     mvc.perform(get("/api/v1/admin/document-center/status").with(actor(false)))
+        .andExpect(status().isForbidden());
+    mvc.perform(get("/api/v1/admin/document-center/config").with(actor(false)))
         .andExpect(status().isForbidden());
     mvc.perform(get("/api/v1/admin/document-center/status").with(actor(true)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.integrationStatus").value("NOT_CONFIGURED"))
+        .andExpect(jsonPath("$.apiToken").doesNotExist());
+    mvc.perform(get("/api/v1/admin/document-center/config").with(actor(true)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.apiTokenConfigured").value(false))
         .andExpect(jsonPath("$.apiToken").doesNotExist());
     mvc.perform(post("/api/v1/admin/document-center/initialize")
             .with(actor(true)).with(csrf()))
