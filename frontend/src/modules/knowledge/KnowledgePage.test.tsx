@@ -160,6 +160,8 @@ it('创建文档模版时维护阶段、必需性和启用状态', async () => {
   expect(screen.getByText('适用交付阶段')).toBeVisible()
   expect(screen.getByText('项目必需性')).toBeVisible()
   expect(screen.getByText('新项目自动应用')).toBeVisible()
+  await userEvent.click(screen.getByLabelText('适用交付阶段'))
+  expect(await screen.findAllByText('商机 · 需求调研')).not.toHaveLength(0)
   vi.unstubAllGlobals()
 })
 

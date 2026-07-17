@@ -47,6 +47,37 @@ it('loads, edits and saves with the loaded Outline revision', async () => {
   expect(await screen.findByText('修订 8')).toBeVisible()
 })
 
+it('submits the edited document with its loaded revision', async () => {
+  const save = vi.fn().mockResolvedValue(content)
+  const submit = vi.fn().mockImplementation(async input => ({
+    ...content,
+    ...input,
+    revision: 8,
+  }))
+  render(<DocumentWorkspace
+    title="需求调研报告"
+    load={() => Promise.resolve(content)}
+    save={save}
+    submit={submit}
+    submitLabel="提交报告并推进"
+    exportUrl={format => `/export?format=${format}`}
+    canEdit
+  />)
+
+  await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
+  const editor = screen.getByRole('textbox', { name: 'Markdown 正文' })
+  await userEvent.clear(editor)
+  await userEvent.type(editor, '# 已完成调研')
+  await userEvent.click(screen.getByRole('button', { name: '提交报告并推进' }))
+
+  await waitFor(() => expect(submit).toHaveBeenCalledWith({
+    title: '项目启动会纪要',
+    markdown: '# 已完成调研',
+    revision: 7,
+  }))
+  expect(save).not.toHaveBeenCalled()
+})
+
 it('keeps local markdown and explains a revision conflict', async () => {
   const server = { ...content, markdown: '# 服务端新版本', revision: 8 }
   const load = vi.fn()

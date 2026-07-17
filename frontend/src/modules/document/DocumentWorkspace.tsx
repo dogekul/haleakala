@@ -11,9 +11,12 @@ export interface DocumentWorkspaceProps {
   title: string
   load(): Promise<DocumentContent>
   save(input: SaveDocumentInput): Promise<DocumentContent>
+  submit?(input: SaveDocumentInput): Promise<DocumentContent>
+  submitLabel?: string
   exportUrl(format: DocumentFormat): string
   canEdit: boolean
   onSaved?(): void
+  onSubmitted?(document: DocumentContent): void
 }
 
 const formats: Array<{ format: DocumentFormat; label: string }> = [
@@ -24,7 +27,7 @@ const formats: Array<{ format: DocumentFormat; label: string }> = [
 ]
 
 export function DocumentWorkspace({
-  title, load, save, exportUrl, canEdit, onSaved,
+  title, load, save, submit, submitLabel = '提交', exportUrl, canEdit, onSaved, onSubmitted,
 }: DocumentWorkspaceProps) {
   const loadRef = useRef(load)
   loadRef.current = load
@@ -58,12 +61,12 @@ export function DocumentWorkspace({
     void reload()
   }, [reload])
 
-  const persist = async () => {
+  const persist = async (action: typeof save, submitted = false) => {
     if (!document) return
     setSaving(true)
     setSaveError('')
     try {
-      const value = await save({
+      const value = await action({
         title: draftTitle,
         markdown,
         revision: document.revision,
@@ -72,7 +75,8 @@ export function DocumentWorkspace({
       setDraftTitle(value.title)
       setMarkdown(value.markdown)
       setMode('preview')
-      onSaved?.()
+      if (submitted) onSubmitted?.(value)
+      else onSaved?.()
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         setSaveError('Outline 中已有更新。你的本地内容仍保留在编辑器中；放弃本地修改后才能刷新服务端版本。')
@@ -140,11 +144,17 @@ export function DocumentWorkspace({
         </Dropdown>
         {canEdit && mode === 'edit' && <Button
           aria-label="保存"
-          type="primary"
+          type={submit ? 'default' : 'primary'}
           icon={<SaveOutlined />}
           loading={saving}
-          onClick={() => void persist()}
-        >保存</Button>}
+          onClick={() => void persist(save)}
+        >{submit ? '保存草稿' : '保存'}</Button>}
+        {canEdit && mode === 'edit' && submit && <Button
+          aria-label={submitLabel}
+          type="primary"
+          loading={saving}
+          onClick={() => void persist(submit, true)}
+        >{submitLabel}</Button>}
       </Space>
     </header>
     {saveError && <Alert

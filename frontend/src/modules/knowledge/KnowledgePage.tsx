@@ -27,6 +27,11 @@ const documentStatusLabel = {
   PENDING: '待初始化', CREATING: '初始化中', READY: '已同步', FAILED: '同步失败',
 } as const
 
+const templateSceneNames: Record<string, string> = {
+  ...stageNames,
+  OPPORTUNITY_RESEARCH: '商机 · 需求调研',
+}
+
 export function KnowledgePage() {
   const { me } = useAuth()
   const [type, setType] = useState('ALL')
@@ -186,13 +191,14 @@ function KnowledgeCard({
       {documentStatus === 'READY' && item.type === 'TEMPLATE' && <div className="template-meta">
         <div>
           <strong>
-            {stageNames[item.stageCode ?? ''] ?? item.stageCode}
+            {templateSceneNames[item.stageCode ?? ''] ?? item.stageCode}
             {' · '}{item.requirement === 'REQUIRED' ? '必需' : '可选'}
           </strong>
-          <span>项目阶段文档</span>
+          <span>{item.stageCode === 'OPPORTUNITY_RESEARCH' ? '商机推进文档' : '项目阶段文档'}</span>
         </div>
         <div>
-          <strong>{item.enabled === false ? '已停用' : '新项目自动应用'}</strong>
+          <strong>{item.enabled === false ? '已停用' : item.stageCode === 'OPPORTUNITY_RESEARCH'
+            ? '推进时按需拉取' : '新项目自动应用'}</strong>
           <span>修订 {item.publishedRevision ?? item.documentRevision ?? '-'}</span>
         </div>
       </div>}
@@ -250,7 +256,7 @@ function KnowledgeDetail({
           <Tag color={meta?.color}>{meta?.icon} {meta?.label}</Tag>
           <Tag>{value.status === 'PUBLISHED' ? '已发布' : '草稿'}</Tag>
           {value.type === 'TEMPLATE' && <>
-            <Tag color="blue">{stageNames[value.stageCode ?? ''] ?? value.stageCode}</Tag>
+            <Tag color="blue">{templateSceneNames[value.stageCode ?? ''] ?? value.stageCode}</Tag>
             <Tag color={value.requirement === 'REQUIRED' ? 'red' : 'default'}>
               {value.requirement === 'REQUIRED' ? '项目必需' : '项目可选'}
             </Tag>
@@ -347,7 +353,8 @@ function KnowledgeEditor({
     },
     onError: (error: Error) => message.error(error.message),
   })
-  const stages = Object.entries(stageNames).map(([stage, label]) => ({ value: stage, label }))
+  const stages = Object.entries(templateSceneNames)
+    .map(([stage, label]) => ({ value: stage, label }))
 
   return <Drawer
     width={650}
