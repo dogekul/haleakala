@@ -155,6 +155,9 @@ it('接受与端到端环境一致的单标签 Outline 服务地址', async () =
 })
 
 it.each([
+  'http:foo',
+  'http://foo_bar:3000',
+  'http://foo:3000/%2e',
   'http://user:password@outline:3000',
   'http://outline:3000/path',
   'http://outline:3000?tenant=1',
@@ -344,8 +347,57 @@ it('保存成功后重新加载可以更新表单', async () => {
   expect(await screen.findByDisplayValue('http://post-save-outline:3000')).toBeVisible()
 })
 
+it('连接测试返回的规范 Collection 不会被重新加载覆盖且会用于保存', async () => {
+  let collectionId = 'old-collection'
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/config/test') && init?.method === 'POST') return json({
+      status: 'READY', collectionId: 'canonical-collection', collectionName: '智鹿交付',
+    })
+    if (url.endsWith('/config') && init?.method === 'PUT') return json({
+      ...JSON.parse(String(init.body)), apiTokenConfigured: true, source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/config')) return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId,
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  const { client } = show()
+  const collection = await screen.findByLabelText('Collection 链接或 UUID')
+
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+  await waitFor(() => expect(collection).toHaveValue('canonical-collection'))
+
+  collectionId = 'refetched-collection'
+  await act(() => client.refetchQueries({
+    queryKey: ['admin-outline-configuration', 1],
+  }))
+  expect(collection).toHaveValue('canonical-collection')
+
+  await user.click(screen.getByRole('button', { name: '保存配置' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/config',
+    expect.objectContaining({
+      method: 'PUT', body: expect.stringContaining('"collectionId":"canonical-collection"'),
+    }),
+  ))
+})
+
 it('同一个查询缓存切换组织时不会回填或保存上一组织配置', async () => {
   let organizationId: 1 | 2 = 1
+  let organizationBLoaded = false
+  let resolveOrganizationB!: (response: Response) => void
+  const organizationBResponse = new Promise<Response>(resolve => {
+    resolveOrganizationB = resolve
+  })
   const configurations = {
     1: {
       baseUrl: 'http://org-a-outline:3000', publicBaseUrl: 'http://org-a:3000',
@@ -369,7 +421,10 @@ it('同一个查询缓存切换组织时不会回填或保存上一组织配置'
       ...configurations[organizationId],
       ...JSON.parse(String(init.body)),
     })
-    if (url.endsWith('/config')) return json(configurations[organizationId])
+    if (url.endsWith('/config')) {
+      if (organizationId === 2 && !organizationBLoaded) return organizationBResponse
+      return json(configurations[organizationId])
+    }
     if (url.endsWith('/status')) return json(notConfiguredStatus)
     if (url.endsWith('/jobs')) return json([])
     return json([])
@@ -387,9 +442,14 @@ it('同一个查询缓存切换组织时不会回填或保存上一组织配置'
 
   organizationId = 2
   rerenderOrganization(organizationId)
-  expect(await screen.findByDisplayValue('http://org-b-outline:3000')).toBeVisible()
   expect(screen.queryByDisplayValue('http://org-a-outline:3000')).not.toBeInTheDocument()
   expect(screen.queryByText('组织 A')).not.toBeInTheDocument()
+
+  organizationBLoaded = true
+  await act(async () => resolveOrganizationB(new Response(JSON.stringify(configurations[2]), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  })))
+  expect(await screen.findByDisplayValue('http://org-b-outline:3000')).toBeVisible()
 
   await user.click(screen.getByRole('button', { name: '保存配置' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(

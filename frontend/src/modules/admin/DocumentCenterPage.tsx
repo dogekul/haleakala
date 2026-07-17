@@ -37,11 +37,20 @@ export function DocumentCenterPage() {
 
 function validateOutlineRootUrl(_: unknown, value?: string) {
   if (!value?.trim()) return Promise.resolve()
+  const candidate = value.trim()
   try {
-    const url = new URL(value.trim())
+    const url = new URL(candidate)
+    const hostname = url.hostname.endsWith('.') ? url.hostname.slice(0, -1) : url.hostname
+    const hostValid = hostname.startsWith('[')
+      ? /^\[[0-9a-f:.]+\]$/i.test(hostname)
+      : hostname.split('.').every(label =>
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))
     if (
-      ['http:', 'https:'].includes(url.protocol)
-      && url.hostname
+      /^https?:\/\/[^\s/?#\\]+\/?$/i.test(candidate)
+      && /^[\x00-\x7f]+$/.test(candidate)
+      && !candidate.includes('%')
+      && ['http:', 'https:'].includes(url.protocol)
+      && hostValid
       && !url.username
       && !url.password
       && !url.search
@@ -113,6 +122,7 @@ function OrganizationDocumentCenter({ organizationId }: { organizationId: number
   const testConfiguration = useMutation({
     mutationFn: async () => adminApi.testOutlineConfiguration(await form.validateFields()),
     onSuccess: value => {
+      configurationDirty.current = true
       form.setFieldValue('collectionId', value.collectionId)
       setConnectionTest(value)
       message.success('Outline 连接正常')
