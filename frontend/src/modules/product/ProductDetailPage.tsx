@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router-dom'
 import { AuthContext } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
 import { ProductCoverageTab } from './ProductCoverageTab'
+import { ProductDocumentsTab } from './ProductDocumentsTab'
 import { productApi } from './productApi'
 import { ProductStatusTag } from './ProductListPage'
 import { ProductStructureTab } from './ProductStructureTab'
@@ -31,6 +32,8 @@ export function ProductDetailPage() {
           { key: 'structure', label: '模块与功能', children: <ProductStructureTab productId={productId}
             readOnly={!me?.permissions.includes('product:write') || product.data.status === 'ARCHIVED'} /> },
           { key: 'versions', label: '版本', children: <ProductVersionsTab productId={productId}
+            readOnly={!me?.permissions.includes('product:write') || product.data.status === 'ARCHIVED'} /> },
+          { key: 'documents', label: '产品文档', children: <ProductDocumentsTab productId={productId}
             readOnly={!me?.permissions.includes('product:write') || product.data.status === 'ARCHIVED'} /> },
           { key: 'coverage', label: '覆盖度', children: <ProductCoverageTab productId={productId} /> },
         ]} />

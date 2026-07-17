@@ -495,6 +495,24 @@ button, input { font: inherit; }
 .crm-kpis .ant-card-body { padding: 15px 17px; }
 .crm-kpis .ant-statistic-content { font-size: 22px; }
 .opportunity-funnel { margin-bottom: 14px; border-color: #e5e6eb; }
+
+.product-document-layout { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 16px; min-height: 680px; }
+.product-document-sidebar, .product-document-content { border-color: #e5e6eb; overflow: hidden; }
+.product-document-sidebar-head { padding: 18px; border-bottom: 1px solid #eef0f3; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.product-document-sidebar-head h5 { margin: 0 0 3px; }
+.product-document-sidebar .ant-tree { padding: 12px 8px 18px; background: transparent; }
+.product-document-sidebar .ant-tree-node-content-wrapper { min-width: 0; padding: 5px 8px; border-radius: 6px; }
+.product-document-sidebar .ant-space { max-width: 100%; }
+.product-document-sidebar .ant-space-item:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-document-sidebar .ant-tag { margin-inline-end: 0; flex: 0 0 auto; }
+.product-document-content .document-workspace { border: 0; border-radius: 0; }
+.product-document-alert { margin: 16px; }
+.product-document-empty { min-height: 620px; display: grid; place-items: center; }
+
+@media (max-width: 900px) {
+  .product-document-layout { grid-template-columns: 1fr; }
+  .product-document-empty { min-height: 260px; }
+}
 .funnel-inline { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .funnel-inline > div { display: flex; justify-content: space-between; max-width: 100%; min-height: 38px; padding: 9px 15px; color: #244baf; border-radius: 5px; background: linear-gradient(90deg,#e8efff,#f4f7ff); }
 .crm-filter { margin-bottom: 14px; border: 1px solid #e5e6eb; }
