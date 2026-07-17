@@ -89,4 +89,33 @@ class AiConfigurationServiceTest {
 
     assertFalse(empty.resolve(9100).isConfigured());
   }
+
+  @Test
+  void rejectsSavingADraftForAnotherOrganization() {
+    AiConfigurationDraft draft = configurations.draft(
+        9100, "https://ai.example.com", "model", "secret");
+
+    assertThrows(IllegalArgumentException.class,
+        () -> configurations.saveValidated(9200, draft));
+  }
+
+  @Test
+  void rejectsForgedDraftWithUnsafeConnectionValues() {
+    AiConfigurationDraft forged = new AiConfigurationDraft(
+        new AiConnection(9100, "https://ai.example.com?unsafe=true", " ", "secret", "MIXED"),
+        true);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> configurations.saveValidated(9100, forged));
+    assertEquals(0, jdbc.queryForObject(
+        "select count(*) from system_setting where organization_id=9100", Integer.class));
+  }
+
+  @Test
+  void rejectsStoredApiKeysThatAreNotMarkedEncrypted() {
+    jdbc.update("insert into system_setting(organization_id,setting_key,setting_value,encrypted) "
+        + "values (9100,'ai.apiKey','plaintext-secret',false)");
+
+    assertThrows(IllegalStateException.class, () -> configurations.resolve(9100));
+  }
 }

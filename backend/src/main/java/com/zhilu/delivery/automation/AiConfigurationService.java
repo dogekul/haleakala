@@ -99,10 +99,22 @@ public class AiConfigurationService {
   @Transactional
   public Map<String, Object> saveValidated(long organizationId, AiConfigurationDraft draft) {
     AiConnection connection = draft.getConnection();
-    upsert(organizationId, BASE_URL, connection.getBaseUrl(), false);
-    upsert(organizationId, MODEL, connection.getModel(), false);
+    if (connection.getOrganizationId() != organizationId) {
+      throw new IllegalArgumentException("AI 配置所属组织不匹配");
+    }
+    String baseUrl = normalizeBaseUrl(connection.getBaseUrl());
+    String model = trim(connection.getModel());
+    String apiKey = trim(connection.getApiKey());
+    if (blank(model)) {
+      throw new IllegalArgumentException("AI Model 不能为空");
+    }
+    if (blank(apiKey)) {
+      throw new IllegalArgumentException("AI API Key 不能为空");
+    }
+    upsert(organizationId, BASE_URL, baseUrl, false);
+    upsert(organizationId, MODEL, model, false);
     if (draft.isApiKeyChanged()) {
-      upsert(organizationId, API_KEY, cipher.encrypt(connection.getApiKey()), true);
+      upsert(organizationId, API_KEY, cipher.encrypt(apiKey), true);
     }
     return view(organizationId);
   }

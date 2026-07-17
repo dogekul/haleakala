@@ -7,7 +7,7 @@ public final class AiConnection {
   private final String apiKey;
   private final String source;
 
-  public AiConnection(long organizationId, String baseUrl, String model, String apiKey,
+  AiConnection(long organizationId, String baseUrl, String model, String apiKey,
       String source) {
     this.organizationId = organizationId;
     this.baseUrl = baseUrl;
