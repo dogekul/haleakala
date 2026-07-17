@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { DocumentCenterPage } from './DocumentCenterPage'
 import type { DocumentCenterStatus } from './types'
 
@@ -19,17 +20,34 @@ const json = (value: unknown, status = 200) =>
     status, headers: { 'Content-Type': 'application/json' },
   }))
 
-function show() {
-  const client = new QueryClient({
+const auth: AuthState = {
+  loading: false,
+  me: {
+    id: 1, organizationId: 1, username: 'admin', displayName: '管理员',
+    roles: ['ADMIN'], permissions: ['admin:write'],
+  },
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
+
+function show(options: { client?: QueryClient, organizationId?: number } = {}) {
+  const client = options.client ?? new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const page = (organizationId: number) => <QueryClientProvider client={client}>
+    <AuthContext.Provider value={{
+      ...auth,
+      me: { ...auth.me!, organizationId },
+    }}>
+      <DocumentCenterPage />
+    </AuthContext.Provider>
+  </QueryClientProvider>
+  const view = render(page(options.organizationId ?? 1))
   return {
     client,
-    ...render(
-    <QueryClientProvider client={client}>
-      <DocumentCenterPage />
-    </QueryClientProvider>,
-    ),
+    ...view,
+    rerenderOrganization: (organizationId: number) => view.rerender(page(organizationId)),
   }
 }
 
@@ -101,6 +119,76 @@ it('测试并保存 Outline 配置且不会回填 Token', async () => {
   )
 })
 
+it('接受与端到端环境一致的单标签 Outline 服务地址', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/config/test') && init?.method === 'POST') return json({
+      status: 'READY', collectionId: 'canonical-id', collectionName: '智鹿交付',
+    })
+    if (url.endsWith('/config')) return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'old-collection',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show()
+
+  const serviceUrl = await screen.findByLabelText('服务地址')
+  await user.clear(serviceUrl)
+  await user.type(serviceUrl, 'http://mock-outline:3000')
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/config/test',
+    expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"baseUrl":"http://mock-outline:3000"'),
+    }),
+  ))
+})
+
+it.each([
+  'http://user:password@outline:3000',
+  'http://outline:3000/path',
+  'http://outline:3000?tenant=1',
+  'http://outline:3000#settings',
+])('拒绝不是 HTTP(S) 根地址的 Outline 服务地址：%s', async invalidUrl => {
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/config')) return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'old-collection',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show()
+
+  const serviceUrl = await screen.findByLabelText('服务地址')
+  await user.clear(serviceUrl)
+  await user.type(serviceUrl, invalidUrl)
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+
+  expect(await screen.findByText('请输入 HTTP(S) 根地址')).toBeVisible()
+  expect(fetch).not.toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/config/test',
+    expect.anything(),
+  )
+})
+
 it('未配置时禁用初始化和迁移操作', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
@@ -144,9 +232,199 @@ it('配置重新加载不覆盖已编辑的草稿', async () => {
   await user.type(serviceUrl, 'http://draft-outline:3000')
 
   baseUrl = 'http://refetched-outline:3000'
-  await act(() => client.refetchQueries({ queryKey: ['admin-outline-configuration'] }))
+  await act(() => client.refetchQueries({
+    queryKey: ['admin-outline-configuration', 1],
+  }))
 
   expect(serviceUrl).toHaveValue('http://draft-outline:3000')
+})
+
+it('未编辑时从缓存值更新为网络配置', async () => {
+  let resolveConfiguration!: (response: Response) => void
+  const networkConfiguration = new Promise<Response>(resolve => {
+    resolveConfiguration = resolve
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(['admin-outline-configuration', 1], {
+    baseUrl: 'http://cached-outline:3000',
+    publicBaseUrl: 'http://cached-outline:3000',
+    collectionId: 'cached-collection',
+    apiTokenConfigured: true,
+    source: 'ORGANIZATION',
+  })
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/config')) return networkConfiguration
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  }))
+
+  show({ client })
+  const serviceUrl = await screen.findByLabelText('服务地址')
+  expect(serviceUrl).toHaveValue('http://cached-outline:3000')
+
+  await act(async () => resolveConfiguration(new Response(JSON.stringify({
+    baseUrl: 'http://network-outline:3000',
+    publicBaseUrl: 'http://network-outline:3000',
+    collectionId: 'network-collection',
+    apiTokenConfigured: true,
+    source: 'ORGANIZATION',
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+  await waitFor(() => expect(serviceUrl).toHaveValue('http://network-outline:3000'))
+})
+
+it('未编辑时重新加载最新配置', async () => {
+  let baseUrl = 'http://initial-outline:3000'
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/config')) return json({
+      baseUrl,
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  }))
+  const { client } = show()
+  expect(await screen.findByDisplayValue('http://initial-outline:3000')).toBeVisible()
+
+  baseUrl = 'http://refetched-outline:3000'
+  await act(() => client.refetchQueries({
+    queryKey: ['admin-outline-configuration', 1],
+  }))
+
+  expect(await screen.findByDisplayValue('http://refetched-outline:3000')).toBeVisible()
+})
+
+it('保存成功后重新加载可以更新表单', async () => {
+  let baseUrl = 'http://initial-outline:3000'
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/config') && init?.method === 'PUT') {
+      const values = JSON.parse(String(init.body))
+      baseUrl = values.baseUrl
+      return json({
+        ...values, apiTokenConfigured: true, source: 'ORGANIZATION',
+      })
+    }
+    if (url.endsWith('/config')) return json({
+      baseUrl,
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  const { client } = show()
+  const serviceUrl = await screen.findByLabelText('服务地址')
+  await user.clear(serviceUrl)
+  await user.type(serviceUrl, 'http://saved-outline:3000')
+  await user.click(screen.getByRole('button', { name: '保存配置' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/config', expect.objectContaining({ method: 'PUT' }),
+  ))
+
+  baseUrl = 'http://post-save-outline:3000'
+  await act(() => client.refetchQueries({
+    queryKey: ['admin-outline-configuration', 1],
+  }))
+
+  expect(await screen.findByDisplayValue('http://post-save-outline:3000')).toBeVisible()
+})
+
+it('同一个查询缓存切换组织时不会回填或保存上一组织配置', async () => {
+  let organizationId: 1 | 2 = 1
+  const configurations = {
+    1: {
+      baseUrl: 'http://org-a-outline:3000', publicBaseUrl: 'http://org-a:3000',
+      collectionId: 'org-a-collection', collectionName: '组织 A',
+      apiTokenConfigured: true, source: 'ORGANIZATION',
+    },
+    2: {
+      baseUrl: 'http://org-b-outline:3000', publicBaseUrl: 'http://org-b:3000',
+      collectionId: 'org-b-collection', collectionName: '组织 B',
+      apiTokenConfigured: true, source: 'ORGANIZATION',
+    },
+  } as const
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/config/test') && init?.method === 'POST') return json({
+      status: 'READY',
+      collectionId: configurations[organizationId].collectionId,
+      collectionName: configurations[organizationId].collectionName,
+    })
+    if (url.endsWith('/config') && init?.method === 'PUT') return json({
+      ...configurations[organizationId],
+      ...JSON.parse(String(init.body)),
+    })
+    if (url.endsWith('/config')) return json(configurations[organizationId])
+    if (url.endsWith('/status')) return json(notConfiguredStatus)
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+  })
+  const user = userEvent.setup()
+  const { rerenderOrganization } = show({ client, organizationId })
+
+  expect(await screen.findByDisplayValue('http://org-a-outline:3000')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+  expect(await screen.findByText('组织 A')).toBeVisible()
+
+  organizationId = 2
+  rerenderOrganization(organizationId)
+  expect(await screen.findByDisplayValue('http://org-b-outline:3000')).toBeVisible()
+  expect(screen.queryByDisplayValue('http://org-a-outline:3000')).not.toBeInTheDocument()
+  expect(screen.queryByText('组织 A')).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '保存配置' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/config',
+    expect.objectContaining({
+      method: 'PUT', body: expect.stringContaining('"baseUrl":"http://org-b-outline:3000"'),
+    }),
+  ))
+  const saveRequest = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')
+  expect(String(saveRequest?.[1]?.body)).not.toContain('org-a')
+})
+
+it('配置就绪时操作按钮不再显示未配置提示', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/config')) return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json({
+      ...notConfiguredStatus, integrationStatus: 'READY', collectionId: 'collection-id',
+    })
+    if (url.endsWith('/jobs')) return json([])
+    return json([])
+  }))
+  show()
+
+  for (const name of ['初始化目录', '迁移知识文档', '迁移项目文档']) {
+    const button = await screen.findByRole('button', { name })
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(button).not.toHaveAttribute('title')
+  }
 })
 
 it('测试连接期间禁用配置编辑和保存', async () => {

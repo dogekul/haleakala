@@ -6,6 +6,7 @@ import {
   Alert, Button, Card, Col, Form, Input, Row, Space, Statistic, Table, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '../../app/AuthProvider'
 import { adminApi } from './adminApi'
 import { AdminQueryAlert } from './AdminQueryAlert'
 import type {
@@ -29,25 +30,52 @@ const configurationSourceLabels = {
 }
 
 export function DocumentCenterPage() {
+  const { me } = useAuth()
+  if (!me) return null
+  return <OrganizationDocumentCenter key={me.organizationId} organizationId={me.organizationId} />
+}
+
+function validateOutlineRootUrl(_: unknown, value?: string) {
+  if (!value?.trim()) return Promise.resolve()
+  try {
+    const url = new URL(value.trim())
+    if (
+      ['http:', 'https:'].includes(url.protocol)
+      && url.hostname
+      && !url.username
+      && !url.password
+      && !url.search
+      && !url.hash
+      && (url.pathname === '' || url.pathname === '/')
+    ) return Promise.resolve()
+  } catch {
+    // The validation message below covers malformed URLs too.
+  }
+  return Promise.reject(new Error('请输入 HTTP(S) 根地址'))
+}
+
+function OrganizationDocumentCenter({ organizationId }: { organizationId: number }) {
   const client = useQueryClient()
   const [form] = Form.useForm<OutlineConfigurationInput>()
   const [connectionTest, setConnectionTest] = useState<OutlineConnectionTest>()
-  const configurationHydrated = useRef(false)
+  const configurationDirty = useRef(false)
+  const configurationQueryKey = ['admin-outline-configuration', organizationId] as const
+  const statusQueryKey = ['admin-document-center-status', organizationId] as const
+  const jobsQueryKey = ['admin-document-center-jobs', organizationId] as const
   const configuration = useQuery({
-    queryKey: ['admin-outline-configuration'],
+    queryKey: configurationQueryKey,
     queryFn: adminApi.outlineConfiguration,
   })
   const status = useQuery({
-    queryKey: ['admin-document-center-status'],
+    queryKey: statusQueryKey,
     queryFn: adminApi.documentCenterStatus,
   })
   const jobs = useQuery({
-    queryKey: ['admin-document-center-jobs'],
+    queryKey: jobsQueryKey,
     queryFn: () => adminApi.documentCenterJobs(),
   })
   useEffect(() => {
-    if (!configuration.data || configurationHydrated.current) return
-    configurationHydrated.current = true
+    if (!configuration.data || configurationDirty.current) return
     form.setFieldsValue({
       baseUrl: configuration.data.baseUrl,
       publicBaseUrl: configuration.data.publicBaseUrl,
@@ -57,8 +85,8 @@ export function DocumentCenterPage() {
   }, [configuration.data, form])
   const refresh = async () => {
     await Promise.all([
-      client.invalidateQueries({ queryKey: ['admin-document-center-status'] }),
-      client.invalidateQueries({ queryKey: ['admin-document-center-jobs'] }),
+      client.invalidateQueries({ queryKey: statusQueryKey }),
+      client.invalidateQueries({ queryKey: jobsQueryKey }),
     ])
   }
   const operation = useMutation({
@@ -94,17 +122,18 @@ export function DocumentCenterPage() {
   const saveConfiguration = useMutation({
     mutationFn: adminApi.saveOutlineConfiguration,
     onSuccess: async value => {
+      configurationDirty.current = false
       form.setFieldsValue({
         baseUrl: value.baseUrl,
         publicBaseUrl: value.publicBaseUrl,
         collectionId: value.collectionId,
         apiToken: '',
       })
-      client.setQueryData(['admin-outline-configuration'], value)
+      client.setQueryData(configurationQueryKey, value)
       await Promise.all([
-        client.invalidateQueries({ queryKey: ['admin-outline-configuration'] }),
-        client.invalidateQueries({ queryKey: ['admin-document-center-status'] }),
-        client.invalidateQueries({ queryKey: ['admin-document-center-jobs'] }),
+        client.invalidateQueries({ queryKey: configurationQueryKey }),
+        client.invalidateQueries({ queryKey: statusQueryKey }),
+        client.invalidateQueries({ queryKey: jobsQueryKey }),
       ])
       message.success('Outline 配置已保存')
     },
@@ -125,7 +154,7 @@ export function DocumentCenterPage() {
           disabled={integration !== 'READY'}
           loading={operation.isPending}
           onClick={() => operation.mutate('initialize')}
-          title="请先保存并验证 Outline 配置"
+          title={integration === 'READY' ? undefined : '请先保存并验证 Outline 配置'}
         >初始化目录</Button>
         <Button
           aria-label="迁移知识文档"
@@ -133,7 +162,7 @@ export function DocumentCenterPage() {
           disabled={integration !== 'READY'}
           loading={operation.isPending}
           onClick={() => operation.mutate('knowledge')}
-          title="请先保存并验证 Outline 配置"
+          title={integration === 'READY' ? undefined : '请先保存并验证 Outline 配置'}
         >迁移知识文档</Button>
         <Button
           aria-label="迁移项目文档"
@@ -142,7 +171,7 @@ export function DocumentCenterPage() {
           disabled={integration !== 'READY'}
           loading={operation.isPending}
           onClick={() => operation.mutate('projects')}
-          title="请先保存并验证 Outline 配置"
+          title={integration === 'READY' ? undefined : '请先保存并验证 Outline 配置'}
         >迁移项目文档</Button>
       </Space>}
     />
@@ -161,7 +190,10 @@ export function DocumentCenterPage() {
         disabled={configurationPending}
         form={form}
         layout="vertical"
-        onValuesChange={() => setConnectionTest(undefined)}
+        onValuesChange={() => {
+          configurationDirty.current = true
+          setConnectionTest(undefined)
+        }}
         requiredMark="optional"
         onFinish={values => saveConfiguration.mutate(values)}
       >
@@ -171,7 +203,7 @@ export function DocumentCenterPage() {
               label="服务地址"
               name="baseUrl"
               extra="后端访问地址；本地 Compose 通常使用 host.docker.internal。"
-              rules={[{ required: true, type: 'url' }]}
+              rules={[{ required: true, whitespace: true }, { validator: validateOutlineRootUrl }]}
             >
               <Input placeholder="http://host.docker.internal:3000" />
             </Form.Item>
@@ -181,7 +213,7 @@ export function DocumentCenterPage() {
               label="浏览器访问地址"
               name="publicBaseUrl"
               extra="用于“在 Outline 中打开”的用户可访问地址。"
-              rules={[{ type: 'url' }]}
+              rules={[{ validator: validateOutlineRootUrl }]}
             >
               <Input aria-label="浏览器访问地址" placeholder="http://localhost:3000" />
             </Form.Item>
