@@ -44,6 +44,14 @@ it('提供五个可用的系统管理入口并默认进入用户团队', async (
 it('文档中心展示连接、根目录和可重试任务', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url === '/api/v1/admin/document-center/config') return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      collectionName: '智鹿交付',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
     if (url === '/api/v1/admin/document-center/status') return json({
       integrationStatus: 'READY',
       collectionId: 'collection-id',

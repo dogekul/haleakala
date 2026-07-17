@@ -1,7 +1,7 @@
 import { api } from '../../services/api'
 import type {
   AdminUser, AuditResult, DocumentCenterJob, DocumentCenterStatus, Permission, Role,
-  SystemSettings, Team,
+  OutlineConfiguration, OutlineConfigurationInput, OutlineConnectionTest, SystemSettings, Team,
 } from './types'
 
 export const adminApi = {
@@ -40,6 +40,19 @@ export const adminApi = {
   documentCenterStatus: () => api<DocumentCenterStatus>(
     '/api/v1/admin/document-center/status',
   ),
+  outlineConfiguration: () => api<OutlineConfiguration>(
+    '/api/v1/admin/document-center/config',
+  ),
+  testOutlineConfiguration: (input: OutlineConfigurationInput) =>
+    api<OutlineConnectionTest>(
+      '/api/v1/admin/document-center/config/test',
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  saveOutlineConfiguration: (input: OutlineConfigurationInput) =>
+    api<OutlineConfiguration>(
+      '/api/v1/admin/document-center/config',
+      { method: 'PUT', body: JSON.stringify(input) },
+    ),
   documentCenterJobs: (status?: DocumentCenterJob['status']) => api<DocumentCenterJob[]>(
     `/api/v1/admin/document-center/jobs${status ? `?status=${status}` : ''}`,
   ),

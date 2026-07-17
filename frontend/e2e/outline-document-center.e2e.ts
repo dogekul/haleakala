@@ -15,6 +15,28 @@ test('Outline drives knowledge templates and project stage documents end to end'
   page.setDefaultTimeout(15_000)
 
   await login(page)
+  await nav(page, '系统管理').click()
+  await page.getByRole('link', { name: '文档中心' }).click()
+  await expect(page.getByRole('heading', { name: '文档中心' })).toBeVisible()
+
+  await page.getByLabel('服务地址').fill('http://mock-outline:3000')
+  await page.getByLabel('浏览器访问地址').fill(outlineURL)
+  await page.getByLabel('Collection 链接或 UUID').fill(
+    'a4296a54-2044-4529-ba86-d598a5322e06',
+  )
+  await page.getByLabel('API Token').fill('ol_api_e2e')
+  await page.getByRole('button', { name: '测试连接' }).click()
+  await expect(page.getByText('E2E 文档中心')).toBeVisible()
+  await page.getByRole('button', { name: '保存配置' }).click()
+  await expect(page.getByText('Outline 配置已保存')).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByText('API Token 已配置')).toBeVisible()
+  await expect(page.getByLabel('API Token')).toHaveValue('')
+  await expect(page.getByDisplayValue(
+    'a4296a54-2044-4529-ba86-d598a5322e06',
+  )).toBeVisible()
+
   await nav(page, '知识库').click()
   await page.getByRole('button', { name: '创建知识' }).click()
   const knowledge = page.getByRole('dialog', { name: '创建知识' })

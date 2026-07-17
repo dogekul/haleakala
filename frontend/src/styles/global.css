@@ -442,6 +442,9 @@ button, input { font: inherit; }
 .admin-nav a { display: flex; align-items: center; gap: 7px; padding: 10px 16px; color: #646a73; border-radius: 6px; text-decoration: none; transition: .16s ease; }
 .admin-nav a:hover { color: #245bdb; background: #f4f7ff; }
 .admin-nav a.active { color: #245bdb; background: #e8efff; font-weight: 600; }
+.admin-document-config .ant-form-item { margin-bottom: 16px; }
+.admin-document-config-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.admin-document-config-result { margin-top: 14px; }
 .admin-document-alert { margin-bottom: 14px; }
 .admin-document-root { min-height: 116px; margin-bottom: 14px; }
 .admin-document-root .ant-card-body { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
@@ -574,6 +577,10 @@ button, input { font: inherit; }
 .customer-card-foot .ant-btn { margin-left: auto; padding-inline: 3px; }
 .customer-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .customer-select-empty { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px; color: #8f959e; }
+
+@media (max-width: 767px) {
+  .admin-document-config-actions { align-items: flex-start; flex-direction: column; }
+}
 
 @media (max-width: 768px) {
   .customer-toolbar { align-items: flex-start; flex-direction: column; }
