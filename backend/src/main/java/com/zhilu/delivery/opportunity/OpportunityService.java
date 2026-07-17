@@ -215,8 +215,8 @@ public class OpportunityService {
     Map<String, Object> opportunity = get(organizationId, opportunityId);
     assertOpen(opportunity);
     OpportunityStage stage = OpportunityStage.valueOf(String.valueOf(opportunity.get("stage")));
-    if (stage == OpportunityStage.LEAD && "RESEARCH_REPORT".equals(input.artifactType)) {
-      throw new IllegalArgumentException("需求调研报告请通过商机推进填写并提交");
+    if (gate.isTemplateDocument(input.artifactType)) {
+      throw new IllegalArgumentException("模版文档请通过商机推进材料填写并提交");
     }
     gate.validateArtifact(stage, input.artifactType, input.contentMarkdown, input.fileId);
     if (input.fileId != null) {

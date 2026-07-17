@@ -392,6 +392,15 @@ class SchemaBaselineTest {
         "select count(*) from information_schema.table_constraints "
             + "where table_schema='public' and table_name='opportunity_artifact' "
             + "and constraint_name='uk_opportunity_artifact_outline'", Integer.class));
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='product_feature' and column_name in "
+            + "('outline_link_id','source_template_id','source_template_revision')",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='product_feature' "
+            + "and constraint_name='uk_product_feature_outline'", Integer.class));
   }
 
   @Test
@@ -436,7 +445,7 @@ class SchemaBaselineTest {
 
     Flyway.configure().dataSource(dataSource).load().migrate();
 
-    assertEquals("17", legacy.queryForObject(
+    assertEquals("18", legacy.queryForObject(
         "select version from flyway_schema_history where success=true "
             + "order by installed_rank desc limit 1",
         String.class));

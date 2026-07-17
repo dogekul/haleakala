@@ -5,8 +5,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,10 @@ public class OpportunityGate {
   private static final List<String> FILE_TYPES = Arrays.asList(
       "PRESENTATION", "BID_DOCUMENT", "AWARD_NOTICE", "CONTRACT",
       "EMAIL_ARCHIVE", "SEALED_CONTRACT");
+  private static final Set<String> TEMPLATE_DOCUMENT_TYPES =
+      Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
+          "RESEARCH_REPORT", "DECISION_MINUTES", "CLIENT_REQUESTS",
+          "GAP_ANALYSIS", "REVIEW_MINUTES")));
   private final JdbcTemplate jdbc;
 
   public OpportunityGate(JdbcTemplate jdbc) {
@@ -26,12 +32,13 @@ public class OpportunityGate {
   public List<String> missingArtifacts(
       long opportunityId, OpportunityStage stage, String decision) {
     if ("REJECT".equals(decision)
-        && (stage == OpportunityStage.BIDDING || stage == OpportunityStage.CONTRACT)) {
+        && (stage == OpportunityStage.OPPORTUNITY
+            || stage == OpportunityStage.BIDDING || stage == OpportunityStage.CONTRACT)) {
       return Collections.emptyList();
     }
     List<String> missing = new ArrayList<String>();
     for (String type : REQUIRED.get(stage)) {
-      String linkedReport = "RESEARCH_REPORT".equals(type)
+      String linkedReport = isTemplateDocument(type)
           ? " and outline_link_id is not null" : "";
       Integer count = jdbc.queryForObject(
           "select count(*) from opportunity_artifact "
@@ -58,6 +65,10 @@ public class OpportunityGate {
 
   public boolean isFileType(String type) {
     return FILE_TYPES.contains(type);
+  }
+
+  public boolean isTemplateDocument(String type) {
+    return TEMPLATE_DOCUMENT_TYPES.contains(type);
   }
 
   private static Map<OpportunityStage, List<String>> required() {
