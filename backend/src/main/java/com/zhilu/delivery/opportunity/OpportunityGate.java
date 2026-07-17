@@ -31,9 +31,11 @@ public class OpportunityGate {
     }
     List<String> missing = new ArrayList<String>();
     for (String type : REQUIRED.get(stage)) {
+      String linkedReport = "RESEARCH_REPORT".equals(type)
+          ? " and outline_link_id is not null" : "";
       Integer count = jdbc.queryForObject(
           "select count(*) from opportunity_artifact "
-              + "where opportunity_id=? and stage_from=? and artifact_type=?",
+              + "where opportunity_id=? and stage_from=? and artifact_type=?" + linkedReport,
           Integer.class, opportunityId, stage.name(), type);
       if (count == null || count == 0) missing.add(LABELS.get(type));
     }

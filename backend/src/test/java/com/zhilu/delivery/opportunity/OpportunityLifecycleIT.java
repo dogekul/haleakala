@@ -46,6 +46,7 @@ class OpportunityLifecycleIT {
     jdbc.update("delete from opportunity_artifact");
     jdbc.update("delete from opportunity_activity");
     jdbc.update("delete from sales_opportunity");
+    jdbc.update("delete from outline_document_link");
     jdbc.update("delete from file_object");
     jdbc.update("delete from delivery_project");
     jdbc.update("delete from customer");
@@ -80,8 +81,9 @@ class OpportunityLifecycleIT {
     addReport(id, "RESEARCH_REPORT", "调研报告", "")
         .andExpect(status().isBadRequest());
     addReport(id, "RESEARCH_REPORT", "调研报告", "## 结论\n需求明确")
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.stageFrom").value("LEAD"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("需求调研报告请通过商机推进填写并提交"));
+    addLinkedResearchReport(id);
     advance(id, 0, null).andExpect(status().isOk())
         .andExpect(jsonPath("$.stage").value("OPPORTUNITY"))
         .andExpect(jsonPath("$.version").value(1));
@@ -196,6 +198,19 @@ class OpportunityLifecycleIT {
         .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
         .content("{\"artifactType\":\"" + type + "\",\"title\":\"" + title
             + "\",\"fileId\":" + fileId + "}"));
+  }
+
+  private void addLinkedResearchReport(long opportunityId) {
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+        + "outline_collection_id,outline_document_id,title_cache,revision,sync_status) "
+        + "values (500,?,'OPPORTUNITY_RESEARCH','collection','report-document',"
+        + "'调研报告',1,'READY')", "OPPORTUNITY:" + opportunityId + ":RESEARCH_REPORT");
+    Long linkId = jdbc.queryForObject(
+        "select id from outline_document_link where organization_id=500 and business_key=?",
+        Long.class, "OPPORTUNITY:" + opportunityId + ":RESEARCH_REPORT");
+    jdbc.update("insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
+        + "artifact_type,title,outline_link_id,created_by) "
+        + "values (500,?,'LEAD','RESEARCH_REPORT','调研报告',?,500)", opportunityId, linkId);
   }
 
   private org.springframework.test.web.servlet.ResultActions advance(

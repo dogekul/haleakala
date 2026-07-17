@@ -215,6 +215,9 @@ public class OpportunityService {
     Map<String, Object> opportunity = get(organizationId, opportunityId);
     assertOpen(opportunity);
     OpportunityStage stage = OpportunityStage.valueOf(String.valueOf(opportunity.get("stage")));
+    if (stage == OpportunityStage.LEAD && "RESEARCH_REPORT".equals(input.artifactType)) {
+      throw new IllegalArgumentException("需求调研报告请通过商机推进填写并提交");
+    }
     gate.validateArtifact(stage, input.artifactType, input.contentMarkdown, input.fileId);
     if (input.fileId != null) {
       Integer files = jdbc.queryForObject(
@@ -239,6 +242,35 @@ public class OpportunityService {
     values.put("created_by", actorId);
     long id = insert("opportunity_artifact", values);
     return artifact(organizationId, opportunityId, id);
+  }
+
+  @Transactional
+  public Map<String, Object> advanceWithResearchReport(
+      long organizationId, long opportunityId, long actorId, long version,
+      long outlineLinkId, long sourceTemplateId, long sourceTemplateRevision, String title) {
+    Map<String, Object> current = get(organizationId, opportunityId);
+    assertVersion(current, version);
+    assertOpen(current);
+    if (!OpportunityStage.LEAD.name().equals(current.get("stage"))) {
+      throw new ConflictException("只有线索阶段可以提交需求调研报告");
+    }
+    Integer validLink = jdbc.queryForObject(
+        "select count(*) from outline_document_link where id=? and organization_id=? "
+            + "and business_key=?",
+        Integer.class, outlineLinkId, organizationId,
+        "OPPORTUNITY:" + opportunityId + ":RESEARCH_REPORT");
+    if (validLink == null || validLink == 0) throw new NotFoundException("需求调研报告不存在");
+    int inserted = jdbc.update(
+        "insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
+            + "artifact_type,title,outline_link_id,source_template_id,"
+            + "source_template_revision,created_by) "
+            + "select ?,?,'LEAD','RESEARCH_REPORT',?,?,?,?,? where not exists "
+            + "(select 1 from opportunity_artifact where opportunity_id=? "
+            + "and artifact_type='RESEARCH_REPORT')",
+        organizationId, opportunityId, title.trim(), outlineLinkId, sourceTemplateId,
+        sourceTemplateRevision, actorId, opportunityId);
+    if (inserted == 0) throw new ConflictException("需求调研报告已提交");
+    return advance(organizationId, opportunityId, version, null);
   }
 
   @Transactional
@@ -408,6 +440,9 @@ public class OpportunityService {
     value.put("artifactType", row.getString("artifact_type"));
     value.put("title", row.getString("title"));
     value.put("contentMarkdown", row.getString("content_markdown"));
+    value.put("outlineLinkId", nullableLong(row, "outline_link_id"));
+    value.put("sourceTemplateId", nullableLong(row, "source_template_id"));
+    value.put("sourceTemplateRevision", nullableLong(row, "source_template_revision"));
     value.put("fileId", nullableLong(row, "file_id"));
     value.put("fileName", row.getString("file_name"));
     value.put("decision", row.getString("decision"));

@@ -102,6 +102,22 @@ public class DocumentCenterService {
     return values.isEmpty() ? null : values.get(0);
   }
 
+  public DocumentView readBusinessDocument(long organizationId, String businessKey) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    return readLink(linkId.longValue(), organizationId);
+  }
+
+  @Transactional
+  public DocumentView updateBusinessDocument(
+      long organizationId, String businessKey, String title, String markdown,
+      long expectedRevision) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    return updateLink(
+        linkId.longValue(), organizationId, title, markdown, expectedRevision);
+  }
+
   public DocumentView readLink(long linkId, long organizationId) {
     return readLink(configurations.resolve(organizationId), linkId);
   }
