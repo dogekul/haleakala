@@ -508,6 +508,8 @@ button, input { font: inherit; }
 .product-document-content .document-workspace { border: 0; border-radius: 0; }
 .product-document-alert { margin: 16px; }
 .product-document-empty { min-height: 620px; display: grid; place-items: center; }
+.opportunity-document-tabs > .ant-tabs-nav { margin-bottom: 12px; }
+.opportunity-document-tabs .document-workspace { min-width: 0; }
 
 @media (max-width: 900px) {
   .product-document-layout { grid-template-columns: 1fr; }

@@ -144,6 +144,81 @@ it('推进线索时从知识库模版填写并提交需求调研报告', async (
   }))
 })
 
+it('商机评审 PASS 改为从知识库模版填写决策纪要后提交推进', async () => {
+  const decision = { ...opportunities[0], id: 6, stage: 'OPPORTUNITY', title: '评审中的财务平台', version: 2 }
+  const requests: string[] = []
+  vi.stubGlobal('fetch', vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
+    const value = String(path)
+    if (value.endsWith('/documents/DECISION_MINUTES/prepare')) return json({
+      linkId: 96, title: '决策评审纪要', markdown: '# {{评审结论}}',
+      renderedHtml: '<h1>决策评审纪要</h1><p>请填写评审结论</p>', revision: 2,
+      syncStatus: 'READY', sourceTemplateId: 30, sourceTemplateRevision: 4,
+      generationStatus: 'MANUAL', warnings: [],
+    })
+    if (value.endsWith('/documents/DECISION_MINUTES/submit')) {
+      requests.push(String(init?.body))
+      const body = JSON.parse(String(init?.body))
+      return json({ ...body, linkId: 96, renderedHtml: '<h1>通过</h1>', revision: 3,
+        syncStatus: 'READY', opportunity: { ...decision, stage: 'POC', version: 3 } })
+    }
+    return json([decision])
+  }))
+  const user = userEvent.setup()
+  show(<PresaleBoardPage />)
+
+  await screen.findByText('评审中的财务平台')
+  await user.click(screen.getByRole('button', { name: '推进评审中的财务平台' }))
+  const drawer = await screen.findByRole('dialog', { name: '商机推进文档' })
+  expect(await within(drawer).findByText('请填写评审结论')).toBeVisible()
+  await user.click(within(drawer).getByRole('button', { name: '编辑' }))
+  const editor = within(drawer).getByRole('textbox', { name: 'Markdown 正文' })
+  await user.clear(editor)
+  await user.type(editor, '# 评审通过')
+  await user.click(within(drawer).getByRole('button', { name: '提交纪要并通过' }))
+  await waitFor(() => expect(requests).toContain(JSON.stringify({
+    title: '决策评审纪要', markdown: '# 评审通过', revision: 2, opportunityVersion: 2,
+  })))
+})
+
+it('POC 阶段分别展示 AI 生成的甲方诉求与差距分析且不再手填', async () => {
+  const poc = { ...opportunities[1], title: 'POC 中的制造平台' }
+  vi.stubGlobal('fetch', vi.fn((path: RequestInfo | URL) => {
+    const value = String(path)
+    if (value.endsWith('/documents/CLIENT_REQUESTS/prepare')) return json({
+      linkId: 97, title: '甲方诉求清单', markdown: '# 统一账户体系',
+      renderedHtml: '<h1>甲方诉求清单</h1><p>统一账户体系</p>', revision: 2,
+      syncStatus: 'READY', sourceTemplateId: 31, sourceTemplateRevision: 4,
+      generationStatus: 'AI', warnings: ['功能“移动审批”的设计 Spec 尚未初始化'],
+    })
+    if (value.endsWith('/documents/GAP_ANALYSIS/prepare')) return json({
+      linkId: 98, title: '差距分析报告', markdown: '# 差距分析',
+      renderedHtml: '<h1>差距分析报告</h1><p>存在移动审批差距</p>', revision: 2,
+      syncStatus: 'READY', sourceTemplateId: 32, sourceTemplateRevision: 5,
+      generationStatus: 'AI', warnings: [],
+    })
+    return json([poc])
+  }))
+  const user = userEvent.setup()
+  show(<PresaleBoardPage />)
+
+  await screen.findByText('POC 中的制造平台')
+  await user.click(screen.getByRole('button', { name: '阶段文档' }))
+  const drawer = await screen.findByRole('dialog', { name: '商机推进文档' })
+  expect(within(drawer).getByRole('tab', { name: '甲方诉求清单' })).toBeVisible()
+  expect(within(drawer).getByRole('tab', { name: '差距分析报告' })).toBeVisible()
+  expect(await within(drawer).findByText('统一账户体系')).toBeVisible()
+  expect(within(drawer).getByText(/移动审批.*设计 Spec 尚未初始化/)).toBeVisible()
+  expect(within(drawer).getByRole('button', { name: 'AI 重新生成' })).toBeVisible()
+  await user.click(within(drawer).getByRole('tab', { name: '差距分析报告' }))
+  expect(await within(drawer).findByText('存在移动审批差距')).toBeVisible()
+
+  await user.click(within(drawer).getByRole('button', { name: '补充其他产出物' }))
+  const artifactDrawer = await screen.findByRole('dialog', { name: '补充产出物' })
+  await user.click(within(artifactDrawer).getByRole('combobox', { name: '产出物类型' }))
+  expect(screen.queryByRole('option', { name: '甲方诉求清单' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: '差距分析报告' })).not.toBeInTheDocument()
+})
+
 it('文件产出物直接上传且交接使用产品版本和负责人选择器', async () => {
   const contract = { ...opportunities[2], status: 'OPEN', productId: 20, productVersionId: 21,
     projectManagerUserId: 30, title: '待交接合同' }

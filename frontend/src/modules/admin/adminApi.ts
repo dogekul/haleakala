@@ -59,6 +59,9 @@ export const adminApi = {
   initializeDocumentCenter: () => api<Record<string, unknown>>(
     '/api/v1/admin/document-center/initialize', { method: 'POST' },
   ),
+  initializeProductDocuments: () => api<{ completed: number; failed: number }>(
+    '/api/v1/admin/document-center/initialize-products', { method: 'POST' },
+  ),
   migrateKnowledgeDocuments: () => api<{ enqueued: number }>(
     '/api/v1/admin/document-center/migrate-knowledge', { method: 'POST' },
   ),

@@ -10,6 +10,11 @@ export interface DocumentContent {
   syncStatus: 'PENDING' | 'CREATING' | 'READY' | 'FAILED'
   lastError?: string
   outlineUrl?: string
+  sourceTemplateId?: number
+  sourceTemplateRevision?: number
+  generationStatus?: 'MANUAL' | 'AI' | 'FAILED'
+  generationError?: string
+  warnings?: string[]
 }
 
 export interface SaveDocumentInput {

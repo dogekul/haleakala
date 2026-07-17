@@ -1,8 +1,8 @@
 import {
   CloudSyncOutlined, DownloadOutlined, EditOutlined, EyeOutlined, LinkOutlined,
-  ReloadOutlined, SaveOutlined,
+  ReloadOutlined, RobotOutlined, SaveOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Dropdown, Input, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, Button, Dropdown, Input, Modal, Space, Spin, Tag, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../services/api'
 import type { DocumentContent, DocumentFormat, SaveDocumentInput } from './types'
@@ -12,6 +12,7 @@ export interface DocumentWorkspaceProps {
   load(): Promise<DocumentContent>
   save(input: SaveDocumentInput): Promise<DocumentContent>
   submit?(input: SaveDocumentInput): Promise<DocumentContent>
+  regenerate?(revision: number, confirmOverwrite: boolean): Promise<DocumentContent>
   submitLabel?: string
   exportUrl(format: DocumentFormat): string
   canEdit: boolean
@@ -27,7 +28,7 @@ const formats: Array<{ format: DocumentFormat; label: string }> = [
 ]
 
 export function DocumentWorkspace({
-  title, load, save, submit, submitLabel = '提交', exportUrl, canEdit, onSaved, onSubmitted,
+  title, load, save, submit, regenerate, submitLabel = '提交', exportUrl, canEdit, onSaved, onSubmitted,
 }: DocumentWorkspaceProps) {
   const loadRef = useRef(load)
   loadRef.current = load
@@ -37,6 +38,7 @@ export function DocumentWorkspace({
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
 
@@ -85,6 +87,26 @@ export function DocumentWorkspace({
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  const runGeneration = async () => {
+    if (!document || !regenerate) return
+    setGenerating(true)
+    setSaveError('')
+    try {
+      const value = await regenerate(document.revision, true)
+      setDocument(value)
+      setDraftTitle(value.title)
+      setMarkdown(value.markdown)
+      setMode('preview')
+      if (value.generationStatus === 'FAILED') {
+        setSaveError(value.generationError || 'AI 生成失败，已保留当前草稿')
+      }
+    } catch (error) {
+      setSaveError((error as Error).message || 'AI 生成失败')
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -142,6 +164,13 @@ export function DocumentWorkspace({
         <Dropdown menu={{ items: exportItems }} trigger={['click']}>
           <Button aria-label="导出" icon={<DownloadOutlined />}>导出</Button>
         </Dropdown>
+        {canEdit && regenerate && <Button aria-label="AI 重新生成" icon={<RobotOutlined />}
+          loading={generating} onClick={() => Modal.confirm({
+            title: '重新生成文档？',
+            content: 'AI 将依据最新需求调研报告、产品功能和设计 Spec 覆盖当前草稿。',
+            okText: '确认生成',
+            onOk: runGeneration,
+          })}>AI 重新生成</Button>}
         {canEdit && mode === 'edit' && <Button
           aria-label="保存"
           type={submit ? 'default' : 'primary'}
@@ -168,6 +197,11 @@ export function DocumentWorkspace({
           </Button>
         : undefined}
     />}
+    {document.generationStatus === 'FAILED' && !saveError && <Alert
+      className="document-save-alert" showIcon type="warning" message="AI 生成未完成"
+      description={document.generationError || '已保留可编辑模版，可人工填写或稍后重试。'} />}
+    {!!document.warnings?.length && <Alert className="document-save-alert" showIcon type="info"
+      message="生成资料提示" description={<ul>{document.warnings.map(item => <li key={item}>{item}</li>)}</ul>} />}
     <div className="document-canvas">
       <article className="document-paper">
         {mode === 'edit' ? <>
