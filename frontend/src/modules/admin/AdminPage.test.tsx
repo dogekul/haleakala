@@ -26,9 +26,13 @@ function LocationProbe() {
   return <span data-testid="location">{useLocation().pathname}</span>
 }
 
-it('提供五个可用的系统管理入口并默认进入用户团队', async () => {
+it('提供六个可用的系统管理入口并默认进入用户团队', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
+    if (url === '/api/v1/admin/ai-service/config') return json({
+      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen-plus', apiKeyConfigured: true, source: 'ORGANIZATION',
+    })
     if (url.includes('/settings')) return json({
       platformName: '智鹿交付', environmentLabel: '内部生产环境', timezone: 'Asia/Shanghai',
       supportEmail: '', agentTimeoutMinutes: 30,
@@ -44,13 +48,13 @@ it('提供五个可用的系统管理入口并默认进入用户团队', async (
 
   expect(await screen.findByRole('heading', { name: '用户与团队' })).toBeVisible()
   expect(screen.getByRole('link', { name: '用户与团队' })).toHaveClass('active')
-  for (const name of ['用户与团队', '角色权限', '审计日志', '文档中心', '系统设置']) {
+  for (const name of ['用户与团队', '角色权限', '审计日志', '文档中心', 'AI 服务', '系统设置']) {
     expect(screen.getByRole('link', { name })).toBeVisible()
   }
   expect(screen.queryByRole('link', { name: '产品目录' })).not.toBeInTheDocument()
 
-  await userEvent.click(screen.getByRole('link', { name: '系统设置' }))
-  expect(await screen.findByRole('heading', { name: '系统设置' })).toBeVisible()
+  await userEvent.click(screen.getByRole('link', { name: 'AI 服务' }))
+  expect(await screen.findByRole('heading', { name: 'AI 服务' })).toBeVisible()
 })
 
 it('文档中心展示连接、根目录和可重试任务', async () => {

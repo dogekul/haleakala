@@ -605,3 +605,10 @@ button, input { font: inherit; }
 @media (max-width: 768px) {
   .customer-toolbar { align-items: flex-start; flex-direction: column; }
 }
+
+.ai-service-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ai-service-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .ai-service-actions { align-items: stretch; flex-direction: column-reverse; }
+  .ai-service-actions .ant-btn { width: 100%; }
+}

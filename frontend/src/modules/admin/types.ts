@@ -83,6 +83,24 @@ export interface OutlineConnectionTest {
   collectionName: string
 }
 
+export interface AiConfiguration {
+  baseUrl: string
+  model: string
+  apiKeyConfigured: boolean
+  source: 'ENVIRONMENT' | 'ORGANIZATION' | 'MIXED'
+}
+
+export interface AiConfigurationInput {
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
+export interface AiConnectionTest {
+  status: 'READY'
+  model: string
+}
+
 export interface DocumentCenterJob {
   id: number
   jobType: 'PROJECT_INIT' | 'PROJECT_MIGRATION' | 'KNOWLEDGE_MIGRATION'

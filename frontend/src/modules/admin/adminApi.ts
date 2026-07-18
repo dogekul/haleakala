@@ -1,6 +1,7 @@
 import { api } from '../../services/api'
 import type {
-  AdminUser, AuditResult, DocumentCenterJob, DocumentCenterStatus, Permission, Role,
+  AdminUser, AiConfiguration, AiConfigurationInput, AiConnectionTest, AuditResult,
+  DocumentCenterJob, DocumentCenterStatus, Permission, Role,
   OutlineConfiguration, OutlineConfigurationInput, OutlineConnectionTest, SystemSettings, Team,
 } from './types'
 
@@ -53,6 +54,15 @@ export const adminApi = {
       '/api/v1/admin/document-center/config',
       { method: 'PUT', body: JSON.stringify(input) },
     ),
+  aiConfiguration: () => api<AiConfiguration>('/api/v1/admin/ai-service/config'),
+  testAiConfiguration: (input: AiConfigurationInput) => api<AiConnectionTest>(
+    '/api/v1/admin/ai-service/config/test',
+    { method: 'POST', body: JSON.stringify(input) },
+  ),
+  saveAiConfiguration: (input: AiConfigurationInput) => api<AiConfiguration>(
+    '/api/v1/admin/ai-service/config',
+    { method: 'PUT', body: JSON.stringify(input) },
+  ),
   documentCenterJobs: (status?: DocumentCenterJob['status']) => api<DocumentCenterJob[]>(
     `/api/v1/admin/document-center/jobs${status ? `?status=${status}` : ''}`,
   ),
