@@ -79,7 +79,9 @@ class AiAdminControllerTest {
         .andExpect(jsonPath("$.model").value("qwen-plus"));
 
     verify(configurations).draft(7300L, "https://ai.example.com/v1", "qwen-plus", "new-secret");
-    verify(ai).completeJson(eq(connection), anyString(), anyString(), any(JsonNode.class));
+    ArgumentCaptor<JsonNode> schema = ArgumentCaptor.forClass(JsonNode.class);
+    verify(ai).completeJson(eq(connection), anyString(), anyString(), schema.capture());
+    assertReadinessSchema(schema.getValue());
     verify(configurations, never()).saveValidated(any(Long.class), any(AiConfigurationDraft.class));
   }
 
@@ -146,6 +148,19 @@ class AiAdminControllerTest {
   private AiConnection connection() {
     return new AiConnection(7300L, "https://ai.example.com/v1", "qwen-plus", "new-secret",
         "ORGANIZATION");
+  }
+
+  private void assertReadinessSchema(JsonNode schema) {
+    org.junit.jupiter.api.Assertions.assertEquals("object", schema.path("type").asText());
+    org.junit.jupiter.api.Assertions.assertEquals(
+        "string", schema.path("properties").path("status").path("type").asText());
+    JsonNode values = schema.path("properties").path("status").path("enum");
+    org.junit.jupiter.api.Assertions.assertEquals(1, values.size());
+    org.junit.jupiter.api.Assertions.assertEquals("ok", values.path(0).asText());
+    JsonNode required = schema.path("required");
+    org.junit.jupiter.api.Assertions.assertEquals(1, required.size());
+    org.junit.jupiter.api.Assertions.assertEquals("status", required.path(0).asText());
+    org.junit.jupiter.api.Assertions.assertFalse(schema.path("additionalProperties").asBoolean(true));
   }
 
   private RequestPostProcessor admin() {
