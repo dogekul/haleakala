@@ -312,6 +312,38 @@ it('测试请求期间仅禁用测试按钮', async () => {
   await waitFor(() => expect(screen.getByRole('button', { name: '测试连接' })).toBeEnabled())
 })
 
+it('忽略表单编辑前启动的连接测试成功结果', async () => {
+  let resolveTest!: (response: Response) => void
+  const pending = new Promise<Response>(resolve => { resolveTest = resolve })
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith('/config/test') && init?.method === 'POST'
+      ? pending
+      : json(configuration))
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show()
+  await screen.findByDisplayValue(configuration.baseUrl)
+
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/ai-service/config/test',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        baseUrl: configuration.baseUrl, model: configuration.model, apiKey: '',
+      }),
+    }),
+  ))
+  await waitFor(() => expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled())
+  const model = screen.getByLabelText('模型')
+  await user.clear(model)
+  await user.type(model, 'edited-model')
+  await act(async () => resolveTest(await json({ status: 'READY', model: 'qwen-plus' })))
+  await waitFor(() => expect(screen.getByRole('button', { name: '测试连接' })).toBeEnabled())
+
+  expect(screen.queryByText('连接测试成功 · qwen-plus')).not.toBeInTheDocument()
+})
+
 it('保存请求期间仅禁用保存按钮', async () => {
   let resolveSave!: (response: Response) => void
   const pending = new Promise<Response>(resolve => { resolveSave = resolve })

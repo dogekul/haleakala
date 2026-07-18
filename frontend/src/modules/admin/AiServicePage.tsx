@@ -57,9 +57,17 @@ function OrganizationAiService({ organizationId }: { organizationId: number }) {
   }, [configuration.data, form])
 
   const testConfiguration = useMutation({
-    mutationFn: async () => adminApi.testAiConfiguration(await form.validateFields()),
+    mutationFn: async () => {
+      const draft = await form.validateFields()
+      return { draft, result: await adminApi.testAiConfiguration(draft) }
+    },
     onMutate: () => setConnectionTest(undefined),
-    onSuccess: setConnectionTest,
+    onSuccess: ({ draft, result }) => {
+      const current = form.getFieldsValue()
+      if (current.baseUrl === draft.baseUrl
+        && current.model === draft.model
+        && current.apiKey === draft.apiKey) setConnectionTest(result)
+    },
     onError: error => {
       if (error instanceof Error) message.error(error.message)
     },
