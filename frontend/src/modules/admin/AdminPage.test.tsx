@@ -41,9 +41,11 @@ it('提供六个可用的系统管理入口并默认进入用户团队', async (
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}>
-    <MemoryRouter initialEntries={['/admin']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Routes><Route path="/admin/*" element={<AdminPage />} /></Routes>
-    </MemoryRouter>
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={['/admin']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes><Route path="/admin/*" element={<AdminPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
   </QueryClientProvider>)
 
   expect(await screen.findByRole('heading', { name: '用户与团队' })).toBeVisible()

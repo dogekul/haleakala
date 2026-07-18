@@ -2,6 +2,7 @@ import { SaveOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Form, Input, Row, Tag, message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '../../app/AuthProvider'
 import { adminApi } from './adminApi'
 import type { AiConfigurationInput, AiConnectionTest } from './types'
 import { PageHeading } from './UsersTeamsPage'
@@ -31,12 +32,19 @@ function validateBaseUrl(_: unknown, value?: string) {
 }
 
 export function AiServicePage() {
+  const { me } = useAuth()
+  if (!me) return null
+  return <OrganizationAiService key={me.organizationId} organizationId={me.organizationId} />
+}
+
+function OrganizationAiService({ organizationId }: { organizationId: number }) {
   const client = useQueryClient()
   const [form] = Form.useForm<AiConfigurationInput>()
   const [connectionTest, setConnectionTest] = useState<AiConnectionTest>()
   const configurationDirty = useRef(false)
+  const configurationQueryKey = ['ai-configuration', organizationId] as const
   const configuration = useQuery({
-    queryKey: ['ai-configuration'],
+    queryKey: configurationQueryKey,
     queryFn: adminApi.aiConfiguration,
   })
   useEffect(() => {
@@ -50,6 +58,7 @@ export function AiServicePage() {
 
   const testConfiguration = useMutation({
     mutationFn: async () => adminApi.testAiConfiguration(await form.validateFields()),
+    onMutate: () => setConnectionTest(undefined),
     onSuccess: setConnectionTest,
     onError: error => {
       if (error instanceof Error) message.error(error.message)
@@ -60,7 +69,7 @@ export function AiServicePage() {
     onSuccess: async () => {
       configurationDirty.current = false
       form.setFieldsValue({ apiKey: '' })
-      await client.invalidateQueries({ queryKey: ['ai-configuration'] })
+      await client.invalidateQueries({ queryKey: configurationQueryKey })
       message.success('AI 服务配置已保存')
     },
     onError: (error: Error) => message.error(error.message),
@@ -98,7 +107,7 @@ export function AiServicePage() {
                 { validator: validateBaseUrl },
               ]}
             >
-              <Input placeholder="https://api.example.com/v1" />
+              <Input disabled={saveConfiguration.isPending} placeholder="https://api.example.com/v1" />
             </Form.Item>
           </Col>
           <Col xs={24} lg={12}>
@@ -107,14 +116,18 @@ export function AiServicePage() {
               name="model"
               rules={[{ required: true, whitespace: true, message: '请输入模型名称' }]}
             >
-              <Input placeholder="qwen-plus" />
+              <Input disabled={saveConfiguration.isPending} placeholder="qwen-plus" />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={16}>
           <Col xs={24} lg={12}>
             <Form.Item label="API Key" name="apiKey" extra="留空则保持不变">
-              <Input.Password aria-label="API Key" autoComplete="new-password" />
+              <Input.Password
+                aria-label="API Key"
+                autoComplete="new-password"
+                disabled={saveConfiguration.isPending}
+              />
             </Form.Item>
           </Col>
           <Col xs={24} lg={12}>

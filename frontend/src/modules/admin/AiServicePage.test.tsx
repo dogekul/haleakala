@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { message } from 'antd'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { AiServicePage } from './AiServicePage'
 
 const configuration = {
@@ -16,11 +17,32 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
   status, headers: { 'Content-Type': 'application/json' },
 }))
 
-function show() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+const auth: AuthState = {
+  loading: false,
+  me: {
+    id: 1, organizationId: 1, username: 'admin', displayName: '管理员',
+    roles: ['ADMIN'], permissions: ['admin:write'],
+  },
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
+
+function show(options: { client?: QueryClient, organizationId?: number } = {}) {
+  const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const page = (organizationId: number) => <QueryClientProvider client={client}>
+    <AuthContext.Provider value={{
+      ...auth,
+      me: { ...auth.me!, organizationId },
+    }}>
+      <AiServicePage />
+    </AuthContext.Provider>
+  </QueryClientProvider>
+  const view = render(page(options.organizationId ?? 1))
   return {
     client,
-    ...render(<QueryClientProvider client={client}><AiServicePage /></QueryClientProvider>),
+    ...view,
+    rerenderOrganization: (organizationId: number) => view.rerender(page(organizationId)),
   }
 }
 
@@ -57,15 +79,77 @@ it('配置重新加载不覆盖已编辑的草稿', async () => {
 
   baseUrlValue = 'https://refetched.example.com/v1'
   await act(async () => {
-    await client.refetchQueries({ queryKey: ['ai-configuration'] })
+    await client.refetchQueries({ queryKey: ['ai-configuration', 1] })
   })
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
-  await waitFor(() => expect(client.getQueryData(['ai-configuration'])).toMatchObject({
+  await waitFor(() => expect(client.getQueryData(['ai-configuration', 1])).toMatchObject({
     baseUrl: 'https://refetched.example.com/v1',
   }))
 
   expect(baseUrl).toHaveValue('https://draft.example.com/v1')
   expect(apiKey).toHaveValue('sk-draft')
+})
+
+it('切换组织时不会显示或保存上一组织的配置', async () => {
+  let organizationId: 1 | 2 = 1
+  let resolveOrganizationB!: (response: Response) => void
+  const organizationBResponse = new Promise<Response>(resolve => {
+    resolveOrganizationB = resolve
+  })
+  const configurations = {
+    1: { ...configuration, baseUrl: 'https://org-a.example.com/v1', model: 'model-a' },
+    2: {
+      ...configuration, baseUrl: 'https://org-b.example.com/v1', model: 'model-b',
+      apiKeyConfigured: false, source: 'ENVIRONMENT',
+    },
+  } as const
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PUT') return json({
+      ...configurations[organizationId], ...JSON.parse(String(init.body)),
+    })
+    if (organizationId === 2) return organizationBResponse
+    return json(configurations[organizationId])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+  })
+  const user = userEvent.setup()
+  const { rerenderOrganization } = show({ client, organizationId })
+  expect(await screen.findByDisplayValue('https://org-a.example.com/v1')).toBeVisible()
+  await user.type(screen.getByLabelText('API Key'), 'sk-org-a-draft')
+
+  organizationId = 2
+  rerenderOrganization(organizationId)
+
+  expect(screen.queryByDisplayValue('https://org-a.example.com/v1')).not.toBeInTheDocument()
+  expect(screen.queryByDisplayValue('model-a')).not.toBeInTheDocument()
+  expect(screen.queryByText('API Key 已配置')).not.toBeInTheDocument()
+  expect(screen.queryByDisplayValue('sk-org-a-draft')).not.toBeInTheDocument()
+
+  await act(async () => resolveOrganizationB(await json(configurations[2])))
+  expect(await screen.findByDisplayValue('https://org-b.example.com/v1')).toBeVisible()
+  expect(screen.getByDisplayValue('model-b')).toBeVisible()
+  expect(screen.getByLabelText('API Key')).toHaveValue('')
+  expect(screen.getByText('API Key 未配置')).toBeVisible()
+
+  await user.click(screen.getByRole('button', { name: '保存配置' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/ai-service/config',
+    expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({
+        baseUrl: 'https://org-b.example.com/v1', model: 'model-b', apiKey: '',
+      }),
+    }),
+  ))
+  const saveRequest = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')
+  expect(String(saveRequest?.[1]?.body)).not.toContain('org-a')
+  expect(String(saveRequest?.[1]?.body)).not.toContain('model-a')
+  expect(String(saveRequest?.[1]?.body)).not.toContain('sk-org-a-draft')
+  expect(await screen.findByText('AI 服务配置已保存')).toBeVisible()
+  await act(async () => message.destroy())
+  await waitFor(() => expect(screen.queryByText('AI 服务配置已保存')).not.toBeInTheDocument())
 })
 
 it('提交前校验 Base URL 和模型必填', async () => {
@@ -185,6 +269,30 @@ it('显示后端返回的安全错误消息', async () => {
   expect(await screen.findByText('AI 服务暂时不可用')).toBeVisible()
 })
 
+it('新的连接测试失败时清除上一次成功结果', async () => {
+  let testCount = 0
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/config/test') && init?.method === 'POST') {
+      testCount += 1
+      return testCount === 1
+        ? json({ status: 'READY', model: 'qwen-plus' })
+        : json({ code: 'AI_CONNECTION_FAILED', message: '新草稿连接失败' }, 503)
+    }
+    return json(configuration)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show()
+  await screen.findByDisplayValue(configuration.baseUrl)
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+  expect(await screen.findByText('连接测试成功 · qwen-plus')).toBeVisible()
+
+  await user.click(screen.getByRole('button', { name: '测试连接' }))
+
+  expect(await screen.findByText('新草稿连接失败')).toBeVisible()
+  expect(screen.queryByText('连接测试成功 · qwen-plus')).not.toBeInTheDocument()
+})
+
 it('测试请求期间仅禁用测试按钮', async () => {
   let resolveTest!: (response: Response) => void
   const pending = new Promise<Response>(resolve => { resolveTest = resolve })
@@ -219,6 +327,14 @@ it('保存请求期间仅禁用保存按钮', async () => {
 
   await waitFor(() => expect(screen.getByRole('button', { name: '保存配置' })).toBeDisabled())
   expect(screen.getByRole('button', { name: '测试连接' })).toBeEnabled()
+  const baseUrl = screen.getByLabelText('Base URL')
+  const model = screen.getByLabelText('模型')
+  const apiKey = screen.getByLabelText('API Key')
+  expect(baseUrl).toBeDisabled()
+  expect(model).toBeDisabled()
+  expect(apiKey).toBeDisabled()
+  await user.type(apiKey, 'sk-too-late')
+  expect(apiKey).toHaveValue('')
   await act(async () => resolveSave(await json(configuration)))
   await waitFor(() => expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled())
 })
