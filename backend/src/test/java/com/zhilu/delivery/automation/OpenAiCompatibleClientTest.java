@@ -3,7 +3,9 @@ package com.zhilu.delivery.automation;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +18,7 @@ import com.zhilu.delivery.common.error.GlobalExceptionHandler;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +33,7 @@ class OpenAiCompatibleClientTest {
   private final AtomicReference<String> path = new AtomicReference<String>();
   private final AtomicReference<String> requestBody = new AtomicReference<String>();
   private HttpServer server;
+  private ExecutorService executor;
   private OpenAiCompatibleClient client;
   private int responseStatus;
   private String responseBody;
@@ -39,7 +43,8 @@ class OpenAiCompatibleClientTest {
   void startServer() throws IOException {
     server = HttpServer.create(new InetSocketAddress(0), 0);
     server.createContext("/", this::respond);
-    server.setExecutor(Executors.newCachedThreadPool());
+    executor = Executors.newCachedThreadPool();
+    server.setExecutor(executor);
     server.start();
     when(configurations.resolve(1L)).thenReturn(connection());
     client = new OpenAiCompatibleClient(json, configurations, 100, 100);
@@ -48,6 +53,8 @@ class OpenAiCompatibleClientTest {
   @AfterEach
   void stopServer() {
     server.stop(0);
+    executor.shutdownNow();
+    assertTrue(executor.isShutdown(), "test HTTP executor must be shut down");
   }
 
   @Test
@@ -103,6 +110,39 @@ class OpenAiCompatibleClientTest {
     assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE,
         failureForBody(200,
             "{\"choices\":[{\"message\":{\"content\":\"not-json\"}}]}").getType());
+  }
+
+  @Test
+  void rejectsNullStructuredContent() {
+    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE,
+        failureForBody(200,
+            "{\"choices\":[{\"message\":{\"content\":\"null\"}}]}").getType());
+  }
+
+  @Test
+  void rejectsNonObjectStructuredContent() {
+    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE,
+        failureForBody(200,
+            "{\"choices\":[{\"message\":{\"content\":\"[1,2,3]\"}}]}").getType());
+  }
+
+  @Test
+  void rejectsUnsafeApiKeyHeaderCharactersWithoutLeakingTheKey() {
+    String recognizableSecret = "recognizable-secret\n\u0001suffix";
+    AiConnection unsafe = new AiConnection(1L,
+        "http://127.0.0.1:" + server.getAddress().getPort(),
+        "test-model", recognizableSecret, "ORGANIZATION");
+
+    AiServiceException failure = assertThrows(AiServiceException.class,
+        () -> client.completeJson(
+            unsafe, "system", "user", json.createObjectNode()));
+
+    assertEquals(AiServiceException.Type.AUTHENTICATION, failure.getType());
+    assertFalse(failure.toString().contains("recognizable-secret"));
+    assertNull(failure.getCause());
+    assertNull(authorization.get());
+    ResponseEntity<ApiError> response = new GlobalExceptionHandler().handleAiService(failure);
+    assertFalse(response.getBody().getMessage().contains("recognizable-secret"));
   }
 
   @Test

@@ -16,7 +16,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.iam.service.IamService;
 import java.util.Arrays;
@@ -43,8 +42,8 @@ class AiAdminControllerTest {
   @Autowired private MockMvc mvc;
   @Autowired private ObjectMapper json;
   @MockBean private AiConfigurationService configurations;
+  @MockBean private AiConfigurationUpdateService updates;
   @MockBean private AiClient ai;
-  @MockBean private AuditService audit;
   @MockBean private IamService iam;
   @MockBean private JpaMetamodelMappingContext jpaMetamodel;
 
@@ -82,11 +81,12 @@ class AiAdminControllerTest {
     ArgumentCaptor<JsonNode> schema = ArgumentCaptor.forClass(JsonNode.class);
     verify(ai).completeJson(eq(connection), anyString(), anyString(), schema.capture());
     assertReadinessSchema(schema.getValue());
-    verify(configurations, never()).saveValidated(any(Long.class), any(AiConfigurationDraft.class));
+    verify(updates, never()).saveValidated(
+        any(Long.class), any(Long.class), any(AiConfigurationDraft.class));
   }
 
   @Test
-  void validatesSavesAndAuditsWithoutSecretMaterial() throws Exception {
+  void validatesThenDelegatesTheAtomicSave() throws Exception {
     AiConnection connection = connection();
     AiConfigurationDraft draft = new AiConfigurationDraft(connection, true);
     Map<String, Object> view = new LinkedHashMap<String, Object>();
@@ -98,7 +98,7 @@ class AiAdminControllerTest {
         .thenReturn(draft);
     when(ai.completeJson(eq(connection), anyString(), anyString(), any(JsonNode.class)))
         .thenReturn(json.readTree("{\"status\":\"ok\"}"));
-    when(configurations.saveValidated(7300L, draft)).thenReturn(view);
+    when(updates.saveValidated(7300L, 7300L, draft)).thenReturn(view);
 
     mvc.perform(put("/api/v1/admin/ai-service/config").with(admin()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON).content(CONFIGURATION))
@@ -107,13 +107,7 @@ class AiAdminControllerTest {
         .andExpect(jsonPath("$.apiKey").doesNotExist());
 
     verify(ai).completeJson(eq(connection), anyString(), anyString(), any(JsonNode.class));
-    verify(configurations).saveValidated(7300L, draft);
-    ArgumentCaptor<String> details = ArgumentCaptor.forClass(String.class);
-    verify(audit).record(eq(7300L), eq(7300L), eq("UPDATE"), eq("AI_CONFIGURATION"),
-        eq("7300"), details.capture());
-    org.junit.jupiter.api.Assertions.assertTrue(details.getValue().contains("qwen-plus"));
-    org.junit.jupiter.api.Assertions.assertTrue(details.getValue().contains("apiKeyReplaced=true"));
-    org.junit.jupiter.api.Assertions.assertFalse(details.getValue().contains("new-secret"));
+    verify(updates).saveValidated(7300L, 7300L, draft);
   }
 
   @Test
@@ -142,7 +136,38 @@ class AiAdminControllerTest {
         .andExpect(status().isBadGateway())
         .andExpect(jsonPath("$.code").value("AI_UNAVAILABLE"));
 
-    verify(configurations, never()).saveValidated(any(Long.class), any(AiConfigurationDraft.class));
+    verify(updates, never()).saveValidated(
+        any(Long.class), any(Long.class), any(AiConfigurationDraft.class));
+  }
+
+  @Test
+  void rejectsReadinessResponsesWithExtraFields() throws Exception {
+    AiConnection connection = connection();
+    AiConfigurationDraft draft = new AiConfigurationDraft(connection, true);
+    when(configurations.draft(7300L, "https://ai.example.com/v1", "qwen-plus", "new-secret"))
+        .thenReturn(draft);
+    when(ai.completeJson(eq(connection), anyString(), anyString(), any(JsonNode.class)))
+        .thenReturn(json.readTree("{\"status\":\"ok\",\"ignored\":true}"));
+
+    mvc.perform(post("/api/v1/admin/ai-service/config/test").with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content(CONFIGURATION))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.code").value("AI_INCOMPATIBLE_RESPONSE"));
+  }
+
+  @Test
+  void rejectsReadinessResponsesWithWrongScalarTypes() throws Exception {
+    AiConnection connection = connection();
+    AiConfigurationDraft draft = new AiConfigurationDraft(connection, true);
+    when(configurations.draft(7300L, "https://ai.example.com/v1", "qwen-plus", "new-secret"))
+        .thenReturn(draft);
+    when(ai.completeJson(eq(connection), anyString(), anyString(), any(JsonNode.class)))
+        .thenReturn(json.readTree("{\"status\":true}"));
+
+    mvc.perform(post("/api/v1/admin/ai-service/config/test").with(admin()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content(CONFIGURATION))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.code").value("AI_INCOMPATIBLE_RESPONSE"));
   }
 
   private AiConnection connection() {

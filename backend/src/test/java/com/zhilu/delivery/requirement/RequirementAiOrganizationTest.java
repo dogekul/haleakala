@@ -1,5 +1,7 @@
 package com.zhilu.delivery.requirement;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhilu.delivery.automation.AiClient;
+import com.zhilu.delivery.automation.AiServiceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,5 +70,36 @@ class RequirementAiOrganizationTest {
     requirements.classify(701L, ACTOR_ID);
 
     verify(ai).completeJson(eq(4100L), anyString(), anyString(), any());
+  }
+
+  @Test
+  void classificationRejectsExtraResponseFields() {
+    ObjectNode generated = json.createObjectNode();
+    generated.put("level", "L1");
+    generated.put("confidence", 0.9);
+    generated.put("reason", "需要二次开发");
+    generated.put("ignored", true);
+    when(ai.completeJson(eq(4100L), anyString(), anyString(), any()))
+        .thenReturn(generated);
+
+    AiServiceException failure = assertThrows(
+        AiServiceException.class, () -> requirements.classify(701L, ACTOR_ID));
+
+    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE, failure.getType());
+  }
+
+  @Test
+  void classificationRejectsCoercibleWrongScalarTypes() {
+    ObjectNode generated = json.createObjectNode();
+    generated.put("level", "L1");
+    generated.put("confidence", "0.9");
+    generated.put("reason", 123);
+    when(ai.completeJson(eq(4100L), anyString(), anyString(), any()))
+        .thenReturn(generated);
+
+    AiServiceException failure = assertThrows(
+        AiServiceException.class, () -> requirements.classify(701L, ACTOR_ID));
+
+    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE, failure.getType());
   }
 }

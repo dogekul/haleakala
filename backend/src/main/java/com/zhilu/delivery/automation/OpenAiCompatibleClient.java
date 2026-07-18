@@ -43,6 +43,7 @@ public class OpenAiCompatibleClient implements AiClient {
   public JsonNode completeJson(
       AiConnection connection, String systemPrompt, String userPrompt, JsonNode schema) {
     if (connection == null || !connection.isConfigured()) throw new AiNotConfiguredException();
+    validateApiKey(connection.getApiKey());
     ObjectNode request = json.createObjectNode();
     request.put("model", connection.getModel()); request.put("temperature", 0.1);
     ArrayNode messages = request.putArray("messages");
@@ -64,7 +65,11 @@ public class OpenAiCompatibleClient implements AiClient {
       if (content == null || !content.isTextual()) {
         throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
       }
-      return json.readTree(content.asText());
+      JsonNode parsed = json.readTree(content.asText());
+      if (parsed == null || !parsed.isObject()) {
+        throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
+      }
+      return parsed;
     } catch (HttpStatusCodeException failure) {
       throw statusFailure(failure.getRawStatusCode());
     } catch (ResourceAccessException failure) {
@@ -103,5 +108,14 @@ public class OpenAiCompatibleClient implements AiClient {
       if (type.isInstance(current)) return true;
     }
     return false;
+  }
+
+  private void validateApiKey(String apiKey) {
+    for (int index = 0; index < apiKey.length(); index++) {
+      char value = apiKey.charAt(index);
+      if (value < 0x21 || value > 0x7e) {
+        throw new AiServiceException(AiServiceException.Type.AUTHENTICATION);
+      }
+    }
   }
 }

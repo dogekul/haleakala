@@ -1,10 +1,12 @@
 package com.zhilu.delivery.automation;
 
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.security.SettingSecretCipher;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -87,6 +89,10 @@ public class AiConfigurationService {
       throw new IllegalArgumentException("AI Model 不能为空");
     }
     boolean apiKeyChanged = !blank(apiKey);
+    if (!apiKeyChanged && !blank(current.getApiKey())
+        && !sameOrigin(current.getBaseUrl(), normalizedBaseUrl)) {
+      throw new IllegalArgumentException("更换 AI 服务地址时必须提供新的 API Key");
+    }
     String effectiveApiKey = apiKeyChanged ? apiKey.trim() : current.getApiKey();
     if (blank(effectiveApiKey)) {
       throw new IllegalArgumentException("AI API Key 不能为空");
@@ -110,6 +116,14 @@ public class AiConfigurationService {
     }
     if (blank(apiKey)) {
       throw new IllegalArgumentException("AI API Key 不能为空");
+    }
+    jdbc.queryForObject(
+        "select id from organization where id=? for update", Long.class, organizationId);
+    if (!draft.isApiKeyChanged()) {
+      String currentApiKey = trim(resolve(organizationId).getApiKey());
+      if (!apiKey.equals(currentApiKey)) {
+        throw new ConflictException("AI 配置已被更新，请重新测试后保存");
+      }
     }
     upsert(organizationId, BASE_URL, baseUrl, false);
     upsert(organizationId, MODEL, model, false);
@@ -157,6 +171,19 @@ public class AiConfigurationService {
 
   private String value(Map<String, String> values, String key, String fallback) {
     return values.containsKey(key) ? values.get(key) : fallback;
+  }
+
+  private boolean sameOrigin(String left, String right) {
+    if (blank(left) || blank(right)) return false;
+    return origin(left).equals(origin(right));
+  }
+
+  private String origin(String value) {
+    URI uri = URI.create(value);
+    String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+    int port = uri.getPort();
+    if (port < 0) port = "https".equals(scheme) ? 443 : 80;
+    return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
   }
 
   private String trim(String value) {

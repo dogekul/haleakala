@@ -2,9 +2,20 @@ package com.zhilu.delivery.automation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.security.SettingSecretCipher;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +83,70 @@ class AiConfigurationServiceTest {
   }
 
   @Test
+  void blankApiKeyMayBeRetainedAcrossEquivalentDefaultPortOrigins() {
+    configurations.saveValidated(9100, configurations.draft(
+        9100, "https://ai.example.com", "model-one", "stored-secret"));
+
+    AiConfigurationDraft draft = configurations.draft(
+        9100, "https://AI.EXAMPLE.COM:443/v1", "model-two", "");
+
+    assertEquals("stored-secret", draft.getConnection().getApiKey());
+  }
+
+  @Test
+  void retainedKeyIsNeverSentToAChangedOrigin() throws IOException {
+    AtomicReference<String> originalAuthorization = new AtomicReference<String>();
+    AtomicReference<String> changedAuthorization = new AtomicReference<String>();
+    HttpServer original = readinessServer(originalAuthorization);
+    HttpServer changed = readinessServer(changedAuthorization);
+    try {
+      String originalBaseUrl = "http://127.0.0.1:" + original.getAddress().getPort();
+      String changedBaseUrl = "http://127.0.0.1:" + changed.getAddress().getPort();
+      configurations.saveValidated(9100, configurations.draft(
+          9100, originalBaseUrl, "model-one", "retained-test-secret"));
+      OpenAiCompatibleClient client = new OpenAiCompatibleClient(
+          new ObjectMapper(), configurations, 500, 500);
+      client.completeJson(configurations.resolve(9100), "system", "user",
+          new ObjectMapper().createObjectNode());
+
+      boolean rejected = false;
+      try {
+        AiConfigurationDraft draft = configurations.draft(
+            9100, changedBaseUrl, "model-two", "");
+        client.completeJson(draft.getConnection(), "system", "user",
+            new ObjectMapper().createObjectNode());
+      } catch (IllegalArgumentException expected) {
+        rejected = true;
+        assertFalse(expected.getMessage().contains("retained-test-secret"));
+      }
+
+      assertEquals("Bearer retained-test-secret", originalAuthorization.get());
+      assertNull(changedAuthorization.get(), "changed origin received the retained key");
+      assertTrue(rejected, "changed origin must require an explicit API key");
+    } finally {
+      original.stop(0);
+      changed.stop(0);
+    }
+  }
+
+  @Test
+  void staleRetainedKeyDraftCannotOverwriteACompleteValidatedSave() {
+    configurations.saveValidated(9100, configurations.draft(
+        9100, "https://initial.example.com", "initial-model", "initial-key"));
+    AiConfigurationDraft staleRetainedKey = configurations.draft(
+        9100, "https://initial.example.com/v1", "stale-model", "");
+    configurations.saveValidated(9100, configurations.draft(
+        9100, "https://winner.example.com", "winner-model", "winner-key"));
+
+    assertThrows(ConflictException.class,
+        () -> configurations.saveValidated(9100, staleRetainedKey));
+    AiConnection saved = configurations.resolve(9100);
+    assertEquals("https://winner.example.com", saved.getBaseUrl());
+    assertEquals("winner-model", saved.getModel());
+    assertEquals("winner-key", saved.getApiKey());
+  }
+
+  @Test
   void rejectsMissingSecretAndUnsafeUrls() {
     jdbc.update("delete from system_setting");
     assertThrows(IllegalArgumentException.class,
@@ -117,5 +192,23 @@ class AiConfigurationServiceTest {
         + "values (9100,'ai.apiKey','plaintext-secret',false)");
 
     assertThrows(IllegalStateException.class, () -> configurations.resolve(9100));
+  }
+
+  private HttpServer readinessServer(AtomicReference<String> authorization) throws IOException {
+    HttpServer value = HttpServer.create(new InetSocketAddress(0), 0);
+    value.createContext("/", exchange -> readiness(exchange, authorization));
+    value.start();
+    return value;
+  }
+
+  private void readiness(
+      HttpExchange exchange, AtomicReference<String> authorization) throws IOException {
+    authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+    byte[] body = ("{\"choices\":[{\"message\":{\"content\":"
+        + "\"{\\\"status\\\":\\\"ok\\\"}\"}}]}").getBytes(StandardCharsets.UTF_8);
+    exchange.getResponseHeaders().set("Content-Type", "application/json");
+    exchange.sendResponseHeaders(200, body.length);
+    exchange.getResponseBody().write(body);
+    exchange.close();
   }
 }

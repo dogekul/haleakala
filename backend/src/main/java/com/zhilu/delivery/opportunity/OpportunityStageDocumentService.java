@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhilu.delivery.automation.AiClient;
+import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.document.DocumentCenterService;
 import com.zhilu.delivery.document.DocumentView;
@@ -145,6 +146,9 @@ public class OpportunityStageDocumentService {
     try {
       JsonNode generated = ai.completeJson(organizationId, systemPrompt(definition),
           userPrompt(definition, opportunity, context, warnings), responseSchema());
+      if (generated == null || !generated.isObject() || generated.size() != 2) {
+        throw incompatibleResponse();
+      }
       String title = requiredText(generated, "title");
       String markdown = requiredText(generated, "markdown");
       if (!allowOverwrite) throw new ConflictException("当前草稿不能覆盖");
@@ -263,9 +267,13 @@ public class OpportunityStageDocumentService {
   private String requiredText(JsonNode generated, String field) {
     JsonNode value = generated == null ? null : generated.get(field);
     if (value == null || !value.isTextual() || blank(value.asText())) {
-      throw new IllegalStateException("AI 返回缺少 " + field);
+      throw incompatibleResponse();
     }
     return value.asText();
+  }
+
+  private AiServiceException incompatibleResponse() {
+    return new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
   }
 
   private Template template(long organizationId, OpportunityDocumentDefinition definition) {

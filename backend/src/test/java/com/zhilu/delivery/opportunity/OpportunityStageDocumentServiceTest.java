@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhilu.delivery.automation.AiClient;
+import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.document.DocumentCenterService;
 import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.knowledge.KnowledgeService;
@@ -125,6 +126,39 @@ class OpportunityStageDocumentServiceTest {
   }
 
   @Test
+  void generatedDocumentRejectsExtraResponseFields() {
+    ObjectNode generated = json.createObjectNode();
+    generated.put("title", "差距分析报告");
+    generated.put("markdown", "# 已生成差距");
+    generated.put("ignored", true);
+
+    OpportunityStageDocumentService.PreparedDocument prepared =
+        prepareGeneratedDocument(generated);
+
+    assertEquals("FAILED", prepared.getGenerationStatus());
+    assertEquals(new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE).getMessage(),
+        prepared.getGenerationError());
+    verify(documents, never()).updateBusinessDocument(
+        anyLong(), anyString(), anyString(), anyString(), anyLong());
+  }
+
+  @Test
+  void generatedDocumentRejectsWrongScalarTypes() {
+    ObjectNode generated = json.createObjectNode();
+    generated.put("title", 123);
+    generated.put("markdown", "# 已生成差距");
+
+    OpportunityStageDocumentService.PreparedDocument prepared =
+        prepareGeneratedDocument(generated);
+
+    assertEquals("FAILED", prepared.getGenerationStatus());
+    assertEquals(new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE).getMessage(),
+        prepared.getGenerationError());
+    verify(documents, never()).updateBusinessDocument(
+        anyLong(), anyString(), anyString(), anyString(), anyLong());
+  }
+
+  @Test
   void repeatedPrepareNeverOverwritesAnEditedDraft() {
     when(opportunities.get(7L, 9L)).thenReturn(opportunity("POC", 3L));
     when(jdbc.queryForList(anyString(), anyLong(), anyString())).thenReturn(template());
@@ -170,6 +204,22 @@ class OpportunityStageDocumentServiceTest {
     assertEquals(scene, value.getTemplateScene());
     assertEquals(aiGenerated, value.isAiGenerated());
     assertEquals(advanceOnSubmit, value.isAdvanceOnSubmit());
+  }
+
+  private OpportunityStageDocumentService.PreparedDocument prepareGeneratedDocument(
+      ObjectNode generated) {
+    when(opportunities.get(3100L, 9L)).thenReturn(opportunity("POC", 3L));
+    when(jdbc.queryForList(anyString(), anyLong(), anyString())).thenReturn(template());
+    when(jdbc.queryForList(anyString(), anyLong(), anyLong()))
+        .thenReturn(Collections.<Map<String, Object>>emptyList());
+    when(documents.ensureIndex(anyLong(), anyString(), anyString(), any()))
+        .thenReturn(51L, 52L);
+    when(documents.createDocument(anyLong(), anyString(), anyString(), anyString(), anyString(),
+        anyLong())).thenReturn(53L);
+    when(documents.readBusinessDocument(3100L, "OPPORTUNITY:9:GAP_ANALYSIS"))
+        .thenReturn(view(53L, "差距分析报告", "# 模版", 1));
+    when(ai.completeJson(eq(3100L), anyString(), anyString(), any())).thenReturn(generated);
+    return service.prepare(3100L, 9L, "GAP_ANALYSIS", 3L);
   }
 
   private Map<String, Object> opportunity(String stage, long version) {

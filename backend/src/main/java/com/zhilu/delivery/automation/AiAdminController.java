@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -24,15 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/admin/ai-service")
 public class AiAdminController {
   private final AiConfigurationService configurations;
+  private final AiConfigurationUpdateService updates;
   private final AiClient ai;
-  private final AuditService audit;
   private final ObjectMapper json;
 
   public AiAdminController(
-      AiConfigurationService configurations, AiClient ai, AuditService audit, ObjectMapper json) {
+      AiConfigurationService configurations, AiConfigurationUpdateService updates,
+      AiClient ai, ObjectMapper json) {
     this.configurations = configurations;
+    this.updates = updates;
     this.ai = ai;
-    this.audit = audit;
     this.json = json;
   }
 
@@ -56,11 +56,7 @@ public class AiAdminController {
       @AuthenticationPrincipal CurrentUser user) {
     AiConfigurationDraft draft = draft(user, request);
     validate(draft.getConnection());
-    Map<String, Object> value = configurations.saveValidated(user.getOrganizationId(), draft);
-    audit.record(user.getOrganizationId(), user.getId(), "UPDATE", "AI_CONFIGURATION",
-        String.valueOf(user.getOrganizationId()), "更新 AI 配置 · model="
-            + draft.getConnection().getModel() + " · apiKeyReplaced=" + draft.isApiKeyChanged());
-    return value;
+    return updates.saveValidated(user.getOrganizationId(), user.getId(), draft);
   }
 
   private AiConfigurationDraft draft(CurrentUser user, AiConfigurationRequest request) {
@@ -78,7 +74,9 @@ public class AiAdminController {
     schema.put("additionalProperties", false);
     JsonNode result = ai.completeJson(connection, "Validate AI service configuration.",
         "Return the required readiness status.", schema);
-    if (result == null || !"ok".equals(result.path("status").asText())) {
+    if (result == null || !result.isObject() || result.size() != 1
+        || result.get("status") == null || !result.get("status").isTextual()
+        || !"ok".equals(result.get("status").asText())) {
       throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
     }
   }
