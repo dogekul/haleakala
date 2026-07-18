@@ -314,6 +314,8 @@ class SecurityAccessTest {
         .andExpect(status().isOk());
     mvc.perform(get("/api/v1/admin/settings").with(actor("audit:read")))
         .andExpect(status().isForbidden());
+    mvc.perform(get("/api/v1/admin/ai-service/config").with(actor("audit:read")))
+        .andExpect(status().isForbidden());
   }
 
   @Test
