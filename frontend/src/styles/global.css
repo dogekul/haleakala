@@ -529,14 +529,19 @@ button, input { font: inherit; }
 .crm-card-head, .crm-card-foot { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
 .crm-card-head a, .crm-ellipsis-card p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crm-ellipsis-card p { margin: 22px 0; color: #646a73; }
-.presale-board { display: grid; min-width: 1180px; grid-template-columns: repeat(5,1fr); gap: 10px; }
-.presale-page { overflow-x: auto; }
-.presale-column { min-height: 500px; padding: 10px; border-radius: 8px; background: #f5f6f7; }
-.presale-column > header { display: flex; justify-content: space-between; padding: 4px 3px 12px; }
-.presale-column > header span { color: #8f959e; }
-.presale-card { margin-bottom: 9px; border-color: #e5e6eb; }
-.presale-card a { display: block; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.presale-card p { overflow: hidden; margin: 7px 0 14px; color: #8f959e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.presale-board-scroll { overflow-x: auto; padding-bottom: 4px; }
+.presale-board { display: grid; min-width: 1120px; grid-template-columns: repeat(5,minmax(210px,1fr)); gap: 8px; }
+.presale-page { overflow-x: visible; }
+.presale-column { min-width: 0; padding: 7px; border: 1px solid #e5e6eb; border-radius: 8px; background: #f7f8fa; }
+.presale-column > header, .operation-column > header { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 2px 7px; color: #4e5969; }
+.crm-board-count { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0 6px; border-radius: 10px; color: #646a73; background: #e8eaed; font-size: 11px; font-weight: 500; }
+.crm-board-card { min-width: 0; height: 126px; margin-bottom: 6px; overflow: hidden; border-color: #e5e6eb; box-shadow: 0 1px 2px rgba(31,35,41,.04); }
+.crm-board-card:last-child { margin-bottom: 0; }
+.crm-board-card > .ant-card-body { display: flex; min-width: 0; height: 100%; flex-direction: column; padding: 9px 10px; }
+.crm-board-card a { display: block; min-width: 0; overflow: hidden; color: #245bdb; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.crm-board-card-meta { overflow: hidden; margin: 5px 0 0; color: #8f959e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.crm-board-card-actions { min-height: 52px; margin-top: auto; align-content: flex-end; }
+.crm-board-card-actions .ant-btn { height: 24px; padding-inline: 7px; font-size: 12px; }
 .crm-drawer-alert { margin-bottom: 16px; }
 .crm-detail-hero { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; padding: 22px 24px; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; }
 .crm-detail-hero h2.ant-typography { margin: 10px 0 5px; }

@@ -75,15 +75,18 @@ export function PresaleBoardPage() {
     <div className="page-heading compact"><div><Typography.Title level={2}>售前推进</Typography.Title>
       <Typography.Paragraph>以关口和产出物驱动商机从线索走向合同。</Typography.Paragraph></div></div>
     <PageState loading={query.isLoading} error={query.error} empty={!query.isLoading && !query.data?.length} onRetry={() => void query.refetch()}>
-      <div className="presale-board">{opportunityStages.map(stage => <section key={stage.value} data-testid={`presale-column-${stage.value}`} className="presale-column">
-        <header><strong>{stage.label}</strong><span>{(query.data ?? []).filter(item => item.stage === stage.value).length}</span></header>
-        {(query.data ?? []).filter(item => item.stage === stage.value).map(item => <Card key={item.id} size="small" className="presale-card">
-          <Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><p>{item.customerName}</p>
-          <Space wrap>{canWrite && stageDocuments[item.stage].length > 0 && <Button size="small" aria-label="阶段文档" icon={<FileTextOutlined />} onClick={() => { setDocumentFor(item); setArtifactError('') }}>阶段文档</Button>}
-            {canWrite && artifactTypes[item.stage].length > 0 && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
-            {canWrite && <AdvanceButtons item={item} loading={advance.isPending} onAdvance={requestAdvance} />}</Space>
-        </Card>)}
-      </section>)}</div>
+      <div className="presale-board-scroll" data-testid="presale-board-scroll">
+        <div className="presale-board">{opportunityStages.map(stage => <section key={stage.value} data-testid={`presale-column-${stage.value}`} className="presale-column">
+          <header><strong>{stage.label}</strong><span className="crm-board-count">{(query.data ?? []).filter(item => item.stage === stage.value).length}</span></header>
+          {(query.data ?? []).filter(item => item.stage === stage.value).map(item => <Card key={item.id} size="small" className="presale-card crm-board-card">
+            <Link title={item.title} to={`/customers/opportunities/${item.id}`}>{item.title}</Link>
+            <p className="crm-board-card-meta" title={item.customerName}>{item.customerName}</p>
+            <Space className="crm-board-card-actions" wrap size={[4, 4]}>{canWrite && stageDocuments[item.stage].length > 0 && <Button size="small" aria-label="阶段文档" icon={<FileTextOutlined />} onClick={() => { setDocumentFor(item); setArtifactError('') }}>查看文档</Button>}
+              {canWrite && artifactTypes[item.stage].length > 0 && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>查看产出物</Button>}
+              {canWrite && <AdvanceButtons item={item} loading={advance.isPending} onAdvance={requestAdvance} />}</Space>
+          </Card>)}
+        </section>)}</div>
+      </div>
     </PageState>
     <ArtifactDrawer opportunity={artifactFor} error={artifactError} canWrite={canWrite} onClose={() => setArtifactFor(undefined)} />
     <ResearchReportDrawer opportunity={researchFor} onClose={() => setResearchFor(undefined)} />
@@ -207,9 +210,9 @@ function ResearchReportDrawer({
 function AdvanceButtons({ item, loading, onAdvance }: { item: Opportunity; loading: boolean; onAdvance: (item: Opportunity, decision?: 'PASS' | 'REJECT') => void }) {
   if (item.stage === 'CONTRACT') return <><Button size="small" type="primary" aria-label={`转交${item.title}`} onClick={() => onAdvance(item, 'PASS')}>转交实施</Button>
     <Button size="small" danger aria-label={`丢单${item.title}`} onClick={() => onAdvance(item, 'REJECT')}>丢单</Button></>
-  if (item.stage === 'OPPORTUNITY' || item.stage === 'BIDDING') return <><Button size="small" type="primary" loading={loading} aria-label={`推进${item.title}`} onClick={() => onAdvance(item, 'PASS')}>PASS</Button>
-    <Button size="small" danger aria-label={`丢单${item.title}`} onClick={() => onAdvance(item, 'REJECT')}>REJECT</Button></>
-  return <Button size="small" type="primary" loading={loading} icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => onAdvance(item)}>推进</Button>
+  if (item.stage === 'OPPORTUNITY' || item.stage === 'BIDDING') return <><Button size="small" type="primary" autoInsertSpace={false} loading={loading} aria-label={`推进${item.title}`} onClick={() => onAdvance(item, 'PASS')}>通过</Button>
+    <Button size="small" danger autoInsertSpace={false} aria-label={`丢单${item.title}`} onClick={() => onAdvance(item, 'REJECT')}>拒绝</Button></>
+  return <Button size="small" type="primary" loading={loading} icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => onAdvance(item)}>推进阶段</Button>
 }
 
 function ArtifactDrawer({ opportunity, error, canWrite, onClose }: { opportunity?: Opportunity; error: string; canWrite: boolean; onClose: () => void }) {

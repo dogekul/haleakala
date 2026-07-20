@@ -82,6 +82,28 @@ it('商机筛选发送服务端查询且只读用户没有编辑入口', async (
   expect(screen.queryByRole('button', { name: /编辑/ })).not.toBeInTheDocument()
 })
 
+it('售前看板使用紧凑等高卡片和中文操作文案', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => json(opportunities)))
+  show(<PresaleBoardPage />)
+
+  expect(await screen.findByTestId('presale-board-scroll')).toBeVisible()
+
+  const biddingTitle = '零售数据平台超长名称用于验证卡片省略展示'
+  const biddingCard = screen.getByText(biddingTitle).closest<HTMLElement>('.presale-card')!
+  expect(biddingCard).toHaveClass('crm-board-card')
+  expect(within(biddingCard).getByRole('link', { name: biddingTitle })).toHaveAttribute('title', biddingTitle)
+  expect(biddingCard.querySelector('.crm-board-card-meta')).toHaveTextContent('西部零售')
+  expect(biddingCard.querySelector('.crm-board-card-actions')).toBeInTheDocument()
+  expect(within(biddingCard).getByRole('button', { name: '产出物' })).toHaveTextContent('查看产出物')
+  expect(within(biddingCard).getByRole('button', { name: `推进${biddingTitle}` })).toHaveTextContent('通过')
+  expect(within(biddingCard).getByRole('button', { name: `丢单${biddingTitle}` })).toHaveTextContent('拒绝')
+
+  const pocCard = screen.getByText('制造执行平台').closest<HTMLElement>('.presale-card')!
+  expect(within(pocCard).getByRole('button', { name: '阶段文档' })).toHaveTextContent('查看文档')
+  expect(within(pocCard).getByRole('button', { name: '产出物' })).toHaveTextContent('查看产出物')
+  expect(within(pocCard).getByRole('button', { name: '推进制造执行平台' })).toHaveTextContent('推进阶段')
+})
+
 it('推进线索时从知识库模版填写并提交需求调研报告', async () => {
   const requests: Array<{ path: string; body?: string }> = []
   const fetch = vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
