@@ -30,7 +30,7 @@
 - Consumes: `ProductDocumentService.syncFeature(long organizationId, long productId, long featureId)`。
 - Produces: `POST /api/v1/products/{productId}/features/{featureId}/spec/sync`，返回 `DocumentView`。
 
-- [ ] **Step 1: 写失败的接口测试**
+- [x] **Step 1: 写失败的接口测试**
 
 在 `synchronizesListsReadsAndUpdatesFeatureSpecs` 中先调用单功能同步接口，并断言返回标题、Markdown 和修订号：
 
@@ -43,13 +43,13 @@ mvc.perform(post("/api/v1/products/3300/features/3302/spec/sync")
     .andExpect(jsonPath("$.revision").isNumber());
 ```
 
-- [ ] **Step 2: 运行测试并确认接口尚不存在**
+- [x] **Step 2: 运行测试并确认接口尚不存在**
 
 Run: `./mvnw -q -Dtest=ProductDocumentApiIT test`
 
 Expected: FAIL，响应状态为 404 或 405。
 
-- [ ] **Step 3: 实现最小控制器入口**
+- [x] **Step 3: 实现最小控制器入口**
 
 在 `ProductDocumentController` 增加：
 
@@ -62,13 +62,13 @@ public DocumentView syncFeature(
 }
 ```
 
-- [ ] **Step 4: 运行接口回归测试**
+- [x] **Step 4: 运行接口回归测试**
 
 Run: `./mvnw -q -Dtest=ProductDocumentApiIT test`
 
 Expected: PASS，全部 `ProductDocumentApiIT` 用例通过。
 
-- [ ] **Step 5: 提交接口变更**
+- [x] **Step 5: 提交接口变更**
 
 ```bash
 git add backend/src/main/java/com/zhilu/delivery/catalog/ProductDocumentController.java backend/src/test/java/com/zhilu/delivery/catalog/ProductDocumentApiIT.java
@@ -85,7 +85,7 @@ git commit -m "feat: add feature spec sync endpoint"
 - Consumes: `GET /api/v1/products/102/modules`、`GET /api/v1/products/102/features`、Task 1 同步接口、Spec 读写接口。
 - Produces: `generateFeatureSpec(context): string`、`validateFeatureSpec(markdown, context): string[]`、CLI 执行报告 JSON。
 
-- [ ] **Step 1: 写生成器失败测试**
+- [x] **Step 1: 写生成器失败测试**
 
 使用 `node:test` 覆盖法规采集、语义风险、公平性、审查任务、报告、集成、安全、模型运营等代表功能，并遍历脚本导出的 124 个功能定义：
 
@@ -102,13 +102,13 @@ test('all 124 definitions generate complete feature-specific specs', () => {
 
 另写测试断言缺章节、少于 5 条规则、少于 6 条验收条件和包含禁用占位词时返回明确错误。
 
-- [ ] **Step 2: 运行测试并确认模块尚不存在**
+- [x] **Step 2: 运行测试并确认模块尚不存在**
 
 Run: `node --test scripts/xbhg-feature-specs.test.mjs`
 
 Expected: FAIL，提示无法导入 `scripts/xbhg-feature-specs.mjs`。
 
-- [ ] **Step 3: 实现领域定义和 Markdown 生成器**
+- [x] **Step 3: 实现领域定义和 Markdown 生成器**
 
 在 `scripts/xbhg-feature-specs.mjs` 中定义 124 个功能编码的业务画像；每个画像包含目的、参与者、输入、输出、关键字段、状态、至少 5 条规则、异常场景、数据实体、接口/事件、安全控制、性能目标和至少 6 条验收条件。生成器输出统一章节，但所有关键内容来自该功能画像，不输出空项或占位文本。
 
@@ -120,7 +120,7 @@ export function generateFeatureSpec(context) { /* 返回完整 Markdown */ }
 export function validateFeatureSpec(markdown, context) { /* 返回错误字符串数组 */ }
 ```
 
-- [ ] **Step 4: 实现本地系统写入 CLI**
+- [x] **Step 4: 实现本地系统写入 CLI**
 
 CLI 从 `ZHILU_USERNAME`、`ZHILU_PASSWORD` 读取凭据，通过 Cookie + CSRF 登录；校验产品编码及有效功能总数必须分别为 `XBHG` 和 `124`。对每个功能执行“同步文档 → 读取修订号 → PUT 更新”，每份间隔至少 1100ms；遇到 `OUTLINE_RATE_LIMIT`、429、502、503、504 时按 2、4、8、16 秒重试，最多 5 次。成功后再次读取并校验正文，最终打印 `generated/updated/verified/failed` 数量和失败明细；任一失败时进程码为 1。
 
@@ -130,13 +130,13 @@ CLI 从 `ZHILU_USERNAME`、`ZHILU_PASSWORD` 读取凭据，通过 Cookie + CSRF 
 ZHILU_USERNAME=admin ZHILU_PASSWORD='<local-password>' node scripts/xbhg-feature-specs.mjs --base-url=http://localhost:8082 --product-id=102
 ```
 
-- [ ] **Step 5: 运行生成器测试**
+- [x] **Step 5: 运行生成器测试**
 
 Run: `node --test scripts/xbhg-feature-specs.test.mjs`
 
 Expected: PASS，124 个定义全部通过结构、规则数、验收数和占位词校验。
 
-- [ ] **Step 6: 提交生成工具**
+- [x] **Step 6: 提交生成工具**
 
 ```bash
 git add scripts/xbhg-feature-specs.mjs scripts/xbhg-feature-specs.test.mjs
@@ -152,7 +152,7 @@ git commit -m "feat: generate real xbhg feature specs"
 - Consumes: Task 1 接口、Task 2 CLI、本地 MySQL 与 Outline 配置。
 - Produces: 124 个状态为 `READY` 的功能 Spec 关联及一份终端验收报告。
 
-- [ ] **Step 1: 合并功能分支并重建后端**
+- [x] **Step 1: 合并功能分支并重建后端**
 
 ```bash
 git checkout main
@@ -162,7 +162,7 @@ docker compose up -d --build backend
 
 Expected: 后端健康检查成功，`http://localhost:8082/actuator/health` 返回 `UP`。
 
-- [ ] **Step 2: 实际生成并写入 Outline**
+- [x] **Step 2: 实际生成并写入 Outline**
 
 ```bash
 ZHILU_USERNAME=admin ZHILU_PASSWORD='<local-password>' node scripts/xbhg-feature-specs.mjs --base-url=http://localhost:8082 --product-id=102
@@ -170,7 +170,7 @@ ZHILU_USERNAME=admin ZHILU_PASSWORD='<local-password>' node scripts/xbhg-feature
 
 Expected: 退出码 0，报告为 `generated=124`、`updated=124`、`verified=124`、`failed=0`。
 
-- [ ] **Step 3: 核对数据库关联和同步状态**
+- [x] **Step 3: 核对数据库关联和同步状态**
 
 执行 SQL：
 
@@ -184,7 +184,7 @@ where f.product_id=102 and f.status='ACTIVE'
 
 Expected: `linked=124`。
 
-- [ ] **Step 4: 通过系统 API 全量回读验收**
+- [x] **Step 4: 通过系统 API 全量回读验收**
 
 CLI 验证模式逐一读取 124 份文档，重新执行 `validateFeatureSpec`，并检查 Outline URL 非空、标题格式为 `<功能名称> · 设计 Spec`。
 
@@ -192,7 +192,7 @@ Run: `ZHILU_USERNAME=admin ZHILU_PASSWORD='<local-password>' node scripts/xbhg-f
 
 Expected: 退出码 0，`verified=124`、`failed=0`。
 
-- [ ] **Step 5: 运行完整相关回归**
+- [x] **Step 5: 运行完整相关回归**
 
 ```bash
 cd backend
@@ -203,6 +203,6 @@ node --test scripts/xbhg-feature-specs.test.mjs
 
 Expected: Java 和 Node 测试全部通过。
 
-- [ ] **Step 6: 记录执行结果**
+- [x] **Step 6: 记录执行结果**
 
 将实际的关联数、READY 数、全量回读数和 7 个代表功能编码写入最终交付说明；不在仓库中保存 Outline token 或登录密码。
