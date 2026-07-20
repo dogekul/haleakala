@@ -41,4 +41,19 @@ OUTLINE_UTILS_SECRET=44444444444444444444444444444444444444444444444444444444444
 DEX_OIDC_CLIENT_SECRET=0123456789abcdef0123456789abcdef
 ENV
 (cd "$tmp" && docker compose --env-file .env -f docker-compose.ecs.yml config --quiet)
+
+for script in deploy-outline-aliyun.sh backup-outline-aliyun.sh verify-outline-aliyun.sh; do
+  [[ -x "$ROOT_DIR/scripts/$script" ]] || { echo "Missing executable scripts/$script" >&2; exit 1; }
+  bash -n "$ROOT_DIR/scripts/$script"
+done
+grep -q 'swapon' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'mysqldump' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'pg_dump' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+grep -q 'sha256sum' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+! grep -R -E 'Admin@123|ol_api_[A-Za-z0-9]+' \
+  "$ROOT_DIR/deploy/outline" \
+  "$ROOT_DIR/scripts/deploy-outline-aliyun.sh" \
+  "$ROOT_DIR/scripts/backup-outline-aliyun.sh" \
+  "$ROOT_DIR/scripts/verify-outline-aliyun.sh"
+
 echo "Outline deployment static tests passed"
