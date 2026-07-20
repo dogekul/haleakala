@@ -1,6 +1,7 @@
 import {
   ApartmentOutlined, AppstoreOutlined, BarsOutlined, BulbOutlined, CheckOutlined,
-  FilterOutlined, LinkOutlined, MergeCellsOutlined, PlusOutlined, RobotOutlined, WarningOutlined,
+  FileTextOutlined, FilterOutlined, LinkOutlined, MergeCellsOutlined, PlusOutlined,
+  RobotOutlined, WarningOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -69,13 +70,25 @@ function ClassificationFunnel({ value }: { value: Funnel }) {
 }
 
 function RequirementList({ values, onDecision, onDuplicate, onCoverage }: { values: Requirement[]; onDecision(value: Requirement): void; onDuplicate(value: Requirement): void; onCoverage(value: Requirement): void }) {
+  const [openingDocumentId, setOpeningDocumentId] = useState<number>()
+  const openDocument = async (requirement: Requirement) => {
+    setOpeningDocumentId(requirement.id)
+    try {
+      const document = await requirementApi.document(requirement.id)
+      window.open(document.outlineUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setOpeningDocumentId(undefined)
+    }
+  }
   return <div className="requirement-table"><Table rowKey="id" dataSource={values} columns={[
     { title: '需求', dataIndex: 'title', render: (_: string, row: Requirement) => <div className="requirement-title"><strong>{row.title}</strong><span>{row.code} · {row.projectCode}</span></div> },
     { title: '优先级', dataIndex: 'priority', width: 90, render: (value: string) => <Tag color={value === 'P0' ? 'red' : value === 'P1' ? 'orange' : 'blue'}>{value}</Tag> },
     { title: 'AI 建议', dataIndex: 'suggestedLevel', width: 130, render: (value: string, row: Requirement) => value ? <Space><Tag>{value}</Tag><span className="confidence">{Math.round((row.confidence ?? 0) * 100)}%</span></Space> : <span className="muted">待分析</span> },
     { title: '人工结论', dataIndex: 'confirmedLevel', width: 120, render: (value: string) => value ? levelTag(value) : <Tag>待确认</Tag> },
     { title: '状态', dataIndex: 'status', width: 110, render: (value: string) => <Tag color={value === 'CONFIRMED' ? 'success' : value === 'MERGED' ? 'default' : 'processing'}>{value}</Tag> },
-    { title: '操作', width: 310, render: (_: unknown, row: Requirement) => <Space><Button size="small" type="link" icon={<RobotOutlined />} onClick={() => onDecision(row)}>分类决策</Button><Button size="small" type="link" icon={<LinkOutlined />} onClick={() => onCoverage(row)}>功能覆盖</Button><Button size="small" type="link" icon={<MergeCellsOutlined />} disabled={row.status === 'MERGED'} onClick={() => onDuplicate(row)}>查重合并</Button></Space> },
+    { title: '操作', width: 420, render: (_: unknown, row: Requirement) => <Space>{row.outlineLinkId && <Button size="small" type="link" icon={<FileTextOutlined />} loading={openingDocumentId === row.id} onClick={() => openDocument(row)}>查看文档</Button>}<Button size="small" type="link" icon={<RobotOutlined />} onClick={() => onDecision(row)}>分类决策</Button><Button size="small" type="link" icon={<LinkOutlined />} onClick={() => onCoverage(row)}>功能覆盖</Button><Button size="small" type="link" icon={<MergeCellsOutlined />} disabled={row.status === 'MERGED'} onClick={() => onDuplicate(row)}>查重合并</Button></Space> },
   ]} /></div>
 }
 
@@ -90,14 +103,14 @@ function CollectionDrawer({ open, onClose }: { open: boolean; onClose(): void })
   const [form] = Form.useForm()
   const client = useQueryClient()
   const projects = useQuery({ queryKey: ['projects-for-requirements'], queryFn: projectApi.list, enabled: open })
-  const create = useMutation({ mutationFn: requirementApi.create, onSuccess: async value => { await client.invalidateQueries({ queryKey: ['requirements'] }); form.resetFields(); onClose(); if (value.validationWarning) message.warning(value.validationWarning); else message.success('需求已保存') } })
-  return <Drawer title="需求采集单" open={open} onClose={onClose} width={560} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>保存草稿</Button>}>
+  const create = useMutation({ mutationFn: requirementApi.create, onSuccess: async value => { await client.invalidateQueries({ queryKey: ['requirements'] }); form.resetFields(); onClose(); message.success('需求已创建，调研文档已保存到 Outline'); if (value.validationWarning) message.warning(value.validationWarning) }, onError: (error: Error) => message.error(error.message) })
+  return <Drawer title="需求采集单" open={open} onClose={onClose} width={560} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>完成采集并生成文档</Button>}>
     <Form form={form} layout="vertical" initialValues={{ priority: 'P2', source: '客户访谈' }} onFinish={values => create.mutate(values)}>
       <Form.Item label="所属项目" name="projectId" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" loading={projects.isLoading} options={projects.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
       <Form.Item label="需求标题" name="title" rules={[{ required: true }]}><Input placeholder="用一句话描述业务目标" /></Form.Item>
       <Form.Item label="业务描述与验收条件" name="description" rules={[{ required: true }]}><Input.TextArea rows={7} placeholder="业务场景、当前问题、期望结果、验收条件……" showCount maxLength={3000} /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="来源" name="source"><Select options={['客户访谈', '需求调研', '会议纪要', '工单反馈', '合同范围'].map(value => ({ value, label: value }))} /></Form.Item></Col><Col span={12}><Form.Item label="优先级" name="priority"><Radio.Group options={['P0', 'P1', 'P2', 'P3']} optionType="button" /></Form.Item></Col></Row>
-      <Alert type="warning" showIcon message="描述过短仍可保存草稿，但系统会提示补充，避免 AI 和人工误判。" />
+      <Alert type="info" showIcon message="填写完成后，系统将基于已发布的需求调研报告模版生成正式文档并保存到 Outline。" />
     </Form>
   </Drawer>
 }

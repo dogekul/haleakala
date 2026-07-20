@@ -268,3 +268,74 @@ it('功能列表加载失败时保持禁用并可重试，不提交空覆盖', a
   await waitFor(() => expect(save).toBeEnabled())
   expect(featureAttempts).toBe(2)
 })
+
+it('完成需求采集时提交表单并提示调研文档已保存到 Outline', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    requests.push({ path, init })
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/projects') return json([{
+      id: 41, code: 'PRJ-041', name: '消保合规交付', customerName: '示例银行', status: 'ACTIVE',
+    }])
+    if (path === '/api/v1/requirements' && init?.method === 'POST') return json({
+      id: 51, organizationId: 1, projectId: 41, productId: 8, projectCode: 'PRJ-041',
+      projectName: '消保合规交付', code: 'REQ-051', title: '交易限额校验',
+      description: '付款前校验客户交易限额并保留结果', source: '客户访谈', priority: 'P2',
+      status: 'DRAFT', version: 1, outlineLinkId: 61, sourceTemplateId: 71,
+      sourceTemplateRevision: 5,
+    }, 201)
+    if (path === '/api/v1/requirements') return json([])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /采集需求/ }))
+  const drawer = screen.getByRole('dialog', { name: '需求采集单' })
+  await user.click(within(drawer).getByRole('combobox', { name: '所属项目' }))
+  await user.click(await screen.findByText('PRJ-041 · 消保合规交付'))
+  await user.type(within(drawer).getByRole('textbox', { name: '需求标题' }), '交易限额校验')
+  await user.type(within(drawer).getByRole('textbox', { name: '业务描述与验收条件' }),
+    '付款前校验客户交易限额并保留结果')
+  await user.click(within(drawer).getByRole('button', { name: '完成采集并生成文档' }))
+
+  await waitFor(() => expect(JSON.parse(String(requests.find(request =>
+    request.path === '/api/v1/requirements' && request.init?.method === 'POST')?.init?.body)))
+    .toEqual({
+      priority: 'P2', source: '客户访谈', projectId: 41, title: '交易限额校验',
+      description: '付款前校验客户交易限额并保留结果',
+    }))
+  expect(await screen.findByText('需求已创建，调研文档已保存到 Outline')).toBeVisible()
+})
+
+it('只为已关联 Outline 的需求显示查看文档并打开最新地址', async () => {
+  const open = vi.fn()
+  vi.stubGlobal('open', open)
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/requirements/51/document') return json({
+      linkId: 61, title: '交易限额校验需求调研报告', revision: 2,
+      outlineUrl: 'http://localhost:3000/doc/req-51',
+    })
+    if (path === '/api/v1/requirements') return json([
+      { id: 51, projectId: 41, projectCode: 'PRJ-041', projectName: '消保合规交付',
+        code: 'REQ-051', title: '交易限额校验', description: '限额校验', priority: 'P1',
+        status: 'DRAFT', version: 1, outlineLinkId: 61 },
+      { id: 52, projectId: 41, projectCode: 'PRJ-041', projectName: '消保合规交付',
+        code: 'REQ-052', title: '历史需求', description: '没有关联文档', priority: 'P2',
+        status: 'DRAFT', version: 0 },
+    ])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  const documentButtons = await screen.findAllByRole('button', { name: /查看文档/ })
+  expect(documentButtons).toHaveLength(1)
+  await user.click(documentButtons[0])
+
+  await waitFor(() => expect(open).toHaveBeenCalledWith(
+    'http://localhost:3000/doc/req-51', '_blank', 'noopener,noreferrer'))
+})

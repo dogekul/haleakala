@@ -17,7 +17,17 @@ export interface Requirement {
   suggestionReason?: string
   confirmedLevel?: 'L0' | 'L1' | 'L2'
   overrideReason?: string
+  outlineLinkId?: number
+  sourceTemplateId?: number
+  sourceTemplateRevision?: number
   version: number
+}
+
+export interface RequirementDocument {
+  linkId: number
+  title: string
+  revision: number
+  outlineUrl: string
 }
 
 export interface DuplicateCandidate { id: number; title: string; description: string; similarityScore: number }
