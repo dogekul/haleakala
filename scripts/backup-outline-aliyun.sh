@@ -5,8 +5,13 @@ umask 077
 STACK_DIR=/opt/outline-stack
 BACKUP_ROOT=/opt/outline-backups
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-target="$BACKUP_ROOT/$stamp"
-mkdir -p "$target"
+target="$BACKUP_ROOT/.$stamp.partial"
+completed="$BACKUP_ROOT/$stamp"
+cleanup() {
+  rm -rf "$target"
+}
+trap cleanup EXIT
+mkdir "$target"
 cd "$STACK_DIR"
 
 compose=(docker compose --env-file .env -f docker-compose.ecs.yml)
@@ -27,8 +32,10 @@ tar -czf "$target/config-and-secrets.tar.gz" \
 tar -tzf "$target/config-and-secrets.tar.gz" >/dev/null
 (cd "$target" && sha256sum outline.pgdump ./*.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS)
 
+mv "$target" "$completed"
+trap - EXIT
 mapfile -t backups < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*T*Z' | sort)
 if (( ${#backups[@]} > 7 )); then
   printf '%s\0' "${backups[@]:0:${#backups[@]}-7}" | xargs -0 rm -rf --
 fi
-echo "Outline backup completed: $target"
+echo "Outline backup completed: $completed"
