@@ -1,5 +1,6 @@
 package com.zhilu.delivery.requirement;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -10,6 +11,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zhilu.delivery.automation.AiClient;
 import com.zhilu.delivery.document.DocumentCenterService;
 import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.iam.service.CurrentUser;
@@ -38,7 +42,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class RequirementCollectionApiIT {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private ObjectMapper json;
   @MockBean private DocumentCenterService documents;
+  @MockBean private AiClient ai;
 
   @BeforeEach
   void seed() {
@@ -85,6 +91,11 @@ class RequirementCollectionApiIT {
         eq("需求文档"), eq(9301L))).thenReturn(9302L);
     when(documents.createDocument(eq(930L), anyString(), eq("REQUIREMENT_RESEARCH"),
         anyString(), anyString(), eq(9302L))).thenReturn(9303L);
+    ObjectNode generated = json.createObjectNode();
+    generated.put("title", "交易限额校验需求调研报告");
+    generated.put("markdown", "# 交易限额校验需求调研报告\n\n## 业务背景\n付款前校验限额。"
+        + "\n\n## 验收标准\n校验结果准确并保留审计记录。");
+    when(ai.completeJson(eq(930L), anyString(), anyString(), any())).thenReturn(generated);
     when(documents.readLink(9303L, 930L)).thenReturn(new DocumentView(
         9303L, "交易限额校验需求调研报告", "# 正文", 1L, Instant.now(),
         "READY", null, "http://localhost:3000/doc/req-9303"));

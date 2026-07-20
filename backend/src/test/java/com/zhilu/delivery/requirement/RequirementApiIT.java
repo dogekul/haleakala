@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -16,7 +19,10 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.common.error.ConflictException;
+import com.zhilu.delivery.document.DocumentCenterService;
+import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.standardization.StandardizationService;
+import java.time.Instant;
 import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Collections;
@@ -33,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -51,6 +58,8 @@ class RequirementApiIT {
   @Autowired private RequirementService requirements;
   @Autowired private RequirementFeatureService features;
   @Autowired private StandardizationService standardization;
+  @SpyBean private RequirementDocumentService requirementDocuments;
+  @MockBean private DocumentCenterService documents;
   private CurrentUser user;
   private long requirementId;
   private long uncoveredRequirementId;
@@ -64,7 +73,7 @@ class RequirementApiIT {
     for (String table : new String[]{"audit_log", "standardization_debt_requirement",
         "requirement_product_feature", "product_feature", "product_module",
         "standardization_debt", "classification_decision", "classification_suggestion",
-        "requirement_item", "project_member", "delivery_project", "product_version",
+        "requirement_item", "outline_document_link", "project_member", "delivery_project", "product_version",
         "product", "app_user", "organization"}) jdbc.update("delete from " + table);
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (910,'智鹿','ZHILU-REQ-API')");
@@ -109,6 +118,79 @@ class RequirementApiIT {
         .andExpect(jsonPath("$.productId").value(910));
     mvc.perform(get("/api/v1/requirements/funnel").with(authentication(authentication))).andExpect(status().isOk())
         .andExpect(jsonPath("$.L0").value(0));
+  }
+
+  @Test void updatesStructuredFieldsWithOptionalAiReportRegeneration() throws Exception {
+    mvc.perform(put("/api/v1/requirements/{id}", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"projectId\":910,\"title\":\"客户主数据规则编辑\","
+                + "\"description\":\"补充业务规则和完整验收条件\",\"source\":\"评审会议\","
+                + "\"priority\":\"P0\",\"version\":0,\"regenerateReport\":false}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("客户主数据规则编辑"))
+        .andExpect(jsonPath("$.version").value(1));
+    verify(requirementDocuments, never()).regenerate(requirementId, 910L);
+
+    doNothing().when(requirementDocuments).regenerate(requirementId, 910L);
+    mvc.perform(put("/api/v1/requirements/{id}", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"projectId\":910,\"title\":\"客户主数据规则终稿\","
+                + "\"description\":\"补充流程、边界和可验证的验收条件\",\"source\":\"评审会议\","
+                + "\"priority\":\"P0\",\"version\":1,\"regenerateReport\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("客户主数据规则终稿"));
+    verify(requirementDocuments).regenerate(requirementId, 910L);
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REQUIREMENT_UPDATED' and resource_id=?",
+        Integer.class, String.valueOf(requirementId)));
+  }
+
+  @Test void abandonsRequirementWithoutDeletingItsDocumentAndBlocksFurtherActions()
+      throws Exception {
+    jdbc.update("insert into outline_document_link(id,organization_id,business_key,purpose,"
+        + "outline_collection_id,title_cache) values (919,910,'REQ:ABANDON','REQUIREMENT_RESEARCH',"
+        + "'collection','保留的需求文档')");
+    jdbc.update("update requirement_item set outline_link_id=919 where id=?", requirementId);
+    org.mockito.Mockito.when(documents.readLink(919L, 910L)).thenReturn(new DocumentView(
+        919L, "保留的需求文档", "# 正文", 3L, Instant.now(), "READY", null,
+        "http://outline/doc/919"));
+
+    mvc.perform(post("/api/v1/requirements/{id}/abandon", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"version\":0}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ABANDONED"))
+        .andExpect(jsonPath("$.version").value(1))
+        .andExpect(jsonPath("$.outlineLinkId").value(919));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from audit_log where action='REQUIREMENT_ABANDONED' and resource_id=?",
+        Integer.class, String.valueOf(requirementId)));
+
+    mvc.perform(get("/api/v1/requirements/{id}/document", requirementId).with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outlineUrl").value("http://outline/doc/919"));
+    mvc.perform(put("/api/v1/requirements/{id}", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"projectId\":910,\"title\":\"不可编辑\",\"description\":\"不可编辑描述\","
+                + "\"priority\":\"P2\",\"version\":1}"))
+        .andExpect(status().isConflict());
+    mvc.perform(post("/api/v1/requirements/{id}/classify", requirementId)
+            .with(actor(user, "requirement:classify")).with(csrf()))
+        .andExpect(status().isConflict());
+    mvc.perform(post("/api/v1/requirements/{id}/confirm", requirementId)
+            .with(actor(user, "requirement:classify")).with(csrf())
+            .contentType("application/json").content("{\"level\":\"L0\"}"))
+        .andExpect(status().isConflict());
+    mvc.perform(post("/api/v1/requirements/{id}/duplicates", requirementId)
+            .with(writer()).with(csrf()))
+        .andExpect(status().isConflict());
+    mvc.perform(post("/api/v1/requirements/{sourceId}/merge/{targetId}",
+            requirementId, uncoveredRequirementId).with(writer()).with(csrf()))
+        .andExpect(status().isConflict());
+    mvc.perform(put("/api/v1/requirements/{id}/product-features", requirementId)
+            .with(writer()).with(csrf()).contentType("application/json")
+            .content("{\"entries\":[]}"))
+        .andExpect(status().isConflict());
   }
 
   @Test void replacesAndReadsMultipleFeatureCoverageEntries() throws Exception {

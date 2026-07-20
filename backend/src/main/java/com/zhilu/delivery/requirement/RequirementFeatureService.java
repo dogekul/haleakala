@@ -112,10 +112,13 @@ public class RequirementFeatureService {
   }
 
   private void lockRequirement(long requirementId, long organizationId) {
-    List<Long> values = jdbc.query(
-        "select id from requirement_item where id=? and organization_id=? for update",
-        (row, index) -> row.getLong("id"), requirementId, organizationId);
+    List<String> values = jdbc.query(
+        "select status from requirement_item where id=? and organization_id=? for update",
+        (row, index) -> row.getString("status"), requirementId, organizationId);
     if (values.isEmpty()) throw new NotFoundException("需求不存在");
+    if ("MERGED".equals(values.get(0)) || "ABANDONED".equals(values.get(0))) {
+      throw new ConflictException("需求已结束，不能修改功能覆盖");
+    }
   }
 
   public Map<String, Object> productCoverage(CurrentUser user, long productId) {

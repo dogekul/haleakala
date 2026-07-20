@@ -83,14 +83,33 @@ public class RequirementService {
 
   @Transactional
   public Map<String, Object> update(long id, String title, String description, String source,
-      String priority, long expectedVersion) {
+      String priority, long expectedVersion, boolean regenerateReport, long actorUserId) {
     if (blank(title) || blank(description)) throw new IllegalArgumentException("需求标题和描述不能为空");
+    Map<String, Object> current = get(id);
     String warning = meaningfulLength(title + description) < 10 ? "需求描述少于 10 个有效字符，建议补充业务场景和验收条件" : null;
     int changed = jdbc.update("update requirement_item set title=?,description=?,source=?,priority=?,validation_warning=?,"
-            + "updated_at=current_timestamp,version=version+1 where id=? and version=? and status<>'MERGED'",
+            + "updated_at=current_timestamp,version=version+1 where id=? and version=? "
+            + "and status not in ('MERGED','ABANDONED')",
         title.trim(), description.trim(), source, blank(priority) ? "P2" : priority,
         warning, id, expectedVersion);
-    if (changed == 0) throw new ConflictException("需求已被他人更新或已合并，请刷新后重试");
+    if (changed == 0) throw new ConflictException("需求已被他人更新或已结束，请刷新后重试");
+    if (regenerateReport) documents.regenerate(id, actorUserId);
+    audit.record(((Number) current.get("organizationId")).longValue(), actorUserId,
+        "REQUIREMENT_UPDATED", "REQUIREMENT", String.valueOf(id),
+        regenerateReport ? "regenerateReport=true" : "regenerateReport=false");
+    return get(id);
+  }
+
+  @Transactional
+  public Map<String, Object> abandon(long id, long expectedVersion, long actorUserId) {
+    Map<String, Object> requirement = get(id);
+    int changed = jdbc.update("update requirement_item set status='ABANDONED',"
+            + "updated_at=current_timestamp,version=version+1 where id=? and version=? "
+            + "and status not in ('MERGED','ABANDONED')",
+        id, expectedVersion);
+    if (changed == 0) throw new ConflictException("需求已被他人更新或已结束，请刷新后重试");
+    audit.record(((Number) requirement.get("organizationId")).longValue(), actorUserId,
+        "REQUIREMENT_ABANDONED", "REQUIREMENT", String.valueOf(id), "status=ABANDONED");
     return get(id);
   }
 
@@ -108,6 +127,7 @@ public class RequirementService {
   @Transactional
   public Map<String, Object> classify(long id, long actorUserId) {
     Map<String, Object> requirement = get(id);
+    assertActionable(requirement);
     ObjectNode schema = json.createObjectNode(); schema.put("type", "object");
     ObjectNode properties = schema.putObject("properties");
     properties.putObject("level").put("type", "string").putArray("enum").add("L0").add("L1").add("L2");
@@ -136,7 +156,7 @@ public class RequirementService {
 
   @Transactional
   public Map<String, Object> saveSuggestion(long id, String level, double confidence, String reason, String source) {
-    validateLevel(level); get(id);
+    validateLevel(level); assertActionable(get(id));
     jdbc.update("insert into classification_suggestion(requirement_id,suggested_level,confidence,reason,source) values (?,?,?,?,?)",
         id, level, confidence, reason, blank(source) ? "MANUAL" : source);
     jdbc.update("update requirement_item set status='SUBMITTED',updated_at=current_timestamp,version=version+1 where id=? and status='DRAFT'", id);
@@ -147,6 +167,7 @@ public class RequirementService {
   public Map<String, Object> confirm(long id, String level, String overrideReason, long actorUserId) {
     validateLevel(level);
     Map<String, Object> requirement = get(id);
+    assertActionable(requirement);
     String suggested = value(requirement.get("suggestedLevel"));
     if (!blank(suggested) && !suggested.equals(level) && blank(overrideReason))
       throw new IllegalArgumentException("改判 AI 建议时必须填写原因");
@@ -191,9 +212,10 @@ public class RequirementService {
   }
 
   public List<Map<String, Object>> findDuplicates(long id) {
-    Map<String, Object> source = get(id); String sourceText = normalize(source.get("title") + " " + source.get("description"));
+    Map<String, Object> source = get(id); assertActionable(source);
+    String sourceText = normalize(source.get("title") + " " + source.get("description"));
     List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
-    for (Map<String, Object> candidate : jdbc.queryForList("select id,title,description from requirement_item where project_id=? and id<>? and status<>'MERGED'",
+    for (Map<String, Object> candidate : jdbc.queryForList("select id,title,description from requirement_item where project_id=? and id<>? and status not in ('MERGED','ABANDONED')",
         ((Number) source.get("projectId")).longValue(), id)) {
       double score = similarity(sourceText, normalize(candidate.get("title") + " " + candidate.get("description")));
       if (score >= 0.25) {
@@ -209,6 +231,7 @@ public class RequirementService {
   public Map<String, Object> merge(long sourceId, long targetId, long actorUserId) {
     if (sourceId == targetId) throw new IllegalArgumentException("不能合并到自身");
     Map<String, Object> source = get(sourceId); Map<String, Object> target = get(targetId);
+    assertActionable(source); assertActionable(target);
     if (!source.get("projectId").equals(target.get("projectId"))) throw new ConflictException("只能合并同一项目的需求");
     try { jdbc.update("insert into duplicate_relation(source_requirement_id,target_requirement_id,similarity_score,status,resolved_at) values (?,?,1,'MERGED',current_timestamp)", sourceId, targetId); }
     catch (DuplicateKeyException duplicate) { jdbc.update("update duplicate_relation set status='MERGED',resolved_at=current_timestamp where source_requirement_id=? and target_requirement_id=?", sourceId, targetId); }
@@ -236,6 +259,12 @@ public class RequirementService {
   private Object safe(java.sql.ResultSet row, String column) { try { return row.getObject(column); } catch (java.sql.SQLException missing) { return null; } }
   private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException { long value = row.getLong(column); return row.wasNull() ? null : value; }
   private boolean crossScope(CurrentUser user) { return user.getRoles().contains("ADMIN") || user.getRoles().contains("PMO"); }
+  private void assertActionable(Map<String, Object> requirement) {
+    String status = value(requirement.get("status"));
+    if ("MERGED".equals(status) || "ABANDONED".equals(status)) {
+      throw new ConflictException("需求已结束，不能继续操作");
+    }
+  }
   private void validateLevel(String level) { if (!LEVELS.contains(level)) throw new IllegalArgumentException("分类必须是 L0、L1 或 L2"); }
   private boolean blank(String value) { return value == null || value.trim().isEmpty(); }
   private String value(Object value) { return value == null ? null : String.valueOf(value); }
