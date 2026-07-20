@@ -123,7 +123,33 @@ docker run --rm --user root --entrypoint sh \
   -v outline-stack_dex-data:/var/dex \
   ghcr.io/dexidp/dex:v2.45.1-alpine \
   -c 'chown -R 1001:1001 /var/dex'
-"${compose[@]}" up -d postgres redis dex outline caddy
+
+"${compose[@]}" stop outline >/dev/null 2>&1 || true
+"${compose[@]}" up -d postgres redis dex caddy
+
+foundation_ready=false
+for _ in $(seq 1 60); do
+  foundation_ready=true
+  for service in postgres redis dex caddy; do
+    cid="$("${compose[@]}" ps -q "$service")"
+    [[ -n "$cid" ]] || { foundation_ready=false; break; }
+    state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
+    [[ "$state" == healthy ]] || { foundation_ready=false; break; }
+  done
+  [[ "$foundation_ready" == true ]] && \
+    curl -fsS --max-time 5 https://outline.8.166.121.138.sslip.io/dex/.well-known/openid-configuration >/dev/null && break
+  foundation_ready=false
+  sleep 10
+done
+if [[ "$foundation_ready" != true ]]; then
+  "${compose[@]}" ps >&2
+  "${compose[@]}" logs --tail=160 postgres redis dex caddy >&2
+  exit 1
+fi
+
+"${compose[@]}" exec -T redis sh -c 'redis-cli -a "$REDIS_PASSWORD" del migrations >/dev/null' < /dev/null
+"${compose[@]}" run --rm --no-deps outline yarn db:migrate --env production-ssl-disabled
+"${compose[@]}" up -d outline
 
 ready=false
 for _ in $(seq 1 60); do
