@@ -54,6 +54,47 @@ it('展示仅由人工确认决策驱动的三层漏斗并保留看板', async (
   expect(screen.getByTestId('requirement-board')).toBeVisible()
 })
 
+it('分类决策展示证据、资料提醒、建设内容表和投产计划表', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/requirements') return json([{
+      id: 71, organizationId: 1, projectId: 41, productId: 8, projectCode: 'PRJ-041',
+      projectName: '消保合规交付', code: 'REQ-071', title: '客户证件有效期校验',
+      description: '增加证件有效期与黑名单联动校验', priority: 'P1', status: 'SUBMITTED',
+      version: 2, suggestedLevel: 'L1', confidence: 0.93,
+      suggestionReason: '现有功能仅部分覆盖，需要增强开发',
+      classificationEvidence: ['需求调研报告/详细需求', '客户校验 Spec/当前能力'],
+      classificationWarnings: ['生产窗口待确认'],
+      constructionContents: [{
+        moduleName: '客户管理', featureCode: 'VALIDATION', featureName: '客户校验',
+        versionAvailability: 'INCLUDED', currentCapability: '校验证件格式',
+        gap: '缺少有效期和黑名单联动', changeType: 'ENHANCEMENT',
+        constructionContent: '增强开发', acceptanceCriteria: '无效证件和黑名单客户被准确拦截并留痕',
+        priority: 'P1', evidence: '客户校验 Spec/当前能力',
+      }],
+      productionPlan: [{
+        phase: '开发与验证', workItem: '完成校验增强和回归测试', ownerRole: '研发、测试、实施',
+        plannedStart: '2026-08-01', plannedEnd: '2026-10-31', deliverable: '发布包和测试报告',
+        entryCriteria: '方案评审通过', exitCriteria: '验收标准全部通过',
+        riskAndRollback: '灰度发布并验证回退',
+      }],
+    }])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /分类决策/ }))
+  const drawer = screen.getByRole('dialog', { name: 'AI 分类决策树' })
+  expect(within(drawer).getByText('需求调研报告/详细需求')).toBeVisible()
+  expect(within(drawer).getByText('生产窗口待确认')).toBeVisible()
+  expect(within(drawer).getByRole('tab', { name: '建设内容表' })).toBeVisible()
+  expect(within(drawer).getAllByText('增强开发').length).toBeGreaterThan(0)
+  await user.click(within(drawer).getByRole('tab', { name: '投产计划表' }))
+  expect(within(drawer).getByText('灰度发布并验证回退')).toBeVisible()
+})
+
 it('requirementId 每次只自动定位一次且参数变化时定位新需求', async () => {
   let requirementGets = 0
   vi.stubGlobal('fetch', vi.fn((input: string) => {
