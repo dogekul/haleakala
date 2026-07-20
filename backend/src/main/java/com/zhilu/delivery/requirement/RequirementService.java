@@ -31,9 +31,22 @@ public class RequirementService {
   private final AiClient ai;
   private final ObjectMapper json;
   private final AuditService audit;
+  private final RequirementDocumentService documents;
 
-  public RequirementService(JdbcTemplate jdbc, AiClient ai, ObjectMapper json, AuditService audit) {
+  public RequirementService(JdbcTemplate jdbc, AiClient ai, ObjectMapper json, AuditService audit,
+      RequirementDocumentService documents) {
     this.jdbc = jdbc; this.ai = ai; this.json = json; this.audit = audit;
+    this.documents = documents;
+  }
+
+  @Transactional
+  public Map<String, Object> collect(long projectId, String title, String description,
+      String source, String priority, long actorUserId) {
+    Map<String, Object> created = create(
+        projectId, title, description, source, priority, actorUserId);
+    long requirementId = ((Number) created.get("id")).longValue();
+    documents.attach(requirementId, actorUserId);
+    return get(requirementId);
   }
 
   @Transactional
@@ -213,6 +226,9 @@ public class RequirementService {
     value.put("title", row.getString("title")); value.put("description", row.getString("description")); value.put("source", row.getString("source"));
     value.put("priority", row.getString("priority")); value.put("status", row.getString("status")); value.put("validationWarning", row.getString("validation_warning"));
     value.put("mergedIntoId", nullableLong(row, "merged_into_id")); value.put("version", row.getLong("version"));
+    value.put("outlineLinkId", nullableLong(row, "outline_link_id"));
+    value.put("sourceTemplateId", nullableLong(row, "source_template_id"));
+    value.put("sourceTemplateRevision", nullableLong(row, "source_template_revision"));
     value.put("suggestedLevel", safe(row, "suggested_level")); value.put("confidence", safe(row, "confidence")); value.put("suggestionReason", safe(row, "suggestion_reason"));
     value.put("confirmedLevel", safe(row, "confirmed_level")); value.put("overrideReason", safe(row, "override_reason"));
     return value;
