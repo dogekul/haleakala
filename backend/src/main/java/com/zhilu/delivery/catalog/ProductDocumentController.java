@@ -47,6 +47,13 @@ public class ProductDocumentController {
     return documents.syncAllForProduct(user.getOrganizationId(), productId);
   }
 
+  @PostMapping("/features/{featureId}/spec/sync")
+  public DocumentView syncFeature(
+      @PathVariable long productId, @PathVariable long featureId,
+      @AuthenticationPrincipal CurrentUser user) {
+    return documents.syncFeature(user.getOrganizationId(), productId, featureId);
+  }
+
   @GetMapping("/features/{featureId}/spec")
   public DocumentView read(
       @PathVariable long productId, @PathVariable long featureId,
