@@ -478,6 +478,24 @@ async function retry(operation, label) {
   throw lastError;
 }
 
+export async function saveWithRevisionRefresh(
+    api, path, title, markdown, initialRevision) {
+  let revision = initialRevision;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await api.request(path, {
+        method: 'PUT', body: { title, markdown, revision },
+      });
+    } catch (error) {
+      if (error.status !== 409 || attempt === 2) throw error;
+      const latest = await api.request(path);
+      if (latest.title === title && latest.markdown === markdown) return latest;
+      revision = latest.revision;
+    }
+  }
+  throw new Error('保存功能 Spec 时无法刷新修订号');
+}
+
 function buildContexts(product, modules, features) {
   const modulesById = new Map(modules.map((module) => [Number(module.id), module]));
   return features.filter((feature) => feature.status === 'ACTIVE').map((feature) => {
@@ -544,10 +562,10 @@ async function run(argv = process.argv.slice(2)) {
         if (current.title === title && current.markdown === markdown) {
           report.unchanged += 1;
         } else {
+          const specPath = `/api/v1/products/${options.productId}/features/${context.featureId}/spec`;
           await retry(
-            () => api.request(`/api/v1/products/${options.productId}/features/${context.featureId}/spec`, {
-              method: 'PUT', body: { title, markdown, revision: current.revision },
-            }),
+            () => saveWithRevisionRefresh(
+              api, specPath, title, markdown, current.revision),
             `${context.code} 写入正文`,
           );
           report.updated += 1;

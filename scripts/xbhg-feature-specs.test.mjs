@@ -4,6 +4,7 @@ import {
   FEATURE_DEFINITIONS,
   generateFeatureSpec,
   parseArguments,
+  saveWithRevisionRefresh,
   validateFeatureSpec,
 } from './xbhg-feature-specs.mjs';
 
@@ -108,4 +109,21 @@ test('parses a precise feature retry list', () => {
     '--codes=REMIND-DUE,REMIND-OWNER,REPORT-CREATE,OPEN-EVENT',
   ]);
   assert.deepEqual(options.codes, ['REMIND-DUE', 'REMIND-OWNER', 'REPORT-CREATE', 'OPEN-EVENT']);
+});
+
+test('refreshes the Outline revision after an optimistic lock conflict', async () => {
+  const revisions = [];
+  const api = {
+    async request(_path, options) {
+      if (!options) return { revision: 7, title: '旧标题', markdown: '旧正文' };
+      revisions.push(options.body.revision);
+      if (revisions.length === 1) throw Object.assign(new Error('conflict'), { status: 409 });
+      return { revision: 8, title: options.body.title, markdown: options.body.markdown };
+    },
+  };
+
+  const saved = await saveWithRevisionRefresh(api, '/spec', '新标题', '新正文', 6);
+
+  assert.deepEqual(revisions, [6, 7]);
+  assert.equal(saved.revision, 8);
 });
