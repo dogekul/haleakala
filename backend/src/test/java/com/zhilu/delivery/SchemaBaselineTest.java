@@ -148,6 +148,10 @@ class SchemaBaselineTest {
         "select count(*) from product_document_node n join outline_document_link l "
             + "on l.id=n.outline_link_id where n.product_id=102 and n.node_type='DOCUMENT'",
         Integer.class));
+    assertEquals(Integer.valueOf(1), legacy.queryForObject(
+        "select count(*) from product_document_node n join outline_document_link l "
+            + "on l.id=n.outline_link_id where n.product_id=102 "
+            + "and l.sync_status='FAILED' and l.last_error='prior failure'", Integer.class));
   }
 
   private void seedOldModule(
@@ -165,11 +169,13 @@ class SchemaBaselineTest {
   private void seedOldFeature(
       JdbcTemplate legacy, long id, long moduleId, String code, String name) {
     long linkId = 2000 + id;
+    String syncStatus = "DOC-01-01".equals(code) ? "FAILED" : "READY";
     legacy.update("insert into outline_document_link(id,organization_id,business_key,purpose,"
-            + "outline_collection_id,outline_document_id,outline_url_id,title_cache,sync_status) "
-            + "values (?,?,?,?,?,?,?,?,?)", linkId, 102,
+            + "outline_collection_id,outline_document_id,outline_url_id,title_cache,sync_status,"
+            + "last_error) values (?,?,?,?,?,?,?,?,?,?)", linkId, 102,
         "PRODUCT:102:FEATURE:" + id + ":SPEC", "PRODUCT_FEATURE_SPEC", "collection",
-        "feature-" + id, "feature-url-" + id, name, "READY");
+        "feature-" + id, "feature-url-" + id, name, syncStatus,
+        "FAILED".equals(syncStatus) ? "prior failure" : null);
     legacy.update("insert into product_feature(id,product_id,module_id,code,name,status,"
             + "outline_link_id) values (?,?,?,?,?,'ACTIVE',?)",
         id, 102, moduleId, code, name, linkId);

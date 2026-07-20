@@ -1,4 +1,9 @@
 -- Preserve the existing Outline hierarchy as an independent document tree.
+-- Flyway cannot wrap MySQL DDL migrations, but all durable changes below are InnoDB DML.
+-- An explicit transaction keeps the destructive capability rebuild atomic; temporary-table
+-- creation and removal do not implicitly commit in MySQL.
+SET AUTOCOMMIT = 0;
+
 INSERT INTO product_document_node(
   product_id,parent_id,node_type,code,title,description,sort_order,outline_link_id)
 SELECT m.product_id,NULL,'FOLDER',m.code,m.name,m.description,m.sort_order,l.id
@@ -737,10 +742,5 @@ JOIN product_feature feature ON feature.product_id=product.id AND feature.module
 UPDATE product_version SET version=version+1,updated_at=current_timestamp
 WHERE product_id IN (SELECT id FROM product WHERE code='XBHG' AND name='消保合规');
 
-UPDATE outline_document_link SET sync_status='READY',last_error=NULL
-WHERE outline_document_id IS NOT NULL AND id IN (
-  SELECT outline_link_id FROM product_document_node WHERE outline_link_id IS NOT NULL
-);
-
-DROP TABLE v20_feature_manifest;
-DROP TABLE v20_consumer_protection_guard;
+COMMIT;
+SET AUTOCOMMIT = 1;
