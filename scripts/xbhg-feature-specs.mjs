@@ -442,11 +442,16 @@ class ApiSession {
   }
 }
 
-function argsOf(argv) {
-  const options = { baseUrl: 'http://localhost:8082', productId: 102, verifyOnly: false };
+export function parseArguments(argv) {
+  const options = {
+    baseUrl: 'http://localhost:8082', productId: 102, verifyOnly: false, codes: [],
+  };
   for (const value of argv) {
     if (value.startsWith('--base-url=')) options.baseUrl = value.slice('--base-url='.length);
     else if (value.startsWith('--product-id=')) options.productId = Number(value.slice('--product-id='.length));
+    else if (value.startsWith('--codes=')) {
+      options.codes = value.slice('--codes='.length).split(',').map((code) => code.trim()).filter(Boolean);
+    }
     else if (value === '--verify-only') options.verifyOnly = true;
     else throw new Error(`不支持的参数: ${value}`);
   }
@@ -494,7 +499,7 @@ function buildContexts(product, modules, features) {
 }
 
 async function run(argv = process.argv.slice(2)) {
-  const options = argsOf(argv);
+  const options = parseArguments(argv);
   const username = process.env.ZHILU_USERNAME;
   const password = process.env.ZHILU_PASSWORD;
   if (!username || !password) throw new Error('必须通过 ZHILU_USERNAME 和 ZHILU_PASSWORD 提供本地系统凭据');
@@ -509,12 +514,19 @@ async function run(argv = process.argv.slice(2)) {
   if (product.code !== 'XBHG' || product.name !== '消保合规') {
     throw new Error(`拒绝处理非消保合规产品: ${product.code}/${product.name}`);
   }
-  const contexts = buildContexts(product, modules, features);
-  if (contexts.length !== 124 || FEATURE_DEFINITIONS.size !== 124) {
-    throw new Error(`有效功能数量必须为 124，数据库=${contexts.length}，设计=${FEATURE_DEFINITIONS.size}`);
+  const allContexts = buildContexts(product, modules, features);
+  if (allContexts.length !== 124 || FEATURE_DEFINITIONS.size !== 124) {
+    throw new Error(`有效功能数量必须为 124，数据库=${allContexts.length}，设计=${FEATURE_DEFINITIONS.size}`);
+  }
+  const selected = new Set(options.codes);
+  const contexts = selected.size
+    ? allContexts.filter((context) => selected.has(context.code)) : allContexts;
+  if (selected.size && contexts.length !== selected.size) {
+    const found = new Set(contexts.map((context) => context.code));
+    throw new Error(`指定功能不存在: ${[...selected].filter((code) => !found.has(code)).join(', ')}`);
   }
 
-  const report = { productId: options.productId, generated: 0, updated: 0, unchanged: 0, verified: 0, failed: 0, failures: [] };
+  const report = { productId: options.productId, targeted: contexts.length, generated: 0, updated: 0, unchanged: 0, verified: 0, failed: 0, failures: [] };
   for (let index = 0; index < contexts.length; index += 1) {
     const context = contexts[index];
     try {
@@ -552,12 +564,12 @@ async function run(argv = process.argv.slice(2)) {
       if (saved.syncStatus !== 'READY') remoteErrors.push(`同步状态不是 READY: ${saved.syncStatus}`);
       if (remoteErrors.length) throw new Error(remoteErrors.join('；'));
       report.verified += 1;
-      console.log(`[${index + 1}/124] ${context.code} ${options.verifyOnly ? '验收通过' : '写入并验收通过'}`);
+      console.log(`[${index + 1}/${contexts.length}] ${context.code} ${options.verifyOnly ? '验收通过' : '写入并验收通过'}`);
       if (!options.verifyOnly && index < contexts.length - 1) await sleep(1100);
     } catch (error) {
       report.failed += 1;
       report.failures.push({ code: context.code, message: error.message });
-      console.error(`[${index + 1}/124] ${context.code} 失败: ${error.message}`);
+      console.error(`[${index + 1}/${contexts.length}] ${context.code} 失败: ${error.message}`);
       if (!options.verifyOnly && index < contexts.length - 1) await sleep(1100);
     }
   }

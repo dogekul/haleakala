@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   FEATURE_DEFINITIONS,
   generateFeatureSpec,
+  parseArguments,
   validateFeatureSpec,
 } from './xbhg-feature-specs.mjs';
 
@@ -99,4 +100,12 @@ test('validator accepts Outline-normalized unordered list markers', () => {
   const specContext = context('LAW-INGEST');
   const normalized = generateFeatureSpec(specContext).replace(/^- (BR|AC)/gm, '* $1');
   assert.deepEqual(validateFeatureSpec(normalized, specContext), []);
+});
+
+test('parses a precise feature retry list', () => {
+  const options = parseArguments([
+    '--base-url=http://localhost:8082', '--product-id=102',
+    '--codes=REMIND-DUE,REMIND-OWNER,REPORT-CREATE,OPEN-EVENT',
+  ]);
+  assert.deepEqual(options.codes, ['REMIND-DUE', 'REMIND-OWNER', 'REPORT-CREATE', 'OPEN-EVENT']);
 });
