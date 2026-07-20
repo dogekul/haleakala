@@ -14,7 +14,7 @@ for service in postgres redis dex outline caddy; do
 done
 
 curl -fsS https://outline.8.166.121.138.sslip.io/dex/.well-known/openid-configuration \
-  | grep -q '"issuer":"https://outline.8.166.121.138.sslip.io/dex"'
+  | grep -Eq '"issuer"[[:space:]]*:[[:space:]]*"https://outline.8.166.121.138.sslip.io/dex"'
 curl -fsS -o /dev/null https://outline.8.166.121.138.sslip.io/
 curl -fsS http://127.0.0.1:53990/actuator/health | grep -q '"status":"UP"'
 curl -fsS http://127.0.0.1/api/health >/dev/null
