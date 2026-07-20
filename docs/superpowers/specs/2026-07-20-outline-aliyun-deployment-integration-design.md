@@ -51,7 +51,7 @@ Outline 栈位于 ECS `/opt/outline-stack`，备份位于 `/opt/outline-backups`
 | Outline | `docker.getoutline.com/outlinewiki/outline:1.7.1` | 文档、目录、修订和 API |
 | PostgreSQL | `postgres:18.4-alpine3.24` | Outline 业务数据库 |
 | Redis | `redis:7.4.9-alpine3.21` | Outline 缓存、任务和协作状态 |
-| Dex | `ghcr.io/dexidp/dex:v2.45.1` | 本地账号和 OIDC 服务 |
+| Dex | `ghcr.io/dexidp/dex:v2.45.1-alpine` | 本地账号和 OIDC 服务；Alpine 变体提供容器内健康检查工具 |
 | Caddy | `caddy:2.11.4-alpine` | 公网 HTTPS、WebSocket 和反向代理 |
 
 Compose 栈使用具名卷持久化：
