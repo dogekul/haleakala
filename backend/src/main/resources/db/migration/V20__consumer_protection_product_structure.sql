@@ -30,6 +30,19 @@ JOIN product_module m ON m.id=f.module_id
 JOIN product_document_node pn ON pn.product_id=f.product_id AND pn.code=m.code
 WHERE f.outline_link_id IS NOT NULL;
 
+CREATE TEMPORARY TABLE v20_feature_manifest (
+  product_version_id BIGINT NOT NULL,
+  submodule_code VARCHAR(96) NOT NULL,
+  availability VARCHAR(24) NOT NULL,
+  PRIMARY KEY (product_version_id,submodule_code)
+);
+INSERT INTO v20_feature_manifest(product_version_id,submodule_code,availability)
+SELECT pvf.product_version_id,f.code,pvf.availability
+FROM product_version_feature pvf
+JOIN product_feature f ON f.id=pvf.product_feature_id
+JOIN product p ON p.id=f.product_id AND p.code='XBHG' AND p.name='消保合规'
+JOIN product_module m ON m.id=f.module_id AND m.code LIKE 'CAP-%';
+
 -- Abort before destructive cleanup unless the generated structure is exactly the known dataset.
 CREATE TEMPORARY TABLE v20_consumer_protection_guard (
   guard_key INT NOT NULL,
@@ -55,8 +68,8 @@ SELECT 5 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保�
   AND (SELECT COUNT(*) FROM product_document_node n JOIN product p ON p.id=n.product_id
   WHERE p.code='XBHG' AND p.name='消保合规' AND n.node_type='DOCUMENT')<>70;
 INSERT INTO v20_consumer_protection_guard(guard_key)
-SELECT 6 WHERE EXISTS (SELECT 1 FROM product_version_feature x JOIN product_feature f ON f.id=x.product_feature_id
-  JOIN product p ON p.id=f.product_id WHERE p.code='XBHG' AND p.name='消保合规');
+SELECT 6 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保合规')
+  AND (SELECT COUNT(*) FROM v20_feature_manifest)<>31;
 INSERT INTO v20_consumer_protection_guard(guard_key)
 SELECT 7 WHERE EXISTS (SELECT 1 FROM requirement_product_feature x JOIN product_feature f ON f.id=x.product_feature_id
   JOIN product p ON p.id=f.product_id WHERE p.code='XBHG' AND p.name='消保合规');
@@ -76,6 +89,11 @@ FROM product_feature f
 JOIN product p ON p.id=f.product_id AND p.code='XBHG' AND p.name='消保合规'
 JOIN product_module m ON m.id=f.module_id AND m.code LIKE 'CAP-%';
 
+DELETE FROM product_version_feature
+WHERE product_feature_id IN (
+  SELECT f.id FROM product_feature f JOIN product p ON p.id=f.product_id
+  WHERE p.code='XBHG' AND p.name='消保合规'
+);
 UPDATE product_feature SET outline_link_id=NULL,source_template_id=NULL,source_template_revision=NULL
 WHERE product_id IN (SELECT id FROM product WHERE code='XBHG' AND name='消保合规');
 DELETE FROM product_feature
@@ -708,9 +726,21 @@ SELECT p.id,m.id,'OPS-REPORT','运营报表','运营报表','ACTIVE'
 FROM product p JOIN product_module m ON m.product_id=p.id
 WHERE p.code='XBHG' AND p.name='消保合规' AND m.code='OPS-SYSTEM';
 
+INSERT INTO product_version_feature(product_version_id,product_feature_id,availability)
+SELECT manifest.product_version_id,feature.id,manifest.availability
+FROM v20_feature_manifest manifest
+JOIN product_module module ON module.code=manifest.submodule_code
+JOIN product product ON product.id=module.product_id
+  AND product.code='XBHG' AND product.name='消保合规'
+JOIN product_feature feature ON feature.product_id=product.id AND feature.module_id=module.id;
+
+UPDATE product_version SET version=version+1,updated_at=current_timestamp
+WHERE product_id IN (SELECT id FROM product WHERE code='XBHG' AND name='消保合规');
+
 UPDATE outline_document_link SET sync_status='READY',last_error=NULL
 WHERE outline_document_id IS NOT NULL AND id IN (
   SELECT outline_link_id FROM product_document_node WHERE outline_link_id IS NOT NULL
 );
 
+DROP TABLE v20_feature_manifest;
 DROP TABLE v20_consumer_protection_guard;

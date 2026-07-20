@@ -75,6 +75,8 @@ class SchemaBaselineTest {
     legacy.update("insert into organization(id,name,code) values (102,'消保组织','XB-ORG')");
     legacy.update("insert into product(id,organization_id,code,name,status) "
         + "values (102,102,'XBHG','消保合规','ACTIVE')");
+    legacy.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (102,102,'版本01','RELEASED')");
     String[] documentNames = {"01 产品总纲","02 领域建模","03 UI 模式库","04 MVP 范围",
         "05 Spec 工作区","06 产品模块库","07 ROI 追踪","08 重构工作区","09 学习成长",
         "10 需求收件箱","11 运营日志"};
@@ -135,6 +137,13 @@ class SchemaBaselineTest {
         Integer.class));
     assertEquals(Integer.valueOf(124), legacy.queryForObject(
         "select count(*) from product_feature where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(124), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(8), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102 "
+            + "and pvf.availability='INCLUDED'", Integer.class));
     assertEquals(Integer.valueOf(70), legacy.queryForObject(
         "select count(*) from product_document_node n join outline_document_link l "
             + "on l.id=n.outline_link_id where n.product_id=102 and n.node_type='DOCUMENT'",
@@ -164,6 +173,10 @@ class SchemaBaselineTest {
     legacy.update("insert into product_feature(id,product_id,module_id,code,name,status,"
             + "outline_link_id) values (?,?,?,?,?,'ACTIVE',?)",
         id, 102, moduleId, code, name, linkId);
+    String availability = "AI-EXPLAIN".equals(code) || "REVIEW-COLLAB".equals(code)
+        || "DOC-09-04".equals(code) ? "INCLUDED" : "REMOVED";
+    legacy.update("insert into product_version_feature(product_version_id,product_feature_id,"
+        + "availability) values (102,?,?)", id, availability);
   }
 
   private String two(int value) {
