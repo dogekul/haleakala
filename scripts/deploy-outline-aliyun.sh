@@ -62,8 +62,19 @@ if (( $(free -b | awk '/^Swap:/ {print $2}') < 2147483648 )); then
   grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
+ensure_image() {
+  local image="$1"
+  docker image inspect "$image" >/dev/null 2>&1 && return 0
+  for attempt in 1 2 3; do
+    timeout 300 docker pull "$image" && return 0
+    echo "Image pull failed ($attempt/3): $image" >&2
+    sleep 5
+  done
+  return 1
+}
+
 cd "$stack_dir"
-docker pull caddy:2.11.4-alpine
+ensure_image caddy:2.11.4-alpine
 if [[ ! -f .env ]]; then
   umask 077
   admin_password="$(openssl rand -hex 16)"
@@ -105,7 +116,7 @@ for image in \
   redis:7.4.9-alpine3.21 \
   ghcr.io/dexidp/dex:v2.45.1-alpine \
   docker.getoutline.com/outlinewiki/outline:1.7.1; do
-  docker pull "$image"
+  ensure_image "$image"
 done
 "${compose[@]}" up -d postgres redis dex outline caddy
 
