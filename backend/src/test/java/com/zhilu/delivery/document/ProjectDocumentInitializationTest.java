@@ -122,6 +122,8 @@ class ProjectDocumentInitializationTest {
     seedTemplate(7101, "项目启动检查单", "START", "REQUIRED", true, "PUBLISHED", 7);
     seedTemplate(7102, "停用模板", "REQUIREMENT", "OPTIONAL", false, "PUBLISHED", 3);
     seedTemplate(7103, "草稿模板", "GO_LIVE", "REQUIRED", true, "DRAFT", 4);
+    seedTemplate(7105, "需求调研报告", "OPPORTUNITY_RESEARCH", "REQUIRED", true,
+        "PUBLISHED", 2);
     ProjectView project = projects.create(command("PRJ-701"));
 
     assertEquals("PENDING", project.getDocumentSpaceStatus());

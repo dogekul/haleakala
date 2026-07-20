@@ -1,9 +1,11 @@
 import { ArrowLeftOutlined, CheckOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Col, Form, Input, List, Row, Space, Tag, Typography, message } from 'antd'
+import { Button, Card, Col, Drawer, Form, Input, List, Row, Space, Tag, Typography, message } from 'antd'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { crmApi } from './crmApi'
 import { currency, stageLabel, statusLabels } from './OpportunityOverviewPage'
 import type { OpportunityActivity } from './types'
@@ -13,6 +15,7 @@ export function OpportunityDetailPage() {
   const { me } = useAuth()
   const canWrite = me?.permissions.includes('crm:write') ?? false
   const client = useQueryClient()
+  const [reportOpen, setReportOpen] = useState(false)
   const opportunity = useQuery({ queryKey: ['opportunity', id], queryFn: () => crmApi.opportunity(id), enabled: Boolean(id) })
   const activities = useQuery({ queryKey: ['opportunity-activities', id], queryFn: () => crmApi.activities(id), enabled: Boolean(id) })
   const artifacts = useQuery({ queryKey: ['opportunity-artifacts', id], queryFn: () => crmApi.artifacts(id), enabled: Boolean(id) })
@@ -46,8 +49,17 @@ export function OpportunityDetailPage() {
       </PageState>
     </Card></Col><Col xs={24} xl={12}><Card title="阶段产出物">
       <PageState loading={artifacts.isLoading} error={artifacts.error} empty={!artifacts.isLoading && !artifacts.data?.length} onRetry={() => void artifacts.refetch()}>
-        <List dataSource={artifacts.data ?? []} renderItem={item => <List.Item><List.Item.Meta title={<Space>{item.title}<Tag>{item.artifactType}</Tag></Space>}
-          description={item.contentMarkdown ?? (item.fileName ? `${item.fileName} · 文件 #${item.fileId}` : `文件 #${item.fileId}`)} /></List.Item>} />
+        <List dataSource={artifacts.data ?? []} renderItem={item => <List.Item
+          actions={item.outlineLinkId ? [<Button
+            key="preview-report"
+            type="link"
+            onClick={() => setReportOpen(true)}
+          >预览报告</Button>] : []}
+        ><List.Item.Meta title={<Space>{item.title}<Tag>{item.artifactType}</Tag></Space>}
+          description={item.outlineLinkId
+            ? `Outline 文档 · 模版修订 ${item.sourceTemplateRevision ?? '-'}`
+            : item.contentMarkdown ?? (item.fileName
+              ? `${item.fileName} · 文件 #${item.fileId}` : `文件 #${item.fileId}`)} /></List.Item>} />
       </PageState>
     </Card></Col></Row>
     <Card className="crm-full-link" title="客户全链路">
@@ -58,6 +70,21 @@ export function OpportunityDetailPage() {
           <div><span>运营</span>{fullLink.data.operation ? <><strong>{fullLink.data.operation.title}</strong><Link to={`/customers/operations/${fullLink.data.operation.id}`}>进入运营</Link></> : <em>待转运营</em>}</div></div>}
       </PageState>
     </Card>
+    <Drawer
+      title="需求调研报告"
+      open={reportOpen}
+      width="min(1180px, 94vw)"
+      onClose={() => setReportOpen(false)}
+      destroyOnClose
+    >
+      {reportOpen && <DocumentWorkspace
+        title="需求调研报告"
+        load={() => crmApi.researchReport(id)}
+        save={input => crmApi.saveResearchReport(id, input)}
+        exportUrl={format => crmApi.researchReportExportUrl(id, format)}
+        canEdit={false}
+      />}
+    </Drawer>
   </div>
 }
 

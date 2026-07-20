@@ -1,9 +1,23 @@
 import { api } from '../../services/api'
+import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
 import type {
   CustomerOperation, FullLink, ImplementationCockpit, ImplementationItem, OperationInput,
   Opportunity, OpportunityActivity, OpportunityArtifact, OpportunityInput, OwnerOption,
   UploadedFile,
 } from './types'
+
+export interface PreparedResearchReport extends DocumentContent {
+  sourceTemplateId: number
+  sourceTemplateRevision: number
+}
+export type OpportunityDocumentType = 'DECISION_MINUTES' | 'CLIENT_REQUESTS' | 'GAP_ANALYSIS' | 'REVIEW_MINUTES'
+export interface PreparedOpportunityDocument extends DocumentContent {
+  sourceTemplateId: number
+  sourceTemplateRevision: number
+  generationStatus: 'MANUAL' | 'AI' | 'FAILED'
+  generationError?: string
+  warnings: string[]
+}
 
 function fileBody(file: File) {
   const body = new FormData()
@@ -24,6 +38,47 @@ export const crmApi = {
     api<Opportunity>(`/api/v1/opportunities/${id}/advance`, {
       method: 'POST', body: JSON.stringify({ version, decision }),
     }),
+  prepareResearchReport: (id: number, version: number) =>
+    api<PreparedResearchReport>(`/api/v1/opportunities/${id}/research-report/prepare`, {
+      method: 'POST', body: JSON.stringify({ version }),
+    }),
+  researchReport: (id: number) =>
+    api<DocumentContent>(`/api/v1/opportunities/${id}/research-report`),
+  saveResearchReport: (id: number, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/opportunities/${id}/research-report`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
+  submitResearchReport: (id: number, opportunityVersion: number, input: SaveDocumentInput) =>
+    api<DocumentContent & { opportunity: Opportunity }>(
+      `/api/v1/opportunities/${id}/research-report/submit`, {
+        method: 'POST', body: JSON.stringify({ ...input, opportunityVersion }),
+      },
+    ),
+  researchReportExportUrl: (id: number, format: DocumentFormat) =>
+    `/api/v1/opportunities/${id}/research-report/export?format=${format}`,
+  prepareStageDocument: (id: number, type: OpportunityDocumentType, version: number) =>
+    api<PreparedOpportunityDocument>(`/api/v1/opportunities/${id}/documents/${type}/prepare`, {
+      method: 'POST', body: JSON.stringify({ version }),
+    }),
+  saveStageDocument: (id: number, type: OpportunityDocumentType, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/opportunities/${id}/documents/${type}`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
+  generateStageDocument: (id: number, type: OpportunityDocumentType, revision: number,
+    confirmOverwrite: boolean) => api<PreparedOpportunityDocument>(
+      `/api/v1/opportunities/${id}/documents/${type}/generate`, {
+        method: 'POST', body: JSON.stringify({ revision, confirmOverwrite }),
+      },
+    ),
+  submitStageDocument: (id: number, type: OpportunityDocumentType,
+    opportunityVersion: number, input: SaveDocumentInput) =>
+    api<DocumentContent & { opportunity: Opportunity }>(
+      `/api/v1/opportunities/${id}/documents/${type}/submit`, {
+        method: 'POST', body: JSON.stringify({ ...input, opportunityVersion }),
+      },
+    ),
+  stageDocumentExportUrl: (id: number, type: OpportunityDocumentType, format: DocumentFormat) =>
+    `/api/v1/opportunities/${id}/documents/${type}/export?format=${format}`,
   activities: (id: number) => api<OpportunityActivity[]>(`/api/v1/opportunities/${id}/activities`),
   createActivity: (id: number, title: string, sortOrder = 0) =>
     api<OpportunityActivity>(`/api/v1/opportunities/${id}/activities`, {

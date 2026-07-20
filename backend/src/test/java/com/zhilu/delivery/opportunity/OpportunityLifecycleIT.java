@@ -1,5 +1,6 @@
 package com.zhilu.delivery.opportunity;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,6 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class OpportunityLifecycleIT {
   @Autowired private MockMvc mvc;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private OpportunityService opportunities;
   private final ObjectMapper json = new ObjectMapper();
 
   @BeforeEach
@@ -46,6 +48,9 @@ class OpportunityLifecycleIT {
     jdbc.update("delete from opportunity_artifact");
     jdbc.update("delete from opportunity_activity");
     jdbc.update("delete from sales_opportunity");
+    jdbc.update("delete from outline_document_link");
+    jdbc.update("delete from document_template_config");
+    jdbc.update("delete from knowledge_item");
     jdbc.update("delete from file_object");
     jdbc.update("delete from delivery_project");
     jdbc.update("delete from customer");
@@ -80,23 +85,27 @@ class OpportunityLifecycleIT {
     addReport(id, "RESEARCH_REPORT", "调研报告", "")
         .andExpect(status().isBadRequest());
     addReport(id, "RESEARCH_REPORT", "调研报告", "## 结论\n需求明确")
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.stageFrom").value("LEAD"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("模版文档请通过商机推进材料填写并提交"));
+    addLinkedResearchReport(id);
     advance(id, 0, null).andExpect(status().isOk())
         .andExpect(jsonPath("$.stage").value("OPPORTUNITY"))
         .andExpect(jsonPath("$.version").value(1));
 
     addReport(id, "DECISION_MINUTES", "评审纪要", "同意进入 POC")
-        .andExpect(status().isCreated());
+        .andExpect(status().isBadRequest());
+    addLinkedDocument(id, "OPPORTUNITY", "DECISION_MINUTES", "评审纪要");
     advance(id, 1, null).andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("当前阶段必须选择 PASS 或 REJECT"));
     advance(id, 1, "PASS").andExpect(status().isOk())
         .andExpect(jsonPath("$.stage").value("POC"));
 
     addFile(id, "PRESENTATION", "讲解材料", 500).andExpect(status().isCreated());
-    addReport(id, "CLIENT_REQUESTS", "甲方诉求清单", "统一账户体系").andExpect(status().isCreated());
+    addReport(id, "CLIENT_REQUESTS", "甲方诉求清单", "统一账户体系").andExpect(status().isBadRequest());
+    addLinkedDocument(id, "POC", "CLIENT_REQUESTS", "甲方诉求清单");
     addReport(id, "POC_SCORE", "POC 得分表", "总分 92").andExpect(status().isCreated());
-    addReport(id, "GAP_ANALYSIS", "差距分析报告", "无阻断差距").andExpect(status().isCreated());
+    addReport(id, "GAP_ANALYSIS", "差距分析报告", "无阻断差距").andExpect(status().isBadRequest());
+    addLinkedDocument(id, "POC", "GAP_ANALYSIS", "差距分析报告");
     advance(id, 2, null).andExpect(status().isOk())
         .andExpect(jsonPath("$.stage").value("BIDDING"));
 
@@ -106,7 +115,8 @@ class OpportunityLifecycleIT {
 
     addFile(id, "AWARD_NOTICE", "中标公示", 500).andExpect(status().isCreated());
     addFile(id, "CONTRACT", "合同", 500).andExpect(status().isCreated());
-    addReport(id, "REVIEW_MINUTES", "评审会议纪要", "评审通过").andExpect(status().isCreated());
+    addReport(id, "REVIEW_MINUTES", "评审会议纪要", "评审通过").andExpect(status().isBadRequest());
+    addLinkedDocument(id, "CONTRACT", "REVIEW_MINUTES", "评审会议纪要");
     addFile(id, "EMAIL_ARCHIVE", "邮件归档", 500).andExpect(status().isCreated());
     addFile(id, "SEALED_CONTRACT", "已盖章合同", 500).andExpect(status().isCreated());
     advance(id, 4, "PASS").andExpect(status().isConflict())
@@ -121,7 +131,7 @@ class OpportunityLifecycleIT {
   void rejectsGateStagesAndKeepsWonOrLostOpportunitiesTerminal() throws Exception {
     long rejected = opportunity(500, 500, "评审丢单", "OPPORTUNITY");
     addReport(rejected, "DECISION_MINUTES", "评审纪要", "客户暂停预算")
-        .andExpect(status().isCreated());
+        .andExpect(status().isBadRequest());
     advance(rejected, 0, "REJECT").andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("LOST"));
     advance(rejected, 1, "PASS").andExpect(status().isConflict())
@@ -182,6 +192,32 @@ class OpportunityLifecycleIT {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void submitsLinkedTemplateDocumentsIdempotentlyAndOnlyAdvancesConfiguredStages() {
+    long decision = opportunity(500, 500, "决策纪要推进", "OPPORTUNITY");
+    long decisionLink = addDocumentLink(decision, "DECISION_MINUTES", "决策评审纪要");
+    long templateId = template("决策模板");
+
+    java.util.Map<String, Object> advanced = opportunities.submitDocumentArtifact(
+        500, decision, 500, 0, "DECISION_MINUTES", OpportunityStage.OPPORTUNITY,
+        decisionLink, templateId, 3, "决策评审纪要", true);
+    assertEquals("POC", advanced.get("stage"));
+    assertEquals("POC", opportunities.submitDocumentArtifact(
+        500, decision, 500, 0, "DECISION_MINUTES", OpportunityStage.OPPORTUNITY,
+        decisionLink, templateId, 3, "决策评审纪要", true).get("stage"));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from opportunity_artifact where opportunity_id=? "
+            + "and artifact_type='DECISION_MINUTES'", Integer.class, decision));
+
+    long poc = opportunity(500, 500, "POC 单材料", "POC");
+    long requestsLink = addDocumentLink(poc, "CLIENT_REQUESTS", "甲方诉求清单");
+    java.util.Map<String, Object> unchanged = opportunities.submitDocumentArtifact(
+        500, poc, 500, 0, "CLIENT_REQUESTS", OpportunityStage.POC,
+        requestsLink, templateId, 3, "甲方诉求清单", false);
+    assertEquals("POC", unchanged.get("stage"));
+    assertEquals(0L, ((Number) unchanged.get("version")).longValue());
+  }
+
   private org.springframework.test.web.servlet.ResultActions addReport(
       long id, String type, String title, String content) throws Exception {
     return mvc.perform(post("/api/v1/opportunities/{id}/artifacts", id)
@@ -196,6 +232,45 @@ class OpportunityLifecycleIT {
         .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
         .content("{\"artifactType\":\"" + type + "\",\"title\":\"" + title
             + "\",\"fileId\":" + fileId + "}"));
+  }
+
+  private void addLinkedResearchReport(long opportunityId) {
+    addLinkedDocument(opportunityId, "LEAD", "RESEARCH_REPORT", "调研报告");
+  }
+
+  private void addLinkedDocument(
+      long opportunityId, String stage, String artifactType, String title) {
+    String businessKey = "OPPORTUNITY:" + opportunityId + ":" + artifactType;
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+        + "outline_collection_id,outline_document_id,title_cache,revision,sync_status) "
+        + "values (500,?,?,'collection',?,"
+        + "?,1,'READY')", businessKey, artifactType, "document-" + artifactType, title);
+    Long linkId = jdbc.queryForObject(
+        "select id from outline_document_link where organization_id=500 and business_key=?",
+        Long.class, businessKey);
+    jdbc.update("insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
+        + "artifact_type,title,outline_link_id,created_by) "
+        + "values (500,?,?,?,?,?,500)", opportunityId, stage, artifactType, title, linkId);
+  }
+
+  private long addDocumentLink(long opportunityId, String artifactType, String title) {
+    String businessKey = "OPPORTUNITY:" + opportunityId + ":" + artifactType;
+    jdbc.update("insert into outline_document_link(organization_id,business_key,purpose,"
+        + "outline_collection_id,outline_document_id,title_cache,revision,sync_status) "
+        + "values (500,?,?,'collection',?,?,1,'READY')",
+        businessKey, artifactType, "document-" + opportunityId + "-" + artifactType, title);
+    return jdbc.queryForObject(
+        "select id from outline_document_link where organization_id=500 and business_key=?",
+        Long.class, businessKey);
+  }
+
+  private long template(String title) {
+    jdbc.update("insert into knowledge_item(organization_id,type,title,summary,content_text,"
+        + "visibility,status,owner_user_id) values (500,'TEMPLATE',?,'模板','# 模板',"
+        + "'ORGANIZATION','PUBLISHED',500)", title);
+    return jdbc.queryForObject(
+        "select id from knowledge_item where organization_id=500 and title=?",
+        Long.class, title);
   }
 
   private org.springframework.test.web.servlet.ResultActions advance(

@@ -60,6 +60,7 @@ class SecurityAccessTest {
     jdbc.update("delete from product_module");
     jdbc.update("delete from product_version");
     jdbc.update("delete from product");
+    jdbc.update("delete from outline_document_link");
     jdbc.update("delete from user_role");
     jdbc.update("delete from role_permission");
     jdbc.update("delete from app_user");
@@ -312,6 +313,8 @@ class SecurityAccessTest {
     mvc.perform(get("/api/v1/admin/audit-logs").with(actor("audit:read")))
         .andExpect(status().isOk());
     mvc.perform(get("/api/v1/admin/settings").with(actor("audit:read")))
+        .andExpect(status().isForbidden());
+    mvc.perform(get("/api/v1/admin/ai-service/config").with(actor("audit:read")))
         .andExpect(status().isForbidden());
   }
 

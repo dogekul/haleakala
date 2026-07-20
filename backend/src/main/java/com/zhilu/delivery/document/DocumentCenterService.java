@@ -102,6 +102,48 @@ public class DocumentCenterService {
     return values.isEmpty() ? null : values.get(0);
   }
 
+  public DocumentView readBusinessDocument(long organizationId, String businessKey) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    return readLink(linkId.longValue(), organizationId);
+  }
+
+  @Transactional
+  public DocumentView moveBusinessDocument(
+      long organizationId, String businessKey, long parentLinkId) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    OutlineConnection connection = configurations.resolve(organizationId);
+    Link link = lockedLink(linkId.longValue(), connection.getOrganizationId());
+    if (blank(link.documentId)) throw new ConflictException("文档尚未初始化");
+    String parentDocumentId = parentDocumentId(Long.valueOf(parentLinkId), organizationId);
+    try {
+      OutlineDocument current = outline.info(connection, link.documentId);
+      if (parentDocumentId.equals(current.getParentDocumentId())) {
+        sync(link.id, current);
+        return view(connection, link.id, current, "READY", null);
+      }
+      OutlineDocument moved = outline.move(connection, link.documentId, parentDocumentId);
+      jdbc.update("update outline_document_link set parent_link_id=? where id=?",
+          parentLinkId, link.id);
+      sync(link.id, moved);
+      return view(connection, link.id, moved, "READY", null);
+    } catch (OutlineException failure) {
+      fail(link.id, failure);
+      throw failure;
+    }
+  }
+
+  @Transactional
+  public DocumentView updateBusinessDocument(
+      long organizationId, String businessKey, String title, String markdown,
+      long expectedRevision) {
+    Long linkId = findLinkId(organizationId, businessKey);
+    if (linkId == null) throw new NotFoundException("文档不存在");
+    return updateLink(
+        linkId.longValue(), organizationId, title, markdown, expectedRevision);
+  }
+
   public DocumentView readLink(long linkId, long organizationId) {
     return readLink(configurations.resolve(organizationId), linkId);
   }
@@ -133,6 +175,10 @@ public class DocumentCenterService {
       OutlineDocument current = outline.info(connection, link.documentId);
       sync(linkId, current);
       if (current.getRevision() != expectedRevision) {
+        if (value(title).equals(value(current.getTitle()))
+            && value(markdown).equals(value(current.getText()))) {
+          return view(connection, linkId, current, "READY", null);
+        }
         throw new ConflictException("文档已在 Outline 中更新，请刷新后合并");
       }
       OutlineDocument updated = outline.update(

@@ -1,21 +1,37 @@
-import { FileAddOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons'
+import { FileAddOutlined, FileTextOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tag, Typography, Upload, message } from 'antd'
+import { Alert, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tabs, Tag, Typography, Upload, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { projectApi } from '../project/projectApi'
-import { crmApi } from './crmApi'
+import { crmApi, type OpportunityDocumentType } from './crmApi'
 import { opportunityStages, stageLabel } from './OpportunityOverviewPage'
 import type { Opportunity, OpportunityArtifact, OpportunityStage, UploadedFile } from './types'
 
 const artifactTypes: Record<OpportunityStage, { value: string; label: string; file?: boolean }[]> = {
-  LEAD: [{ value: 'RESEARCH_REPORT', label: '商机调研报告' }],
-  OPPORTUNITY: [{ value: 'DECISION_MINUTES', label: '决策评审纪要' }],
-  POC: [{ value: 'PRESENTATION', label: '讲解材料', file: true }, { value: 'CLIENT_REQUESTS', label: '甲方诉求清单' }, { value: 'POC_SCORE', label: 'POC 得分表' }, { value: 'GAP_ANALYSIS', label: '差距分析报告' }],
+  LEAD: [],
+  OPPORTUNITY: [],
+  POC: [{ value: 'PRESENTATION', label: '讲解材料', file: true }, { value: 'POC_SCORE', label: 'POC 得分表' }],
   BIDDING: [{ value: 'BID_DOCUMENT', label: '投标文件', file: true }],
-  CONTRACT: [{ value: 'AWARD_NOTICE', label: '中标公示', file: true }, { value: 'CONTRACT', label: '合同', file: true }, { value: 'REVIEW_MINUTES', label: '评审会议纪要' }, { value: 'EMAIL_ARCHIVE', label: '邮件归档', file: true }, { value: 'SEALED_CONTRACT', label: '已盖章合同', file: true }],
+  CONTRACT: [{ value: 'AWARD_NOTICE', label: '中标公示', file: true }, { value: 'CONTRACT', label: '合同', file: true }, { value: 'EMAIL_ARCHIVE', label: '邮件归档', file: true }, { value: 'SEALED_CONTRACT', label: '已盖章合同', file: true }],
+}
+
+const stageDocuments: Record<OpportunityStage, Array<{
+  type: OpportunityDocumentType
+  label: string
+  ai?: boolean
+}>> = {
+  LEAD: [],
+  OPPORTUNITY: [{ type: 'DECISION_MINUTES', label: '决策评审纪要' }],
+  POC: [
+    { type: 'CLIENT_REQUESTS', label: '甲方诉求清单', ai: true },
+    { type: 'GAP_ANALYSIS', label: '差距分析报告', ai: true },
+  ],
+  BIDDING: [],
+  CONTRACT: [{ type: 'REVIEW_MINUTES', label: '评审会议纪要' }],
 }
 
 export function PresaleBoardPage() {
@@ -26,17 +42,27 @@ export function PresaleBoardPage() {
   const [artifactFor, setArtifactFor] = useState<Opportunity>()
   const [artifactError, setArtifactError] = useState('')
   const [handoffFor, setHandoffFor] = useState<Opportunity>()
+  const [researchFor, setResearchFor] = useState<Opportunity>()
+  const [documentFor, setDocumentFor] = useState<Opportunity>()
 
   const advance = useMutation({
     mutationFn: ({ item, decision }: { item: Opportunity; decision?: 'PASS' | 'REJECT' }) => crmApi.advanceOpportunity(item.id, item.version, decision),
     onSuccess: async () => { await client.invalidateQueries({ queryKey: ['opportunities'] }); message.success('商机阶段已推进') },
     onError: (error: Error, variables) => {
-      if (error.message.includes('缺少必需产出物')) { setArtifactFor(variables.item); setArtifactError(error.message) }
+      if (error.message.includes('缺少必需产出物')) {
+        setArtifactError(error.message)
+        if (stageDocuments[variables.item.stage].length) setDocumentFor(variables.item)
+        else setArtifactFor(variables.item)
+      }
       else message.error(error.message)
     },
   })
 
   const requestAdvance = (item: Opportunity, decision?: 'PASS' | 'REJECT') => {
+    if (item.stage === 'LEAD') { setResearchFor(item); return }
+    if (item.stage === 'OPPORTUNITY' && decision === 'PASS') {
+      setDocumentFor(item); setArtifactError(''); return
+    }
     if (item.stage === 'CONTRACT' && decision !== 'REJECT') { setHandoffFor(item); return }
     if (decision === 'REJECT') {
       Modal.confirm({ title: '确认丢单？', content: '丢单后商机不可继续推进。', okText: '确认丢单', okButtonProps: { danger: true }, onOk: () => advance.mutate({ item, decision }) })
@@ -53,14 +79,129 @@ export function PresaleBoardPage() {
         <header><strong>{stage.label}</strong><span>{(query.data ?? []).filter(item => item.stage === stage.value).length}</span></header>
         {(query.data ?? []).filter(item => item.stage === stage.value).map(item => <Card key={item.id} size="small" className="presale-card">
           <Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><p>{item.customerName}</p>
-          <Space wrap>{canWrite && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
+          <Space wrap>{canWrite && stageDocuments[item.stage].length > 0 && <Button size="small" aria-label="阶段文档" icon={<FileTextOutlined />} onClick={() => { setDocumentFor(item); setArtifactError('') }}>阶段文档</Button>}
+            {canWrite && artifactTypes[item.stage].length > 0 && <Button size="small" aria-label="产出物" icon={<FileAddOutlined />} onClick={() => { setArtifactFor(item); setArtifactError('') }}>产出物</Button>}
             {canWrite && <AdvanceButtons item={item} loading={advance.isPending} onAdvance={requestAdvance} />}</Space>
         </Card>)}
       </section>)}</div>
     </PageState>
     <ArtifactDrawer opportunity={artifactFor} error={artifactError} canWrite={canWrite} onClose={() => setArtifactFor(undefined)} />
+    <ResearchReportDrawer opportunity={researchFor} onClose={() => setResearchFor(undefined)} />
+    <StageDocumentsDrawer opportunity={documentFor} error={artifactError} canWrite={canWrite}
+      onClose={() => setDocumentFor(undefined)} onOther={() => {
+        if (documentFor) setArtifactFor(documentFor)
+        setDocumentFor(undefined)
+      }} />
     <HandoffDrawer opportunity={handoffFor} onClose={() => setHandoffFor(undefined)} />
   </div>
+}
+
+function StageDocumentsDrawer({ opportunity, error, canWrite, onClose, onOther }: {
+  opportunity?: Opportunity
+  error: string
+  canWrite: boolean
+  onClose(): void
+  onOther(): void
+}) {
+  const client = useQueryClient()
+  const definitions = opportunity ? stageDocuments[opportunity.stage] : []
+  return <Drawer title="商机推进文档" open={Boolean(opportunity)} width="min(1180px, 94vw)"
+    onClose={onClose} destroyOnClose>
+    {opportunity && <>
+      <Alert className="crm-drawer-alert" type={error ? 'warning' : 'info'} showIcon
+        message={`${opportunity.customerName} · ${opportunity.title}`}
+        description={error || (opportunity.stage === 'POC'
+          ? '甲方诉求清单和差距分析报告会结合需求调研报告、关联产品功能及设计 Spec 生成初稿。'
+          : '文档从知识库已发布模版创建，补充完整后正式提交。')}
+        action={artifactTypes[opportunity.stage].length
+          ? <Button onClick={onOther}>补充其他产出物</Button> : undefined} />
+      <Tabs className="opportunity-document-tabs" items={definitions.map(definition => ({
+        key: definition.type,
+        label: definition.label,
+        children: <DocumentWorkspace
+          key={`${opportunity.id}-${definition.type}`}
+          title={definition.label}
+          load={() => crmApi.prepareStageDocument(
+            opportunity.id, definition.type, opportunity.version,
+          )}
+          save={input => crmApi.saveStageDocument(opportunity.id, definition.type, input)}
+          regenerate={definition.ai ? (revision, confirmOverwrite) => crmApi.generateStageDocument(
+            opportunity.id, definition.type, revision, confirmOverwrite,
+          ) : undefined}
+          submit={input => crmApi.submitStageDocument(
+            opportunity.id, definition.type, opportunity.version, input,
+          )}
+          submitLabel={definition.type === 'DECISION_MINUTES'
+            ? '提交纪要并通过' : '提交材料'}
+          exportUrl={format => crmApi.stageDocumentExportUrl(
+            opportunity.id, definition.type, format,
+          )}
+          canEdit={canWrite}
+          onSubmitted={document => {
+            void Promise.all([
+              client.invalidateQueries({ queryKey: ['opportunities'] }),
+              client.invalidateQueries({ queryKey: ['opportunity', opportunity.id] }),
+              client.invalidateQueries({ queryKey: ['opportunity-artifacts', opportunity.id] }),
+            ])
+            if (definition.type === 'DECISION_MINUTES') {
+              message.success('决策评审纪要已提交，商机已推进到 POC')
+              onClose()
+            } else {
+              message.success(`${definition.label}已提交`)
+            }
+            return document
+          }}
+        />,
+      }))} />
+    </>}
+  </Drawer>
+}
+
+function ResearchReportDrawer({
+  opportunity, onClose,
+}: {
+  opportunity?: Opportunity
+  onClose(): void
+}) {
+  const client = useQueryClient()
+  return <Drawer
+    title="填写需求调研报告"
+    open={Boolean(opportunity)}
+    width="min(1180px, 94vw)"
+    onClose={onClose}
+    destroyOnClose
+  >
+    {opportunity && <>
+      <Alert
+        className="crm-drawer-alert"
+        type="info"
+        showIcon
+        message={`${opportunity.customerName} · ${opportunity.title}`}
+        description="报告由知识库已发布模版生成。可随时保存草稿，提交后商机将推进到商机阶段。"
+      />
+      <DocumentWorkspace
+        key={opportunity.id}
+        title="需求调研报告"
+        load={() => crmApi.prepareResearchReport(opportunity.id, opportunity.version)}
+        save={input => crmApi.saveResearchReport(opportunity.id, input)}
+        submit={input => crmApi.submitResearchReport(
+          opportunity.id, opportunity.version, input,
+        )}
+        submitLabel="提交报告并推进"
+        exportUrl={format => crmApi.researchReportExportUrl(opportunity.id, format)}
+        canEdit
+        onSubmitted={() => {
+          void Promise.all([
+            client.invalidateQueries({ queryKey: ['opportunities'] }),
+            client.invalidateQueries({ queryKey: ['opportunity', opportunity.id] }),
+            client.invalidateQueries({ queryKey: ['opportunity-artifacts', opportunity.id] }),
+          ])
+          message.success('需求调研报告已提交，商机阶段已推进')
+          onClose()
+        }}
+      />
+    </>}
+  </Drawer>
 }
 
 function AdvanceButtons({ item, loading, onAdvance }: { item: Opportunity; loading: boolean; onAdvance: (item: Opportunity, decision?: 'PASS' | 'REJECT') => void }) {

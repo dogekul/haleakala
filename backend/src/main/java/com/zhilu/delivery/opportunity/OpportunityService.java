@@ -215,6 +215,9 @@ public class OpportunityService {
     Map<String, Object> opportunity = get(organizationId, opportunityId);
     assertOpen(opportunity);
     OpportunityStage stage = OpportunityStage.valueOf(String.valueOf(opportunity.get("stage")));
+    if (gate.isTemplateDocument(input.artifactType)) {
+      throw new IllegalArgumentException("模版文档请通过商机推进材料填写并提交");
+    }
     gate.validateArtifact(stage, input.artifactType, input.contentMarkdown, input.fileId);
     if (input.fileId != null) {
       Integer files = jdbc.queryForObject(
@@ -239,6 +242,53 @@ public class OpportunityService {
     values.put("created_by", actorId);
     long id = insert("opportunity_artifact", values);
     return artifact(organizationId, opportunityId, id);
+  }
+
+  @Transactional
+  public Map<String, Object> advanceWithResearchReport(
+      long organizationId, long opportunityId, long actorId, long version,
+      long outlineLinkId, long sourceTemplateId, long sourceTemplateRevision, String title) {
+    return submitDocumentArtifact(organizationId, opportunityId, actorId, version,
+        "RESEARCH_REPORT", OpportunityStage.LEAD, outlineLinkId, sourceTemplateId,
+        sourceTemplateRevision, title, true);
+  }
+
+  @Transactional
+  public Map<String, Object> submitDocumentArtifact(
+      long organizationId, long opportunityId, long actorId, long version,
+      String artifactType, OpportunityStage stage, long outlineLinkId,
+      long sourceTemplateId, long sourceTemplateRevision, String title,
+      boolean advanceOnSubmit) {
+    Map<String, Object> current = get(organizationId, opportunityId);
+    Integer submitted = jdbc.queryForObject(
+        "select count(*) from opportunity_artifact where organization_id=? "
+            + "and opportunity_id=? and artifact_type=? and outline_link_id is not null",
+        Integer.class, organizationId, opportunityId, artifactType);
+    if (submitted != null && submitted > 0) return current;
+    assertVersion(current, version);
+    assertOpen(current);
+    if (!stage.name().equals(current.get("stage"))) {
+      throw new ConflictException("当前商机阶段不能提交该材料");
+    }
+    Integer validLink = jdbc.queryForObject(
+        "select count(*) from outline_document_link where id=? and organization_id=? "
+            + "and business_key=?",
+        Integer.class, outlineLinkId, organizationId,
+        "OPPORTUNITY:" + opportunityId + ":" + artifactType);
+    if (validLink == null || validLink == 0) throw new NotFoundException("商机材料不存在");
+    int inserted = jdbc.update(
+        "insert into opportunity_artifact(organization_id,opportunity_id,stage_from,"
+            + "artifact_type,title,outline_link_id,source_template_id,"
+            + "source_template_revision,created_by) "
+            + "select ?,?,?,?,?,?,?,?,? where not exists "
+            + "(select 1 from opportunity_artifact where opportunity_id=? "
+            + "and artifact_type=?)",
+        organizationId, opportunityId, stage.name(), artifactType, title.trim(), outlineLinkId,
+        sourceTemplateId, sourceTemplateRevision, actorId, opportunityId, artifactType);
+    if (inserted == 0) return get(organizationId, opportunityId);
+    if (!advanceOnSubmit) return get(organizationId, opportunityId);
+    String decision = stage == OpportunityStage.OPPORTUNITY ? "PASS" : null;
+    return advance(organizationId, opportunityId, version, decision);
   }
 
   @Transactional
@@ -408,6 +458,9 @@ public class OpportunityService {
     value.put("artifactType", row.getString("artifact_type"));
     value.put("title", row.getString("title"));
     value.put("contentMarkdown", row.getString("content_markdown"));
+    value.put("outlineLinkId", nullableLong(row, "outline_link_id"));
+    value.put("sourceTemplateId", nullableLong(row, "source_template_id"));
+    value.put("sourceTemplateRevision", nullableLong(row, "source_template_revision"));
     value.put("fileId", nullableLong(row, "file_id"));
     value.put("fileName", row.getString("file_name"));
     value.put("decision", row.getString("decision"));

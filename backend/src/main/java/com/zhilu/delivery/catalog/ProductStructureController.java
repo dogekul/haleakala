@@ -24,11 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductStructureController {
   private final ProductStructureService structures;
   private final ProductVersionFeatureService manifests;
+  private final ProductDocumentService documents;
 
   public ProductStructureController(
-      ProductStructureService structures, ProductVersionFeatureService manifests) {
+      ProductStructureService structures, ProductVersionFeatureService manifests,
+      ProductDocumentService documents) {
     this.structures = structures;
     this.manifests = manifests;
+    this.documents = documents;
   }
 
   @GetMapping("/modules")
@@ -42,18 +45,24 @@ public class ProductStructureController {
   public Map<String, Object> createModule(
       @PathVariable long productId, @Valid @RequestBody ModuleRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveModule(user.getOrganizationId(), user.getId(), productId, null,
+    Map<String, Object> module = structures.saveModule(
+        user.getOrganizationId(), user.getId(), productId, null,
         request.parentId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.sortOrder, request.version);
+    syncModuleDocuments(user.getOrganizationId(), productId, module);
+    return module;
   }
 
   @PutMapping("/modules/{moduleId}")
   public Map<String, Object> updateModule(
       @PathVariable long productId, @PathVariable long moduleId,
       @Valid @RequestBody ModuleRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveModule(user.getOrganizationId(), user.getId(), productId, moduleId,
+    Map<String, Object> module = structures.saveModule(
+        user.getOrganizationId(), user.getId(), productId, moduleId,
         request.parentId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.sortOrder, request.version);
+    syncModuleDocuments(user.getOrganizationId(), productId, module);
+    return module;
   }
 
   @GetMapping("/features")
@@ -68,18 +77,24 @@ public class ProductStructureController {
   public Map<String, Object> createFeature(
       @PathVariable long productId, @Valid @RequestBody FeatureRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveFeature(user.getOrganizationId(), user.getId(), productId, null,
+    Map<String, Object> feature = structures.saveFeature(
+        user.getOrganizationId(), user.getId(), productId, null,
         request.moduleId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.version);
+    syncFeatureDocuments(user.getOrganizationId(), productId, feature);
+    return feature;
   }
 
   @PutMapping("/features/{featureId}")
   public Map<String, Object> updateFeature(
       @PathVariable long productId, @PathVariable long featureId,
       @Valid @RequestBody FeatureRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveFeature(user.getOrganizationId(), user.getId(), productId, featureId,
+    Map<String, Object> feature = structures.saveFeature(
+        user.getOrganizationId(), user.getId(), productId, featureId,
         request.moduleId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.version);
+    syncFeatureDocuments(user.getOrganizationId(), productId, feature);
+    return feature;
   }
 
   @GetMapping("/versions/{versionId}/features")
@@ -95,6 +110,26 @@ public class ProductStructureController {
       @RequestBody ManifestRequest request, @AuthenticationPrincipal CurrentUser user) {
     return manifests.replaceManifest(user.getOrganizationId(), user.getId(), productId,
         versionId, request.version, request.entries);
+  }
+
+  private void syncModuleDocuments(
+      long organizationId, long productId, Map<String, Object> module) {
+    try {
+      documents.syncModule(
+          organizationId, productId, ((Number) module.get("id")).longValue());
+    } catch (RuntimeException unavailable) {
+      // The saved product structure remains usable and document sync can be retried later.
+    }
+  }
+
+  private void syncFeatureDocuments(
+      long organizationId, long productId, Map<String, Object> feature) {
+    try {
+      documents.syncFeature(
+          organizationId, productId, ((Number) feature.get("id")).longValue());
+    } catch (RuntimeException unavailable) {
+      // The saved feature remains usable and document sync can be retried later.
+    }
   }
 
   public static final class ModuleRequest {

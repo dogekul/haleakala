@@ -107,6 +107,21 @@ class DocumentCenterServiceTest {
   }
 
   @Test
+  void acceptsStaleRevisionWhenOutlineAlreadyContainsTheRequestedContent() {
+    long linkId = link(3100, "OPPORTUNITY:1:RESEARCH_REPORT", "需求调研报告", DOCUMENT_ID, 2);
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(document("需求调研报告", "# 已提交正文", 3));
+
+    DocumentView current = documents.updateLink(
+        linkId, 3100, "需求调研报告", "# 已提交正文", 2);
+
+    assertEquals(3L, current.getRevision());
+    assertEquals("# 已提交正文", current.getMarkdown());
+    verify(outline, never()).update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString());
+  }
+
+  @Test
   void updatesOutlineAndRefreshesTheLocalRevisionCache() {
     long linkId = link(3100, "KNOWLEDGE:2", "原标题", DOCUMENT_ID, 2);
     when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))

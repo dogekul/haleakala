@@ -13,9 +13,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Service;
@@ -23,6 +26,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class KnowledgeService {
+  public static final String OPPORTUNITY_RESEARCH = "OPPORTUNITY_RESEARCH";
+  public static final String OPPORTUNITY_DECISION = "OPPORTUNITY_DECISION";
+  public static final String OPPORTUNITY_CLIENT_REQUESTS = "OPPORTUNITY_CLIENT_REQUESTS";
+  public static final String OPPORTUNITY_GAP_ANALYSIS = "OPPORTUNITY_GAP_ANALYSIS";
+  public static final String OPPORTUNITY_REVIEW = "OPPORTUNITY_REVIEW";
+  public static final String PRODUCT_FEATURE_SPEC = "PRODUCT_FEATURE_SPEC";
+  private static final Set<String> BUSINESS_TEMPLATE_SCENES =
+      Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
+          OPPORTUNITY_RESEARCH, OPPORTUNITY_DECISION, OPPORTUNITY_CLIENT_REQUESTS,
+          OPPORTUNITY_GAP_ANALYSIS, OPPORTUNITY_REVIEW, PRODUCT_FEATURE_SPEC)));
   private static final List<String> TYPES =
       Arrays.asList("CASE", "CODE", "TRAINING", "TEMPLATE");
   private final JdbcTemplate jdbc;
@@ -341,13 +354,18 @@ public class KnowledgeService {
 
   private void validateTemplate(String type, String stageCode, String requirement) {
     if (!"TEMPLATE".equals(type)) return;
-    try {
-      DeliveryStage.valueOf(stageCode);
-    } catch (RuntimeException invalidStage) {
-      throw new IllegalArgumentException("文档模版必须选择有效的交付阶段");
+    if (!BUSINESS_TEMPLATE_SCENES.contains(stageCode)) {
+      try {
+        DeliveryStage.valueOf(stageCode);
+      } catch (RuntimeException invalidStage) {
+        throw new IllegalArgumentException("文档模版必须选择有效的交付阶段或业务场景");
+      }
     }
     if (!"REQUIRED".equals(requirement) && !"OPTIONAL".equals(requirement)) {
       throw new IllegalArgumentException("文档模版必需性只能是 REQUIRED 或 OPTIONAL");
+    }
+    if (BUSINESS_TEMPLATE_SCENES.contains(stageCode) && !"REQUIRED".equals(requirement)) {
+      throw new IllegalArgumentException("业务文档模版必须设为必需");
     }
   }
 

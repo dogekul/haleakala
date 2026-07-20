@@ -16,6 +16,9 @@ public interface OutlineClient {
   OutlineDocument update(
       OutlineConnection connection, String documentId, String title, String text);
 
+  OutlineDocument move(
+      OutlineConnection connection, String documentId, String parentDocumentId);
+
   OutlineCollection collectionInfo(
       OutlineConnection connection, String collectionReference);
 

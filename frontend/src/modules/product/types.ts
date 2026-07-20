@@ -75,3 +75,19 @@ export interface ProductCoverage {
   features: CoverageFeature[]
   uncoveredRequirements: UncoveredRequirement[]
 }
+
+export type ProductDocumentKind = 'PRODUCT' | 'MODULE' | 'FEATURE'
+export interface ProductDocumentNode {
+  kind: ProductDocumentKind
+  id: number
+  parentId?: number
+  title: string
+  syncStatus: 'PENDING' | 'CREATING' | 'READY' | 'FAILED'
+  featureId?: number
+}
+
+export interface ProductDocumentSyncResult {
+  products: number
+  completed: number
+  failed: number
+}

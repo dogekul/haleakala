@@ -2,6 +2,7 @@ package com.zhilu.delivery.common.error;
 
 import com.zhilu.delivery.common.api.ApiError;
 import com.zhilu.delivery.automation.AiNotConfiguredException;
+import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.document.OutlineException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,6 +35,16 @@ public class GlobalExceptionHandler {
     ApiError body = new ApiError(
         "AI_NOT_CONFIGURED", exception.getMessage(), UUID.randomUUID().toString(), null);
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+  }
+
+  @ExceptionHandler(AiServiceException.class)
+  public ResponseEntity<ApiError> handleAiService(AiServiceException exception) {
+    ApiError body = new ApiError(
+        "AI_" + exception.getType().name(),
+        exception.getMessage(),
+        UUID.randomUUID().toString(),
+        null);
+    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
   }
 
   @ExceptionHandler(ConflictException.class)

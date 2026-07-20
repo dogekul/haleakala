@@ -80,6 +80,13 @@ class HttpOutlineClientTest {
     assertEquals(DOCUMENT_ID, updateRequest.path("id").asText());
     assertEquals("新正文", updateRequest.path("text").asText());
 
+    responses.put("/api/documents.move", ok(document("新标题", "新正文", 3)));
+    OutlineDocument moved = client.move(connection, DOCUMENT_ID, "parent-document");
+    assertEquals(3L, moved.getRevision());
+    JsonNode moveRequest = json.readTree(requestBody.get());
+    assertEquals(DOCUMENT_ID, moveRequest.path("id").asText());
+    assertEquals("parent-document", moveRequest.path("parentDocumentId").asText());
+
     responses.put("/api/documents.list",
         new Response(200, "{\"data\":[" + document("子文档", "正文", 3) + "]}"));
     List<OutlineDocument> children = client.children(connection, DOCUMENT_ID);

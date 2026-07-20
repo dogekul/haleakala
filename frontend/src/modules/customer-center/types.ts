@@ -67,6 +67,9 @@ export interface OpportunityArtifact {
   artifactType: string
   title: string
   contentMarkdown?: string
+  outlineLinkId?: number
+  sourceTemplateId?: number
+  sourceTemplateRevision?: number
   fileId?: number
   fileName?: string
   decision?: 'PASS' | 'REJECT'

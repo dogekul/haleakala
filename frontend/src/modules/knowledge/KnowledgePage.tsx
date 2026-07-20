@@ -27,6 +27,26 @@ const documentStatusLabel = {
   PENDING: '待初始化', CREATING: '初始化中', READY: '已同步', FAILED: '同步失败',
 } as const
 
+const templateSceneNames: Record<string, string> = {
+  ...stageNames,
+  OPPORTUNITY_RESEARCH: '商机 · 需求调研',
+  OPPORTUNITY_DECISION: '商机 · 决策评审',
+  OPPORTUNITY_CLIENT_REQUESTS: '商机 · 甲方诉求',
+  OPPORTUNITY_GAP_ANALYSIS: '商机 · 差距分析',
+  OPPORTUNITY_REVIEW: '商机 · 评审会议',
+  PRODUCT_FEATURE_SPEC: '产品 · 功能设计 Spec',
+}
+
+function templateSceneMeta(stageCode?: string) {
+  if (stageCode?.startsWith('OPPORTUNITY_')) {
+    return { scope: '商机推进文档', application: '推进时按需拉取' }
+  }
+  if (stageCode === 'PRODUCT_FEATURE_SPEC') {
+    return { scope: '产品设计文档', application: '产品功能自动应用' }
+  }
+  return { scope: '项目阶段文档', application: '新项目自动应用' }
+}
+
 export function KnowledgePage() {
   const { me } = useAuth()
   const [type, setType] = useState('ALL')
@@ -159,6 +179,7 @@ function KnowledgeCard({
   })
   const meta = typeMeta[item.type]
   const documentStatus = item.documentStatus ?? (item.content ? 'READY' : 'PENDING')
+  const templateMeta = templateSceneMeta(item.stageCode)
   return <Card
     className={`knowledge-card knowledge-${item.type.toLowerCase()}`}
     hoverable
@@ -186,13 +207,13 @@ function KnowledgeCard({
       {documentStatus === 'READY' && item.type === 'TEMPLATE' && <div className="template-meta">
         <div>
           <strong>
-            {stageNames[item.stageCode ?? ''] ?? item.stageCode}
+            {templateSceneNames[item.stageCode ?? ''] ?? item.stageCode}
             {' · '}{item.requirement === 'REQUIRED' ? '必需' : '可选'}
           </strong>
-          <span>项目阶段文档</span>
+          <span>{templateMeta.scope}</span>
         </div>
         <div>
-          <strong>{item.enabled === false ? '已停用' : '新项目自动应用'}</strong>
+          <strong>{item.enabled === false ? '已停用' : templateMeta.application}</strong>
           <span>修订 {item.publishedRevision ?? item.documentRevision ?? '-'}</span>
         </div>
       </div>}
@@ -250,7 +271,7 @@ function KnowledgeDetail({
           <Tag color={meta?.color}>{meta?.icon} {meta?.label}</Tag>
           <Tag>{value.status === 'PUBLISHED' ? '已发布' : '草稿'}</Tag>
           {value.type === 'TEMPLATE' && <>
-            <Tag color="blue">{stageNames[value.stageCode ?? ''] ?? value.stageCode}</Tag>
+            <Tag color="blue">{templateSceneNames[value.stageCode ?? ''] ?? value.stageCode}</Tag>
             <Tag color={value.requirement === 'REQUIRED' ? 'red' : 'default'}>
               {value.requirement === 'REQUIRED' ? '项目必需' : '项目可选'}
             </Tag>
@@ -347,7 +368,8 @@ function KnowledgeEditor({
     },
     onError: (error: Error) => message.error(error.message),
   })
-  const stages = Object.entries(stageNames).map(([stage, label]) => ({ value: stage, label }))
+  const stages = Object.entries(templateSceneNames)
+    .map(([stage, label]) => ({ value: stage, label }))
 
   return <Drawer
     width={650}
@@ -407,7 +429,7 @@ function KnowledgeEditor({
           label="适用交付阶段"
           name="stageCode"
           rules={[{ required: true }]}
-        ><Select options={stages} /></Form.Item></Col>
+        ><Select virtual={false} options={stages} /></Form.Item></Col>
         <Col span={12}><Form.Item
           label="项目必需性"
           name="requirement"

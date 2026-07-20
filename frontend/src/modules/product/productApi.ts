@@ -1,7 +1,10 @@
 import { api } from '../../services/api'
 import type {
-  Product, ProductCoverage, ProductFeature, ProductModule, ProductVersion, VersionManifest,
+  Product, ProductCoverage, ProductDocumentNode, ProductDocumentSyncResult, ProductFeature,
+  ProductModule, ProductVersion, VersionManifest,
 } from './types'
+import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
+import { apiPath } from '../../services/apiPath'
 
 type Input = Record<string, unknown>
 
@@ -40,4 +43,19 @@ export const productApi = {
     },
   ),
   coverage: (productId: number) => api<ProductCoverage>(`/api/v1/products/${productId}/coverage`),
+  documents: (productId: number) => api<ProductDocumentNode[]>(
+    `/api/v1/products/${productId}/documents`,
+  ),
+  syncDocuments: (productId: number) => api<ProductDocumentSyncResult>(
+    `/api/v1/products/${productId}/documents/sync`, { method: 'POST' },
+  ),
+  featureSpec: (productId: number, featureId: number) => api<DocumentContent>(
+    `/api/v1/products/${productId}/features/${featureId}/spec`,
+  ),
+  saveFeatureSpec: (productId: number, featureId: number, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/products/${productId}/features/${featureId}/spec`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
+  featureSpecExportUrl: (productId: number, featureId: number, format: DocumentFormat) =>
+    apiPath(`/api/v1/products/${productId}/features/${featureId}/spec/export?format=${format}`),
 }

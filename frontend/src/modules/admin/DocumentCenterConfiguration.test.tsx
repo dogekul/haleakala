@@ -480,11 +480,42 @@ it('配置就绪时操作按钮不再显示未配置提示', async () => {
   }))
   show()
 
-  for (const name of ['初始化目录', '迁移知识文档', '迁移项目文档']) {
+  for (const name of ['初始化目录', '初始化产品文档', '迁移知识文档', '迁移项目文档']) {
     const button = await screen.findByRole('button', { name })
     await waitFor(() => expect(button).toBeEnabled())
     expect(button).not.toHaveAttribute('title')
   }
+})
+
+it('从文档中心初始化所有产品目录与功能 Spec', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/config')) return json({
+      baseUrl: 'http://outline.internal:3000',
+      publicBaseUrl: 'http://localhost:3000',
+      collectionId: 'collection-id',
+      apiTokenConfigured: true,
+      source: 'ORGANIZATION',
+    })
+    if (url.endsWith('/status')) return json({
+      ...notConfiguredStatus, integrationStatus: 'READY', collectionId: 'collection-id',
+    })
+    if (url.endsWith('/jobs')) return json([])
+    if (url.endsWith('/initialize-products') && init?.method === 'POST') {
+      return json({ completed: 3, failed: 1 })
+    }
+    return json([])
+  })
+  vi.stubGlobal('fetch', fetch)
+  show()
+
+  await userEvent.click(await screen.findByRole('button', { name: '初始化产品文档' }))
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/admin/document-center/initialize-products',
+    expect.objectContaining({ method: 'POST' }),
+  ))
+  expect(await screen.findByText('产品文档初始化完成 3 项，失败 1 项')).toBeVisible()
 })
 
 it('测试连接期间禁用配置编辑和保存', async () => {

@@ -99,13 +99,19 @@ function OrganizationDocumentCenter({ organizationId }: { organizationId: number
     ])
   }
   const operation = useMutation({
-    mutationFn: async (action: 'initialize' | 'knowledge' | 'projects') => {
+    mutationFn: async (action: 'initialize' | 'products' | 'knowledge' | 'projects') => {
       if (action === 'initialize') return adminApi.initializeDocumentCenter()
+      if (action === 'products') return adminApi.initializeProductDocuments()
       if (action === 'knowledge') return adminApi.migrateKnowledgeDocuments()
       return adminApi.migrateProjectDocuments()
     },
-    onSuccess: async value => {
+    onSuccess: async (value, action) => {
       await refresh()
+      if (action === 'products') {
+        const result = value as { completed: number; failed: number }
+        message.success(`产品文档初始化完成 ${result.completed} 项，失败 ${result.failed} 项`)
+        return
+      }
       const count = 'enqueued' in value ? Number(value.enqueued) : undefined
       message.success(count === undefined ? '文档中心已初始化' : `已加入队列 ${count} 项`)
     },
@@ -166,6 +172,14 @@ function OrganizationDocumentCenter({ organizationId }: { organizationId: number
           onClick={() => operation.mutate('initialize')}
           title={integration === 'READY' ? undefined : '请先保存并验证 Outline 配置'}
         >初始化目录</Button>
+        <Button
+          aria-label="初始化产品文档"
+          icon={<FileSyncOutlined />}
+          disabled={integration !== 'READY'}
+          loading={operation.isPending}
+          onClick={() => operation.mutate('products')}
+          title={integration === 'READY' ? undefined : '请先保存并验证 Outline 配置'}
+        >初始化产品文档</Button>
         <Button
           aria-label="迁移知识文档"
           icon={<DatabaseOutlined />}

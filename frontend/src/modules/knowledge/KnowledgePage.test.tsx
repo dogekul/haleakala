@@ -160,6 +160,13 @@ it('创建文档模版时维护阶段、必需性和启用状态', async () => {
   expect(screen.getByText('适用交付阶段')).toBeVisible()
   expect(screen.getByText('项目必需性')).toBeVisible()
   expect(screen.getByText('新项目自动应用')).toBeVisible()
+  await userEvent.click(screen.getByLabelText('适用交付阶段'))
+  expect(await screen.findAllByText('商机 · 需求调研')).not.toHaveLength(0)
+  expect(screen.getAllByText('商机 · 决策评审')).not.toHaveLength(0)
+  expect(screen.getAllByText('商机 · 甲方诉求')).not.toHaveLength(0)
+  expect(screen.getAllByText('商机 · 差距分析')).not.toHaveLength(0)
+  expect(screen.getAllByText('商机 · 评审会议')).not.toHaveLength(0)
+  expect(screen.getAllByText('产品 · 功能设计 Spec')).not.toHaveLength(0)
   vi.unstubAllGlobals()
 })
 

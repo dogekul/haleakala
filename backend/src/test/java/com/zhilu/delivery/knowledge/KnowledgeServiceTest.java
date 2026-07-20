@@ -161,6 +161,32 @@ class KnowledgeServiceTest {
         snapshot.get("published_markdown_snapshot"));
   }
 
+  @Test void opportunityResearchTemplateUsesDedicatedScene() {
+    Map<String,Object> template=knowledge.create(user,"TEMPLATE","需求调研报告",
+        "商机调研","# {{客户名称}}需求调研报告","商机",
+        null,null,"ORGANIZATION",null,null,null,null,null,
+        "OPPORTUNITY_RESEARCH","REQUIRED",true);
+
+    assertEquals("OPPORTUNITY_RESEARCH",template.get("stageCode"));
+    assertEquals("REQUIRED",template.get("requirement"));
+  }
+
+  @Test void businessDocumentTemplatesUseDedicatedRequiredScenes() {
+    for (String scene : Arrays.asList(
+        "OPPORTUNITY_DECISION", "OPPORTUNITY_CLIENT_REQUESTS",
+        "OPPORTUNITY_GAP_ANALYSIS", "OPPORTUNITY_REVIEW", "PRODUCT_FEATURE_SPEC")) {
+      Map<String,Object> template=knowledge.create(user,"TEMPLATE",scene,
+          "业务文档模版","# " + scene,"模版",
+          null,null,"ORGANIZATION",null,null,null,null,null,
+          scene,"REQUIRED",true);
+      assertEquals(scene,template.get("stageCode"));
+      assertEquals("REQUIRED",template.get("requirement"));
+    }
+    assertThrows(IllegalArgumentException.class, () -> knowledge.create(user,"TEMPLATE",
+        "可选商机文档","不允许可选","# 文档","模版",null,null,"ORGANIZATION",
+        null,null,null,null,null,"OPPORTUNITY_DECISION","OPTIONAL",true));
+  }
+
   @Test void failedOutlineUpdateRollsBackLocalMetadataAndFallbackBody() {
     Map<String,Object> item=knowledge.create(user,"CASE","原案例","原摘要","原正文","案例",
         1100L,1100L,"ORGANIZATION",null,null,null,null,null);
