@@ -77,7 +77,7 @@ class OpportunityStageDocumentServiceTest {
         .thenReturn(view(53L, "甲方诉求清单", "# 模版", 1));
     when(documents.readLink(71L, 3100L))
         .thenReturn(view(71L, "需求调研报告", "需求调研报告正文", 4));
-    when(documents.readBusinessDocument(3100L, "PRODUCT:41:FEATURE:61:SPEC"))
+    when(documents.readLink(81L, 3100L))
         .thenReturn(view(81L, "功能 A Spec", "功能 A Spec 正文", 2));
     ObjectNode generated = json.createObjectNode();
     generated.put("title", "甲方诉求清单");
@@ -243,7 +243,7 @@ class OpportunityStageDocumentServiceTest {
     Map<String, Object> value = new LinkedHashMap<String, Object>();
     value.put("feature_id", 61L); value.put("feature_name", "功能 A");
     value.put("feature_code", "A"); value.put("availability", "INCLUDED");
-    value.put("outline_link_id", 81L);
+    value.put("spec_outline_link_id", 81L);
     return Collections.singletonList(value);
   }
 

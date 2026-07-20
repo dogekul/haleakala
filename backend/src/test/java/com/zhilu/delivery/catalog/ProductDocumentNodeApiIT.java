@@ -109,6 +109,11 @@ class ProductDocumentNodeApiIT {
             .with(actor("product:write")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"title\":\"产品一页纸\",\"markdown\":\"# 新正文\",\"revision\":4}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.markdown").value("# 新正文"));
+
+    mvc.perform(put("/api/v1/products/3300/document-nodes/{id}", folderId)
+            .with(actor("product:write")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content(nodeJson(null, "DOCUMENT", "DOC-01", "01 产品总纲", 1)))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

@@ -49,6 +49,11 @@ public class ProductDocumentNodeService {
     if ("FOLDER".equals(type) && linkedFeatureId != null) {
       throw new IllegalArgumentException("文件夹不能关联产品功能");
     }
+    Map<String, Object> current = id == null
+        ? null : documentNode(organizationId, productId, id.longValue());
+    if (current != null && !type.equals(current.get("nodeType"))) {
+      throw new IllegalArgumentException("文档节点类型创建后不可修改");
+    }
     validateParent(productId, id, parentId);
     validateFeature(productId, linkedFeatureId);
     String normalizedCode = code.trim();
@@ -63,15 +68,14 @@ public class ProductDocumentNodeService {
             "select id from product_document_node where product_id=? and code=?",
             Long.class, productId, normalizedCode);
       } else {
-        Map<String, Object> current = documentNode(organizationId, productId, id.longValue());
         if (((Number) current.get("version")).longValue() != version) {
           throw new ConflictException("文档节点已被更新，请刷新后重试");
         }
-        int changed = jdbc.update("update product_document_node set parent_id=?,node_type=?,"
+        int changed = jdbc.update("update product_document_node set parent_id=?,"
                 + "code=?,title=?,description=?,sort_order=?,linked_feature_id=?,"
                 + "updated_at=current_timestamp,version=version+1 "
                 + "where id=? and product_id=? and version=?",
-            parentId, type, normalizedCode, normalizedTitle, description, sortOrder,
+            parentId, normalizedCode, normalizedTitle, description, sortOrder,
             linkedFeatureId, id, productId, version);
         if (changed == 0) throw new ConflictException("文档节点已被更新，请刷新后重试");
       }
