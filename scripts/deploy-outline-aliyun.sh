@@ -106,7 +106,7 @@ sed \
   -e "s|__DEX_ADMIN_PASSWORD_HASH__|$admin_hash|g" \
   -e "s|__DEX_ADMIN_USER_ID__|$DEX_ADMIN_USER_ID|g" \
   dex-config.yaml.tpl > dex/config.yaml
-chmod 600 dex/config.yaml
+chmod 644 dex/config.yaml
 chmod 700 backup-outline-aliyun.sh verify-outline-aliyun.sh
 
 compose=(docker compose --env-file .env -f docker-compose.ecs.yml)
@@ -118,6 +118,11 @@ for image in \
   docker.getoutline.com/outlinewiki/outline:1.7.1; do
   ensure_image "$image"
 done
+docker volume create outline-stack_dex-data >/dev/null
+docker run --rm --user root --entrypoint sh \
+  -v outline-stack_dex-data:/var/dex \
+  ghcr.io/dexidp/dex:v2.45.1-alpine \
+  -c 'chown -R 1001:1001 /var/dex'
 "${compose[@]}" up -d postgres redis dex outline caddy
 
 ready=false

@@ -12,6 +12,9 @@ done
 
 grep -q 'outline:1.7.1' "$COMPOSE"
 grep -q 'postgres:18.4-alpine3.24' "$COMPOSE"
+grep -q 'postgres-data:/var/lib/postgresql$' "$COMPOSE"
+! grep -q 'PGDATA:' "$COMPOSE"
+grep -q 'seccomp=unconfined' "$COMPOSE"
 grep -q 'redis:7.4.9-alpine3.21' "$COMPOSE"
 grep -q 'dex:v2.45.1-alpine' "$COMPOSE"
 grep -q 'caddy:2.11.4-alpine' "$COMPOSE"
@@ -50,6 +53,8 @@ grep -q 'swapon' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'mysqldump' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q '< /dev/null' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'ensure_image' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'chmod 644 dex/config.yaml' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'outline-stack_dex-data:/var/dex' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'pg_dump' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 grep -q 'sha256sum' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 ! grep -R -E 'Admin@123|ol_api_[A-Za-z0-9]+' \
