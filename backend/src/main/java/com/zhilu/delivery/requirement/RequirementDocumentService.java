@@ -3,6 +3,7 @@ package com.zhilu.delivery.requirement;
 import com.zhilu.delivery.common.error.NotFoundException;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.document.DocumentCenterService;
+import com.zhilu.delivery.document.DocumentView;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,15 @@ public class RequirementDocumentService {
             + "where id=? and organization_id=?",
         linkId, number(template, "id"), number(template, "published_revision"),
         requirementId, organizationId);
+  }
+
+  public DocumentView read(long requirementId, long organizationId) {
+    List<Long> linkIds = jdbc.queryForList(
+        "select outline_link_id from requirement_item "
+            + "where id=? and organization_id=? and outline_link_id is not null",
+        Long.class, requirementId, organizationId);
+    if (linkIds.isEmpty()) throw new NotFoundException("需求文档不存在");
+    return documents.readLink(linkIds.get(0).longValue(), organizationId);
   }
 
   private Map<String, Object> requirement(long requirementId, long actorUserId) {

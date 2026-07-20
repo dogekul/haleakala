@@ -1,5 +1,6 @@
 package com.zhilu.delivery.requirement;
 
+import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.project.ProjectService;
 import java.util.List;
@@ -25,9 +26,11 @@ public class RequirementController {
   private final RequirementService requirements;
   private final ProjectService projects;
   private final RequirementFeatureService features;
+  private final RequirementDocumentService documents;
   public RequirementController(RequirementService requirements, ProjectService projects,
-      RequirementFeatureService features) {
+      RequirementFeatureService features, RequirementDocumentService documents) {
     this.requirements = requirements; this.projects = projects; this.features = features;
+    this.documents = documents;
   }
 
   @GetMapping public List<Map<String, Object>> list(
@@ -39,8 +42,13 @@ public class RequirementController {
   }
   @GetMapping("/funnel") public Map<String, Object> funnel(@AuthenticationPrincipal CurrentUser user) { return requirements.funnel(user); }
   @GetMapping("/{id}") public Map<String, Object> get(@PathVariable long id, @AuthenticationPrincipal CurrentUser user) { Map<String,Object> value=requirements.get(id); projects.get(((Number)value.get("projectId")).longValue(),user); return value; }
+  @GetMapping("/{id}/document") public DocumentView document(@PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = get(id, user);
+    return documents.read(id, ((Number) value.get("organizationId")).longValue());
+  }
   @PostMapping @ResponseStatus(HttpStatus.CREATED) public Map<String, Object> create(@Valid @RequestBody SaveRequest request, @AuthenticationPrincipal CurrentUser user) {
-    projects.get(request.projectId, user); return requirements.create(request.projectId,request.title,request.description,request.source,request.priority,user.getId());
+    projects.get(request.projectId, user); return requirements.collect(request.projectId,request.title,request.description,request.source,request.priority,user.getId());
   }
   @PutMapping("/{id}") public Map<String,Object> update(@PathVariable long id,@Valid @RequestBody SaveRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.update(id,request.title,request.description,request.source,request.priority,request.version); }
   @PostMapping("/{id}/classify") public Map<String,Object> classify(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.classify(id,user.getId()); }
