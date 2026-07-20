@@ -58,7 +58,7 @@ export function OperationBoardPage() {
         <Link title={item.title} to={`/customers/operations/${item.id}`}>{item.title}</Link>
         <p className="crm-board-card-meta" title={`${item.customerName} · ${item.ownerName ?? '未分配负责人'}`}>{item.customerName} · {item.ownerName ?? '未分配负责人'}</p>
         {canWrite && <Space className="crm-board-card-actions" wrap size={[4, 4]}><Button size="small" icon={<EditOutlined />} aria-label={`编辑${item.title}`} onClick={() => setEditing(item)}>编辑</Button>
-          <Button size="small" type="primary" icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => advance.mutate(item)}>{item.stage === 'REPURCHASE' ? '关闭运营' : '推进阶段'}</Button></Space>}
+          <Button size="small" type={item.stage === 'REPURCHASE' ? 'default' : 'primary'} danger={item.stage === 'REPURCHASE'} icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => advance.mutate(item)}>{item.stage === 'REPURCHASE' ? '关闭运营' : '推进阶段'}</Button></Space>}
       </Card>)}</section>)}</div>
     <Card className="closed-operations" title="已关闭运营记录"><Table rowKey="id" size="small" dataSource={closed} pagination={false} columns={[
       { title: '运营主题', key: 'title', render: (_: unknown, item: CustomerOperation) => <Link to={`/customers/operations/${item.id}`}>{item.title}</Link> },

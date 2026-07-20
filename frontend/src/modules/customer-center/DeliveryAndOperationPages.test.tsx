@@ -87,7 +87,10 @@ it('客户运营显示三列看板、关闭记录并携带版本推进', async (
   expect(within(maintenanceCard).getByRole('button', { name: '推进华东银行持续运营' })).toHaveTextContent('推进阶段')
 
   const repurchaseCard = screen.getByText('北方能源复购').closest<HTMLElement>('.operation-card')!
-  expect(within(repurchaseCard).getByRole('button', { name: '推进北方能源复购' })).toHaveTextContent('关闭运营')
+  const closeButton = within(repurchaseCard).getByRole('button', { name: '推进北方能源复购' })
+  expect(closeButton).toHaveTextContent('关闭运营')
+  expect(closeButton).toHaveClass('ant-btn-dangerous')
+  expect(closeButton).not.toHaveClass('ant-btn-primary')
   expect(screen.getByTestId('operation-summary')).toHaveTextContent('开放 3 · 已关闭 1')
   await user.click(screen.getByRole('button', { name: '推进华东银行持续运营' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/operations/51/advance', expect.objectContaining({
