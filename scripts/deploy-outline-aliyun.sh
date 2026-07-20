@@ -150,6 +150,7 @@ fi
 "${compose[@]}" exec -T redis sh -c 'redis-cli -a "$REDIS_PASSWORD" del migrations >/dev/null' < /dev/null
 "${compose[@]}" run --rm --no-deps outline node_modules/.bin/sequelize db:migrate --env production-ssl-disabled < /dev/null
 "${compose[@]}" up -d outline
+"${compose[@]}" up -d --force-recreate caddy
 
 ready=false
 for _ in $(seq 1 60); do

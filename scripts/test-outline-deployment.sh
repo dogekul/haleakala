@@ -61,8 +61,13 @@ grep -q 'chmod 644 dex/config.yaml' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'outline-stack_dex-data:/var/dex' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'up -d postgres redis dex caddy' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'node_modules/.bin/sequelize db:migrate --env production-ssl-disabled < /dev/null' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'up -d --force-recreate caddy' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'pg_dump' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 grep -q 'sha256sum' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+grep -q '\.partial' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+grep -q 'trap cleanup EXIT' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+grep -q 'mv "$target" "$completed"' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
+grep -Fq '"issuer"[[:space:]]*:[[:space:]]*' "$ROOT_DIR/scripts/verify-outline-aliyun.sh"
 ! grep -R -E 'Admin@123|ol_api_[A-Za-z0-9]+' \
   "$ROOT_DIR/deploy/outline" \
   "$ROOT_DIR/scripts/deploy-outline-aliyun.sh" \
