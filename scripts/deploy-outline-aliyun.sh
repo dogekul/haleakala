@@ -148,7 +148,7 @@ if [[ "$foundation_ready" != true ]]; then
 fi
 
 "${compose[@]}" exec -T redis sh -c 'redis-cli -a "$REDIS_PASSWORD" del migrations >/dev/null' < /dev/null
-"${compose[@]}" run --rm --no-deps outline node_modules/.bin/sequelize db:migrate --env production-ssl-disabled
+"${compose[@]}" run --rm --no-deps outline node_modules/.bin/sequelize db:migrate --env production-ssl-disabled < /dev/null
 "${compose[@]}" up -d outline
 
 ready=false

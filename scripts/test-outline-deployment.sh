@@ -60,7 +60,7 @@ grep -q 'ensure_image' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'chmod 644 dex/config.yaml' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'outline-stack_dex-data:/var/dex' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'up -d postgres redis dex caddy' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
-grep -q 'node_modules/.bin/sequelize db:migrate --env production-ssl-disabled' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q 'node_modules/.bin/sequelize db:migrate --env production-ssl-disabled < /dev/null' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'pg_dump' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 grep -q 'sha256sum' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 ! grep -R -E 'Admin@123|ol_api_[A-Za-z0-9]+' \
