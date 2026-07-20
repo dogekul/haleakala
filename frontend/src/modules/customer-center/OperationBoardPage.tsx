@@ -1,6 +1,6 @@
 import { EditOutlined, PlusOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Input, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Input, Select, Space, Table, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
@@ -42,7 +42,7 @@ export function OperationBoardPage() {
   return <div className="crm-page operation-page"><div className="page-heading compact"><div>
     <Typography.Title level={2}>客户运营</Typography.Title><Typography.Paragraph>从客户维护到持续经营和复购，保持赢单后的价值增长。</Typography.Paragraph>
   </div>{canWrite && <Button type="primary" aria-label="新建运营" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新建运营</Button>}</div>
-  <Card className="crm-filter"><div className="crm-toolbar"><Space wrap>
+  <Card className="crm-filter operation-filter"><div className="crm-toolbar operation-toolbar"><Space className="operation-filter-fields" wrap size={8}>
     <Input allowClear prefix={<SearchOutlined />} placeholder="搜索运营或客户" value={keyword} onChange={event => setKeyword(event.target.value)} />
     <Select aria-label="运营负责人筛选" allowClear placeholder="全部负责人" virtual={false} value={owner} onChange={setOwner} options={owners} />
     <Select aria-label="运营客户筛选" allowClear placeholder="全部客户" virtual={false} value={customer} onChange={setCustomer} options={customers} />
@@ -50,14 +50,15 @@ export function OperationBoardPage() {
       options={[...operationStages, { value: 'CLOSED' as OperationStage, label: '已关闭' }]} />
     <Select aria-label="运营状态筛选" allowClear placeholder="全部状态" virtual={false} value={status} onChange={setStatus}
       options={[{ value: 'OPEN', label: '进行中' }, { value: 'CLOSED', label: '已关闭' }]} />
-  </Space><span>开放 {data.filter(item => item.status === 'OPEN').length} · 已关闭 {closed.length}</span></div></Card>
+  </Space><span className="operation-summary" data-testid="operation-summary">开放 {data.filter(item => item.status === 'OPEN').length} · 已关闭 {closed.length}</span></div></Card>
   <PageState loading={query.isLoading} error={query.error} empty={!query.isLoading && data.length === 0} onRetry={() => void query.refetch()}>
     <div className="operation-board">{operationStages.map(stage => <section key={stage.value} data-testid={`operation-column-${stage.value}`} className="operation-column">
-      <header><strong>{stage.label}</strong><span>{data.filter(item => item.status === 'OPEN' && item.stage === stage.value).length}</span></header>
-      {data.filter(item => item.status === 'OPEN' && item.stage === stage.value).map(item => <Card size="small" key={item.id} className="operation-card">
-        <div><Link to={`/customers/operations/${item.id}`}>{item.title}</Link><Tag>{item.customerName}</Tag></div><p>{item.ownerName ?? '未分配负责人'}</p>
-        {canWrite && <Space><Button size="small" icon={<EditOutlined />} aria-label={`编辑${item.title}`} onClick={() => setEditing(item)}>编辑</Button>
-          <Button size="small" type="primary" icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => advance.mutate(item)}>{item.stage === 'REPURCHASE' ? '关闭' : '推进'}</Button></Space>}
+      <header><strong>{stage.label}</strong><span className="crm-board-count">{data.filter(item => item.status === 'OPEN' && item.stage === stage.value).length}</span></header>
+      {data.filter(item => item.status === 'OPEN' && item.stage === stage.value).map(item => <Card size="small" key={item.id} className="operation-card crm-board-card">
+        <Link title={item.title} to={`/customers/operations/${item.id}`}>{item.title}</Link>
+        <p className="crm-board-card-meta" title={`${item.customerName} · ${item.ownerName ?? '未分配负责人'}`}>{item.customerName} · {item.ownerName ?? '未分配负责人'}</p>
+        {canWrite && <Space className="crm-board-card-actions" wrap size={[4, 4]}><Button size="small" icon={<EditOutlined />} aria-label={`编辑${item.title}`} onClick={() => setEditing(item)}>编辑</Button>
+          <Button size="small" type="primary" icon={<RightOutlined />} aria-label={`推进${item.title}`} onClick={() => advance.mutate(item)}>{item.stage === 'REPURCHASE' ? '关闭运营' : '推进阶段'}</Button></Space>}
       </Card>)}</section>)}</div>
     <Card className="closed-operations" title="已关闭运营记录"><Table rowKey="id" size="small" dataSource={closed} pagination={false} columns={[
       { title: '运营主题', key: 'title', render: (_: unknown, item: CustomerOperation) => <Link to={`/customers/operations/${item.id}`}>{item.title}</Link> },

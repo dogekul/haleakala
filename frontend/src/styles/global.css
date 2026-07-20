@@ -559,14 +559,15 @@ button, input { font: inherit; }
 .full-link-track em { color: #8f959e; font-style: normal; }
 .crm-surface { border-color: #e5e6eb; }
 .crm-surface > .ant-card-body { padding: 8px; }
-.operation-board { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
-.operation-column { min-height: 400px; padding: 11px; border-radius: 8px; background: #f5f6f7; }
-.operation-column > header { display: flex; justify-content: space-between; padding: 3px 3px 12px; }
-.operation-column > header span { color: #8f959e; }
-.operation-card { margin-bottom: 9px; border-color: #e5e6eb; }
-.operation-card > .ant-card-body > div:first-child { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
-.operation-card a { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.operation-card p { margin: 13px 0; color: #8f959e; font-size: 11px; }
+.operation-filter .ant-card-body { padding: 9px 11px; }
+.operation-toolbar { min-width: 0; }
+.operation-filter-fields { min-width: 0; flex: 1; }
+.operation-filter-fields .ant-input-affix-wrapper { width: 210px; }
+.operation-filter-fields .ant-select { min-width: 112px; }
+.operation-summary { flex: 0 0 auto; color: #646a73; font-size: 12px; white-space: nowrap; }
+.operation-board { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.operation-column { min-width: 0; padding: 7px; border: 1px solid #e5e6eb; border-radius: 8px; background: #f7f8fa; }
+.operation-card { border-color: #e5e6eb; }
 .closed-operations { margin-top: 14px; border-color: #e5e6eb; }
 .operation-detail .crm-surface { margin-bottom: 14px; }
 .operation-link-track { margin-top: 0; }
@@ -574,6 +575,14 @@ button, input { font: inherit; }
   .crm-toolbar { align-items: flex-start; flex-direction: column; }
   .full-link-track { grid-template-columns: 1fr; }
   .full-link-track > i { transform: rotate(90deg); }
+}
+@media (max-width: 1100px) {
+  .operation-toolbar { align-items: flex-start; }
+  .operation-filter-fields { row-gap: 6px; }
+  .operation-board { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 720px) {
+  .operation-toolbar { flex-direction: column; }
   .operation-board { grid-template-columns: 1fr; }
 }
 .customer-kpis { margin-bottom: 14px; }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, vi } from 'vitest'
@@ -80,6 +80,15 @@ it('客户运营显示三列看板、关闭记录并携带版本推进', async (
   expect(screen.getAllByTestId(/operation-column-/)).toHaveLength(3)
   expect(screen.getByText('西部零售已关闭')).toBeVisible()
   expect(screen.getByRole('button', { name: '新建运营' })).toBeVisible()
+  const maintenanceCard = screen.getByText('华东银行持续运营').closest<HTMLElement>('.operation-card')!
+  expect(maintenanceCard).toHaveClass('crm-board-card')
+  expect(maintenanceCard.querySelector('.crm-board-card-meta')).toHaveTextContent('华东银行 · 周运营')
+  expect(maintenanceCard.querySelector('.crm-board-card-actions')).toBeInTheDocument()
+  expect(within(maintenanceCard).getByRole('button', { name: '推进华东银行持续运营' })).toHaveTextContent('推进阶段')
+
+  const repurchaseCard = screen.getByText('北方能源复购').closest<HTMLElement>('.operation-card')!
+  expect(within(repurchaseCard).getByRole('button', { name: '推进北方能源复购' })).toHaveTextContent('关闭运营')
+  expect(screen.getByTestId('operation-summary')).toHaveTextContent('开放 3 · 已关闭 1')
   await user.click(screen.getByRole('button', { name: '推进华东银行持续运营' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/operations/51/advance', expect.objectContaining({
     method: 'POST', body: '{"version":0}',
