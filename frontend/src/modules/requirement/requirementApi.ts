@@ -7,6 +7,9 @@ export const requirementApi = {
   create: (input: Record<string, unknown>) => api<Requirement>('/api/v1/requirements', { method: 'POST', body: JSON.stringify(input) }),
   document: (id: number) => api<RequirementDocument>(`/api/v1/requirements/${id}/document`),
   update: (id: number, input: Record<string, unknown>) => api<Requirement>(`/api/v1/requirements/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+  abandon: (id: number, version: number) => api<Requirement>(`/api/v1/requirements/${id}/abandon`, {
+    method: 'POST', body: JSON.stringify({ version }),
+  }),
   classify: (id: number) => api<Requirement>(`/api/v1/requirements/${id}/classify`, { method: 'POST' }),
   confirm: (id: number, level: string, overrideReason?: string) => api<Requirement>(`/api/v1/requirements/${id}/confirm`, { method: 'POST', body: JSON.stringify({ level, overrideReason }) }),
   duplicates: (id: number) => api<DuplicateCandidate[]>(`/api/v1/requirements/${id}/duplicates`, { method: 'POST' }),

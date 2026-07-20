@@ -6,12 +6,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zhilu.delivery.automation.AiClient;
+import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.document.DocumentCenterService;
+import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.common.error.ConflictException;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +38,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class RequirementDocumentServiceTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private RequirementService requirements;
+  @Autowired private RequirementDocumentService requirementDocuments;
+  @Autowired private ObjectMapper json;
   @MockBean private DocumentCenterService documents;
+  @MockBean private AiClient ai;
 
   @BeforeEach
   void seed() {
@@ -77,10 +88,16 @@ class RequirementDocumentServiceTest {
         eq("需求文档"), eq(9201L))).thenReturn(9202L);
     when(documents.createDocument(eq(920L), anyString(), eq("REQUIREMENT_RESEARCH"),
         anyString(), anyString(), eq(9202L))).thenReturn(9203L);
+    ObjectNode generated = json.createObjectNode();
+    generated.put("title", "REQ 智能需求调研报告");
+    generated.put("markdown", "# 智能需求调研报告\n\n## 业务背景\n示例银行消保合规交付。\n\n"
+        + "## 需求说明\n自动核验客户证件，开户时自动核验证件有效期，校验结果可追溯。\n\n"
+        + "## 验收标准\n结果准确且留痕。\n\n## 待确认事项\n待确认。");
+    when(ai.completeJson(eq(920L), anyString(), anyString(), any())).thenReturn(generated);
   }
 
   @Test
-  void completingCollectionCreatesFilledOutlineReportAndLinksTemplateRevision() {
+  void completingCollectionUsesAiTemplateAndContextThenLinksTheGeneratedReport() {
     Map<String, Object> result = requirements.collect(920L, "自动核验客户证件",
         "开户时自动核验证件有效期，校验结果可追溯", "客户访谈", "P1", 920L);
 
@@ -99,13 +116,60 @@ class RequirementDocumentServiceTest {
         eq("REQUIREMENT_RESEARCH"), title.capture(), markdown.capture(), eq(9202L));
     assertEquals("REQUIREMENT:" + result.get("id") + ":RESEARCH_REPORT",
         businessKey.getValue());
-    assertTrue(title.getValue().contains("自动核验客户证件"));
-    assertTrue(markdown.getValue().contains("REQ-"));
+    assertEquals("REQ 智能需求调研报告", title.getValue());
+    assertTrue(markdown.getValue().contains("# 智能需求调研报告"));
     assertTrue(markdown.getValue().contains("自动核验客户证件"));
     assertTrue(markdown.getValue().contains("开户时自动核验证件有效期，校验结果可追溯"));
     assertTrue(markdown.getValue().contains("示例银行"));
-    assertTrue(markdown.getValue().contains("需求采集人"));
     assertFalse(markdown.getValue().contains("{{"));
+
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(ai).completeJson(eq(920L), anyString(), prompt.capture(), any());
+    assertTrue(prompt.getValue().contains("需求调研报告模版"));
+    assertTrue(prompt.getValue().contains("{{系统/项目名称}}"));
+    assertTrue(prompt.getValue().contains("示例银行"));
+    assertTrue(prompt.getValue().contains("消保合规"));
+    assertTrue(prompt.getValue().contains("V1.0"));
+    assertTrue(prompt.getValue().contains("需求采集人"));
+  }
+
+  @Test
+  void incompatibleAiReportRollsBackTheCollectedRequirement() {
+    ObjectNode invalid = json.createObjectNode();
+    invalid.put("title", "不完整报告");
+    invalid.put("markdown", "# 报告\n\n{{仍未填写}}\n");
+    when(ai.completeJson(eq(920L), anyString(), anyString(), any())).thenReturn(invalid);
+
+    AiServiceException failure = assertThrows(AiServiceException.class,
+        () -> requirements.collect(920L, "自动核验客户证件",
+            "开户时自动核验证件有效期，校验结果可追溯", "客户访谈", "P1", 920L));
+
+    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE, failure.getType());
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from requirement_item where project_id=920", Integer.class));
+    verify(documents, never()).createDocument(anyLong(), anyString(), anyString(),
+        anyString(), anyString(), anyLong());
+  }
+
+  @Test
+  void regenerationUpdatesTheExistingOutlineRevisionWithFreshAiContent() {
+    Map<String, Object> result = requirements.collect(920L, "自动核验客户证件",
+        "开户时自动核验证件有效期，校验结果可追溯", "客户访谈", "P1", 920L);
+    ObjectNode regenerated = json.createObjectNode();
+    regenerated.put("title", "更新后的需求调研报告");
+    regenerated.put("markdown", "# 更新后的报告\n\n## 验收标准\n全部规则通过并留痕。");
+    when(ai.completeJson(eq(920L), anyString(), anyString(), any())).thenReturn(regenerated);
+    when(documents.readLink(9203L, 920L)).thenReturn(new DocumentView(
+        9203L, "旧报告", "# 旧正文", 4L, Instant.now(), "READY", null, "url"));
+    when(documents.updateLink(9203L, 920L, "更新后的需求调研报告",
+        "# 更新后的报告\n\n## 验收标准\n全部规则通过并留痕。", 4L))
+        .thenReturn(new DocumentView(9203L, "更新后的需求调研报告",
+            "# 更新后的报告", 5L, Instant.now(), "READY", null, "url"));
+
+    requirementDocuments.regenerate(((Number) result.get("id")).longValue(), 920L);
+
+    verify(documents).updateLink(9203L, 920L, "更新后的需求调研报告",
+        "# 更新后的报告\n\n## 验收标准\n全部规则通过并留痕。", 4L);
   }
 
   @Test

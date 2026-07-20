@@ -50,7 +50,8 @@ public class RequirementController {
   @PostMapping @ResponseStatus(HttpStatus.CREATED) public Map<String, Object> create(@Valid @RequestBody SaveRequest request, @AuthenticationPrincipal CurrentUser user) {
     projects.get(request.projectId, user); return requirements.collect(request.projectId,request.title,request.description,request.source,request.priority,user.getId());
   }
-  @PutMapping("/{id}") public Map<String,Object> update(@PathVariable long id,@Valid @RequestBody SaveRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.update(id,request.title,request.description,request.source,request.priority,request.version); }
+  @PutMapping("/{id}") public Map<String,Object> update(@PathVariable long id,@Valid @RequestBody SaveRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.update(id,request.title,request.description,request.source,request.priority,request.version,request.regenerateReport,user.getId()); }
+  @PostMapping("/{id}/abandon") public Map<String,Object> abandon(@PathVariable long id,@Valid @RequestBody AbandonRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.abandon(id,request.version.longValue(),user.getId()); }
   @PostMapping("/{id}/classify") public Map<String,Object> classify(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.classify(id,user.getId()); }
   @PostMapping("/{id}/confirm") public Map<String,Object> confirm(@PathVariable long id,@Valid @RequestBody ConfirmRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.confirm(id,request.level,request.overrideReason,user.getId()); }
   @PostMapping("/{id}/duplicates") public List<Map<String,Object>> duplicates(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return requirements.findDuplicates(id); }
@@ -58,7 +59,8 @@ public class RequirementController {
   @GetMapping("/{id}/product-features") public Map<String,Object> coverage(@PathVariable long id,@AuthenticationPrincipal CurrentUser user){ get(id,user); return features.coverage(id,user); }
   @PutMapping("/{id}/product-features") public Map<String,Object> replaceCoverage(@PathVariable long id,@Valid @RequestBody CoverageRequest request,@AuthenticationPrincipal CurrentUser user){ get(id,user); java.util.ArrayList<RequirementFeatureService.CoverageEntry> entries=new java.util.ArrayList<RequirementFeatureService.CoverageEntry>(); for(CoverageItem item:request.entries){ if(item==null)throw new IllegalArgumentException("功能覆盖项不能为空"); entries.add(new RequirementFeatureService.CoverageEntry(item.featureId,item.coverageType)); } return features.replaceCoverage(id,user,entries); }
 
-  public static final class SaveRequest { @NotNull public Long projectId; @NotBlank public String title; @NotBlank public String description; public String source; public String priority="P2"; public long version; }
+  public static final class SaveRequest { @NotNull public Long projectId; @NotBlank public String title; @NotBlank public String description; public String source; public String priority="P2"; public long version; public boolean regenerateReport; }
+  public static final class AbandonRequest { @NotNull public Long version; }
   public static final class ConfirmRequest { @NotBlank public String level; public String overrideReason; }
   public static final class CoverageRequest { @Valid @NotNull public List<CoverageItem> entries; }
   public static final class CoverageItem { @NotNull public Long featureId; @NotBlank public String coverageType; }

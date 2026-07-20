@@ -3,8 +3,10 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { afterEach } from 'vitest'
+import { Modal } from 'antd'
 import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { RequirementWorkshop } from './RequirementWorkshop'
+import type { Requirement } from './types'
 
 const auth: AuthState = {
   loading: false,
@@ -34,7 +36,7 @@ function providers(children: React.ReactNode, permissions = auth.me!.permissions
   </QueryClientProvider>
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { Modal.destroyAll(); vi.unstubAllGlobals() })
 
 it('展示仅由人工确认决策驱动的三层漏斗并保留看板', async () => {
   vi.stubGlobal('fetch', vi.fn((input: string) => {
@@ -338,4 +340,115 @@ it('只为已关联 Outline 的需求显示查看文档并打开最新地址', a
 
   await waitFor(() => expect(open).toHaveBeenCalledWith(
     'http://localhost:3000/doc/req-51', '_blank', 'noopener,noreferrer'))
+})
+
+function editableRequirement(): Requirement {
+  return {
+    id: 61, organizationId: 1, projectId: 41, productId: 8, projectCode: 'PRJ-041',
+    projectName: '消保合规交付', code: 'REQ-061', title: '交易限额校验',
+    description: '付款前校验客户交易限额', source: '客户访谈', priority: 'P1',
+    status: 'DRAFT', version: 3, outlineLinkId: 71,
+  }
+}
+
+it('编辑需求时回填字段并可仅保存结构化信息', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  let requirement = editableRequirement()
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    requests.push({ path, init })
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/projects') return json([{ id: 41, code: 'PRJ-041', name: '消保合规交付' }])
+    if (path === '/api/v1/requirements/61' && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body))
+      requirement = { ...requirement, ...body, version: 4 }
+      return json(requirement)
+    }
+    if (path === '/api/v1/requirements') return json([requirement])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /编辑/ }))
+  const drawer = screen.getByRole('dialog', { name: '编辑需求' })
+  expect(within(drawer).getByRole('combobox', { name: '所属项目' })).toBeDisabled()
+  const title = within(drawer).getByRole('textbox', { name: '需求标题' })
+  expect(title).toHaveValue('交易限额校验')
+  await user.clear(title)
+  await user.type(title, '交易限额规则校验')
+  await user.click(within(drawer).getByRole('button', { name: '仅保存需求' }))
+
+  await waitFor(() => expect(JSON.parse(String(requests.find(request =>
+    request.path === '/api/v1/requirements/61' && request.init?.method === 'PUT')?.init?.body)))
+    .toEqual(expect.objectContaining({
+      projectId: 41, title: '交易限额规则校验', version: 3, regenerateReport: false,
+    })))
+})
+
+it('编辑需求时明确确认后可用 AI 覆盖重生成报告', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    requests.push({ path, init })
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/projects') return json([{ id: 41, code: 'PRJ-041', name: '消保合规交付' }])
+    if (path === '/api/v1/requirements/61' && init?.method === 'PUT') return json({
+      ...editableRequirement(), version: 5,
+    })
+    if (path === '/api/v1/requirements') return json([editableRequirement()])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /编辑/ }))
+  await user.click(within(screen.getByRole('dialog', { name: '编辑需求' }))
+    .getByRole('button', { name: '保存并重新生成报告' }))
+  await screen.findAllByText('重新生成需求调研报告？')
+  const confirmation = screen.getAllByRole('dialog').find(dialog =>
+    within(dialog).queryAllByText('重新生成需求调研报告？').length > 0)!
+  await user.click(within(confirmation).getByRole('button', { name: '确认覆盖并生成' }))
+
+  await waitFor(() => expect(JSON.parse(String(requests.find(request =>
+    request.path === '/api/v1/requirements/61' && request.init?.method === 'PUT')?.init?.body)))
+    .toEqual(expect.objectContaining({ version: 3, regenerateReport: true })))
+})
+
+it('可确认废弃需求并以中文终态展示且保留文档入口', async () => {
+  const requests: Array<{ path: string; init?: RequestInit }> = []
+  let requirement = editableRequirement()
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    requests.push({ path, init })
+    if (path === '/api/v1/requirements/funnel') return json({ L0: 0, L1: 0, L2: 0 })
+    if (path === '/api/v1/requirements/61/abandon' && init?.method === 'POST') {
+      requirement = { ...requirement, status: 'ABANDONED' as const, version: 4 }
+      return json(requirement)
+    }
+    if (path === '/api/v1/requirements') return json([requirement])
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  const user = userEvent.setup()
+  render(providers(<RequirementWorkshop />))
+
+  await user.click(await screen.findByRole('button', { name: /废弃/ }))
+  await screen.findAllByText('确认废弃该需求？')
+  const confirmation = screen.getAllByRole('dialog').find(dialog =>
+    within(dialog).queryAllByText('确认废弃该需求？').length > 0)!
+  await user.click(within(confirmation).getByRole('button', { name: '确认废弃' }))
+
+  await waitFor(() => expect(JSON.parse(String(requests.find(request =>
+    request.path === '/api/v1/requirements/61/abandon' && request.init?.method === 'POST')?.init?.body)))
+    .toEqual({ version: 3 }))
+  expect(await screen.findByText('已废弃')).toBeVisible()
+  expect(screen.getByRole('button', { name: /查看文档/ })).toBeVisible()
+  expect(screen.queryByRole('button', { name: /编辑/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /分类决策/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /功能覆盖/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /查重合并/ })).not.toBeInTheDocument()
+  await user.click(screen.getByText('看板'))
+  const board = screen.getByTestId('requirement-board')
+  expect(within(board).getByText('已废弃')).toBeVisible()
+  expect(within(board).getByText('交易限额校验')).toBeVisible()
 })
