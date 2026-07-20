@@ -1,6 +1,6 @@
 # Product Document and Capability Separation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将产品文档树从产品模块/功能树中彻底拆分，并把消保合规产品迁移为 11 个文档目录与 10 个业务模块、31 个子模块、124 个原子功能。
 
@@ -29,7 +29,7 @@
 - Consumes: `product(id)`、`product_feature(id)`、`outline_document_link(id)`。
 - Produces: `product_document_node(id, product_id, parent_id, node_type, code, title, description, sort_order, outline_link_id, linked_feature_id, created_at, updated_at, version)`。
 
-- [ ] **Step 1: 写失败的模式测试**
+- [x] **Step 1: 写失败的模式测试**
 
 在 `SchemaBaselineTest` 增加：
 
@@ -47,13 +47,13 @@ void flywayCreatesIndependentProductDocumentNodes() {
 }
 ```
 
-- [ ] **Step 2: 验证测试因缺表失败**
+- [x] **Step 2: 验证测试因缺表失败**
 
 Run: `cd backend && mvn -q -Dtest=SchemaBaselineTest#flywayCreatesIndependentProductDocumentNodes test`
 
 Expected: FAIL，`product_document_node` 数量为 `0`。
 
-- [ ] **Step 3: 添加最小表结构**
+- [x] **Step 3: 添加最小表结构**
 
 `V19__product_document_nodes.sql` 创建字段及以下约束：
 
@@ -85,13 +85,13 @@ CREATE INDEX idx_product_document_tree
   ON product_document_node(product_id,parent_id,sort_order,id);
 ```
 
-- [ ] **Step 4: 验证模式测试通过**
+- [x] **Step 4: 验证模式测试通过**
 
 Run: `cd backend && mvn -q -Dtest=SchemaBaselineTest#flywayCreatesIndependentProductDocumentNodes test`
 
 Expected: PASS，1 test，0 failures。
 
-- [ ] **Step 5: 提交表结构**
+- [x] **Step 5: 提交表结构**
 
 ```bash
 git add backend/src/main/resources/db/migration/V19__product_document_nodes.sql backend/src/test/java/com/zhilu/delivery/SchemaBaselineTest.java
@@ -110,7 +110,7 @@ git commit -m "feat: add independent product document nodes"
 - Produces: `nodes(long organizationId,long productId)`、`saveNode(long organizationId,long actorId,long productId,Long id,Long parentId,String nodeType,String code,String title,String description,int sortOrder,Long linkedFeatureId,long version)`、`retry(...)`、`readContent(...)`、`saveContent(...)`。
 - Produces HTTP: `GET/POST /document-nodes`、`PUT /document-nodes/{nodeId}`、`POST /document-nodes/{nodeId}/retry`、`GET/PUT /document-nodes/{nodeId}/content`、`GET /document-nodes/{nodeId}/export`。
 
-- [ ] **Step 1: 写失败的 API 测试**
+- [x] **Step 1: 写失败的 API 测试**
 
 `ProductDocumentNodeApiIT` 使用 H2、MockMvc 和内存 `OutlineClient`，覆盖以下真实行为：
 
@@ -130,13 +130,13 @@ mvc.perform(post("/api/v1/products/{productId}/document-nodes", 3300)
 
 同一测试类再验证：跨产品父节点返回 400、第五级返回 400、移动成环返回 400、重复编码返回 409、文档内容 GET/PUT 使用 Outline revision、文件夹内容返回 400、未关联 Spec 返回 404。
 
-- [ ] **Step 2: 验证 API 测试因路由不存在失败**
+- [x] **Step 2: 验证 API 测试因路由不存在失败**
 
 Run: `cd backend && mvn -q -Dtest=ProductDocumentNodeApiIT test`
 
 Expected: FAIL，首个 `/document-nodes` 请求返回 404。
 
-- [ ] **Step 3: 实现最小文档节点服务**
+- [x] **Step 3: 实现最小文档节点服务**
 
 服务只使用 `JdbcTemplate` 与现有 `DocumentCenterService`：
 
@@ -165,7 +165,7 @@ public DocumentView readContent(long organizationId, long productId, long nodeId
 }
 ```
 
-- [ ] **Step 4: 改造控制器到独立路由**
+- [x] **Step 4: 改造控制器到独立路由**
 
 将 `ProductDocumentController` 注入类型改为 `ProductDocumentNodeService`，新增 `NodeRequest`：
 
@@ -184,13 +184,13 @@ public static final class NodeRequest {
 
 保留 `/features/{featureId}/spec` 兼容路由，但通过 `linked_feature_id` 找文档节点；没有显式关联时返回 404，不创建 Outline 文档。
 
-- [ ] **Step 5: 验证节点 API 测试通过**
+- [x] **Step 5: 验证节点 API 测试通过**
 
 Run: `cd backend && mvn -q -Dtest=ProductDocumentNodeApiIT test`
 
 Expected: PASS，全部节点、内容及校验用例为 0 failures。
 
-- [ ] **Step 6: 提交节点 API**
+- [x] **Step 6: 提交节点 API**
 
 ```bash
 git add backend/src/main/java/com/zhilu/delivery/catalog/ProductDocumentNodeService.java backend/src/main/java/com/zhilu/delivery/catalog/ProductDocumentController.java backend/src/test/java/com/zhilu/delivery/catalog/ProductDocumentNodeApiIT.java
@@ -211,7 +211,7 @@ git commit -m "feat: expose independent product document workspace"
 - Consumes: `ProductCatalogService`、`ProductStructureService`。
 - Produces: 产品、模块、功能保存只修改业务表；文档服务只能由文档控制器调用。
 
-- [ ] **Step 1: 将自动同步测试反转为失败测试**
+- [x] **Step 1: 将自动同步测试反转为失败测试**
 
 在 `ProductDocumentAutoSyncTest` 用 `@MockBean ProductDocumentNodeService documents`，创建/更新产品、模块、功能后断言：
 
@@ -219,23 +219,23 @@ git commit -m "feat: expose independent product document workspace"
 verifyNoInteractions(documents);
 ```
 
-- [ ] **Step 2: 验证测试仍观察到自动同步**
+- [x] **Step 2: 验证测试仍观察到自动同步**
 
 Run: `cd backend && mvn -q -Dtest=ProductDocumentAutoSyncTest test`
 
 Expected: FAIL，报告产品、模块或功能保存调用了文档同步。
 
-- [ ] **Step 3: 删除控制器自动同步依赖**
+- [x] **Step 3: 删除控制器自动同步依赖**
 
 从两个控制器构造器移除文档服务，并删除 `syncProductDocuments`、`syncModuleDocuments`、`syncFeatureDocuments` 及所有调用。删除旧 `ProductDocumentService` 和只验证旧耦合行为的测试。
 
-- [ ] **Step 4: 验证能力保存不触碰 Outline**
+- [x] **Step 4: 验证能力保存不触碰 Outline**
 
 Run: `cd backend && mvn -q -Dtest=ProductDocumentAutoSyncTest,ProductStructureIT,ProductCatalogIT test`
 
 Expected: PASS，0 failures。
 
-- [ ] **Step 5: 提交解耦改动**
+- [x] **Step 5: 提交解耦改动**
 
 ```bash
 git add -A backend/src/main/java/com/zhilu/delivery/catalog backend/src/test/java/com/zhilu/delivery/catalog
@@ -254,7 +254,7 @@ git commit -m "refactor: decouple product capabilities from outline"
 - Consumes: Task 2 的 `/document-nodes` 与 `/document-nodes/{id}/content` API。
 - Produces: `ProductDocumentNode` 使用 `nodeType: 'FOLDER' | 'DOCUMENT'`、`code`、`linkedFeatureId`；产品文档页不引用模块或功能层级。
 
-- [ ] **Step 1: 写失败的前端独立树测试**
+- [x] **Step 1: 写失败的前端独立树测试**
 
 将 fixture 改为：
 
@@ -267,13 +267,13 @@ const productDocuments = [
 
 请求路径改为 `/api/v1/products/8/document-nodes` 和 `/document-nodes/102/content`，测试断言页面出现“独立文档工作区”，且不出现“产品结构与 Outline 实时对应”。
 
-- [ ] **Step 2: 验证前端测试因旧路径和旧字段失败**
+- [x] **Step 2: 验证前端测试因旧路径和旧字段失败**
 
 Run: `cd frontend && pnpm test:run src/modules/product/ProductDetailPage.test.tsx`
 
 Expected: FAIL，请求仍访问 `/documents` 或树未显示 `nodeType` 数据。
 
-- [ ] **Step 3: 切换类型和 API**
+- [x] **Step 3: 切换类型和 API**
 
 `types.ts` 定义：
 
@@ -296,11 +296,11 @@ export interface ProductDocumentNode {
 
 `productApi` 提供 `documentNodes`、`saveDocumentNode`、`retryDocumentNode`、`documentNodeContent`、`saveDocumentNodeContent`、`documentNodeExportUrl`，全部使用 Task 2 路由。
 
-- [ ] **Step 4: 改造文档页**
+- [x] **Step 4: 改造文档页**
 
 树构建仅按 `parentId` 和 `nodeType`；选择 `DOCUMENT` 时加载 `DocumentWorkspace`；文件夹不可选正文。标题副文案改为“独立文档工作区 · 内容同步至 Outline”。写权限用户提供“新建文件夹”“新建文档”和失败节点“重试”按钮，表单提交 `parentId/nodeType/code/title/description/sortOrder/version`。
 
-- [ ] **Step 5: 验证前端测试和构建通过**
+- [x] **Step 5: 验证前端测试和构建通过**
 
 Run: `cd frontend && pnpm test:run src/modules/product/ProductDetailPage.test.tsx`
 
@@ -310,7 +310,7 @@ Run: `cd frontend && pnpm build`
 
 Expected: exit 0，TypeScript 与 Vite 构建成功。
 
-- [ ] **Step 6: 提交前端改造**
+- [x] **Step 6: 提交前端改造**
 
 ```bash
 git add frontend/src/modules/product/types.ts frontend/src/modules/product/productApi.ts frontend/src/modules/product/ProductDocumentsTab.tsx frontend/src/modules/product/ProductDetailPage.test.tsx
@@ -328,7 +328,7 @@ git commit -m "feat: show independent product document tree"
 - Consumes: 消保合规产品编码 `XBHG`；旧编码 `DOC-%`、`SPRINT-%`、`CAP-%`；现有 `outline_link_id`。
 - Produces: 26 个迁移文件夹节点、70 个迁移文档节点、10 个一级能力模块、31 个二级模块、124 个原子功能；旧 Outline 链接保持原 ID。
 
-- [ ] **Step 1: 写失败的迁移验收测试**
+- [x] **Step 1: 写失败的迁移验收测试**
 
 在独立 H2 数据源先迁移到 V19，插入 `XBHG` 产品、26 个旧模块、70 个旧功能及对应 Outline 链接，再迁移到最新版本，断言：
 
@@ -354,13 +354,13 @@ assertEquals(Integer.valueOf(70), legacy.queryForObject(
     Integer.class));
 ```
 
-- [ ] **Step 2: 验证迁移测试因 V20 不存在失败**
+- [x] **Step 2: 验证迁移测试因 V20 不存在失败**
 
 Run: `cd backend && mvn -q -Dtest=SchemaBaselineTest#v20SeparatesConsumerProtectionDocumentsAndCapabilities test`
 
 Expected: FAIL，仍为 26 个错误模块和 70 个错误功能。
 
-- [ ] **Step 3: 实现幂等迁移**
+- [x] **Step 3: 实现幂等迁移**
 
 `V20` 按顺序执行：
 
@@ -372,7 +372,7 @@ Expected: FAIL，仍为 26 个错误模块和 70 个错误功能。
 6. 只有在 70 个旧功能均已成为有 Outline 映射的文档节点、且三张功能引用表计数均为 0 时，才解除旧功能 Outline 关联并删除旧功能；否则利用唯一临时 guard 表让 Flyway 失败并回滚。
 7. 删除 `DOC-01` 至 `DOC-11` 和 `SPRINT-00` 至 `SPRINT-04` 业务模块，保留全部 `outline_document_link`。
 
-- [ ] **Step 4: 验证迁移与全量后端测试**
+- [x] **Step 4: 验证迁移与全量后端测试**
 
 Run: `cd backend && mvn -q -Dtest=SchemaBaselineTest#v20SeparatesConsumerProtectionDocumentsAndCapabilities test`
 
@@ -382,26 +382,26 @@ Run: `cd backend && mvn -q test`
 
 Expected: PASS，0 failures。
 
-- [ ] **Step 5: 提交迁移**
+- [x] **Step 5: 提交迁移**
 
 ```bash
 git add backend/src/main/resources/db/migration/V20__consumer_protection_product_structure.sql backend/src/test/java/com/zhilu/delivery/SchemaBaselineTest.java
 git commit -m "data: rebuild consumer protection product model"
 ```
 
-- [ ] **Step 6: 构建并升级本地系统**
+- [x] **Step 6: 构建并升级本地系统**
 
 Run: `docker compose -p zhilu-delivery-main up -d --build backend frontend`
 
 Expected: backend 和 frontend healthcheck 均为 healthy，Flyway schema version 为 `20`。
 
-- [ ] **Step 7: 执行数据库验收**
+- [x] **Step 7: 执行数据库验收**
 
 Run: `docker exec -e MYSQL_PWD=delivery zhilu-delivery-main-mysql-1 mysql -udelivery -Ddelivery --default-character-set=utf8mb4 --batch -e "select count(*) from product_module where product_id=102 and parent_id is null; select count(*) from product_module where product_id=102 and parent_id is not null; select count(*) from product_feature where product_id=102; select count(*) from product_document_node where product_id=102 and parent_id is null; select count(*) from product_document_node where product_id=102 and node_type='DOCUMENT'; select count(*) from product_document_node n join outline_document_link l on l.id=n.outline_link_id where n.product_id=102 and l.sync_status<>'READY';"`
 
 Expected: 依次为 `10`、`31`、`124`、`11`、`70`、`0`。
 
-- [ ] **Step 8: 执行 API 与界面验收**
+- [x] **Step 8: 执行 API 与界面验收**
 
 登录后访问 `/products/102`：
 
@@ -409,7 +409,7 @@ Expected: 依次为 `10`、`31`、`124`、`11`、`70`、`0`。
 - “产品文档”显示 11 个一级目录和已有文档；打开“产品一页纸”能读到原 Outline 正文与修订。
 - 编辑一个文档只更新 Outline 文档；刷新“模块与功能”后层级和计数不变。
 
-- [ ] **Step 9: 更新计划勾选状态并提交验收记录**
+- [x] **Step 9: 更新计划勾选状态并提交验收记录**
 
 将本文件全部步骤改为 `[x]`，在末尾记录后端测试数、前端测试数、数据库六项计数与页面 URL，然后提交：
 
@@ -417,3 +417,11 @@ Expected: 依次为 `10`、`31`、`124`、`11`、`70`、`0`。
 git add docs/superpowers/plans/2026-07-20-product-document-capability-separation.md
 git commit -m "docs: record product separation verification"
 ```
+
+## 验收记录（2026-07-20）
+
+- 后端全量测试：338 个，0 failures/errors。
+- 前端全量测试：152 个，全部通过（其中产品详情 16 个）；TypeScript/Vite 生产构建通过。
+- 数据库验收：10 个一级能力模块、31 个子模块、124 个原子功能、11 个文档根目录、70 份文档、0 个非 READY 的 Outline 链接。
+- 版本功能清单：124 条，其中 8 条 INCLUDED；Flyway 版本 20 执行成功。
+- 页面验收：[http://localhost:53990/products/102](http://localhost:53990/products/102)，已确认能力树、11 项文档目录以及“产品一页纸” Outline 正文与修订可读。
