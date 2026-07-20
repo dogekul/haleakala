@@ -53,56 +53,6 @@ class SchemaBaselineTest {
   }
 
   @Test
-  void flywayCreatesCustomerManagementWithoutCustomerCodes() {
-    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
-        "select count(*) from information_schema.tables where table_schema='public' "
-            + "and table_name='customer'", Integer.class));
-    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
-        "select count(*) from information_schema.columns where table_schema='public' "
-            + "and table_name='delivery_project' and column_name='customer_id'", Integer.class));
-    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
-        "select count(*) from information_schema.columns where table_schema='public' "
-            + "and table_name='customer' and column_name='code'", Integer.class));
-    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
-        "select count(*) from permission where code in ('customer:read','customer:write')",
-        Integer.class));
-    assertEquals(Integer.valueOf(6), jdbc.queryForObject(
-        "select count(*) from role_permission rp join role r on r.id=rp.role_id "
-            + "join permission p on p.id=rp.permission_id "
-            + "where r.built_in=true and p.code='customer:read'", Integer.class));
-    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
-        "select count(*) from role_permission rp join role r on r.id=rp.role_id "
-            + "join permission p on p.id=rp.permission_id "
-            + "where r.code in ('ADMIN','PMO','DELIVERY_MANAGER') "
-            + "and p.code='customer:write'", Integer.class));
-  }
-
-  @Test
-  void v12BackfillsOneCustomerPerOrganizationAndLegacyName() {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource(
-        "jdbc:h2:mem:legacy-customers;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
-        "sa", "");
-    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("11"))
-        .load().migrate();
-    JdbcTemplate legacy = new JdbcTemplate(dataSource);
-    organizationAndUser(legacy, 991, "CUSTOMER-ORG");
-    legacy.update("insert into product(id,organization_id,owner_user_id,code,name,status) "
-        + "values (991,991,991,'PRODUCT-991','产品991','ACTIVE')");
-    legacy.update("insert into product_version(id,product_id,version_name,status) "
-        + "values (991,991,'V1','RELEASED')");
-    project(legacy, 991, 991, 991, 991);
-    project(legacy, 992, 991, 991, 991);
-
-    Flyway.configure().dataSource(dataSource).load().migrate();
-
-    assertEquals(Integer.valueOf(1), legacy.queryForObject(
-        "select count(*) from customer where organization_id=991 and name='客户'", Integer.class));
-    assertEquals(Integer.valueOf(2), legacy.queryForObject(
-        "select count(*) from delivery_project p join customer c on c.id=p.customer_id "
-            + "where p.organization_id=991 and c.name=p.customer_name", Integer.class));
-  }
-
-  @Test
   void upgradesLegacyMaintenanceProductToSunset() {
     String url = "jdbc:h2:mem:legacy-maintenance;MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
         + "DB_CLOSE_DELAY=-1";

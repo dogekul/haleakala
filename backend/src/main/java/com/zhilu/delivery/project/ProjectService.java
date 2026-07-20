@@ -38,15 +38,12 @@ public class ProjectService {
     if (validVersion == null || validVersion != 1) {
       throw new IllegalArgumentException("产品或版本不可用于新项目");
     }
-    Map<String, Object> customer = customerForProject(
-        command.getOrganizationId(), command.getCustomerId());
     assertOrganizationUser(command.getOrganizationId(), command.getManagerUserId());
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("organization_id", command.getOrganizationId());
     values.put("code", command.getCode().trim());
     values.put("name", command.getName().trim());
-    values.put("customer_id", command.getCustomerId());
-    values.put("customer_name", customer.get("name"));
+    values.put("customer_name", command.getCustomerName().trim());
     values.put("product_id", command.getProductId());
     values.put("product_version_id", command.getProductVersionId());
     values.put("manager_user_id", command.getManagerUserId());
@@ -107,16 +104,13 @@ public class ProjectService {
 
   public ProjectView get(long projectId) {
     List<ProjectView> values = jdbc.query(
-        "select p.*,coalesce(c.name,p.customer_name) customer_display_name,"
-            + "pr.name product_name,pv.version_name,u.display_name manager_name "
+        "select p.*,pr.name product_name,pv.version_name,u.display_name manager_name "
             + "from delivery_project p join product pr on pr.id=p.product_id "
             + "join product_version pv on pv.id=p.product_version_id "
-            + "join app_user u on u.id=p.manager_user_id "
-            + "left join customer c on c.id=p.customer_id where p.id=?",
+            + "join app_user u on u.id=p.manager_user_id where p.id=?",
         (row, index) -> new ProjectView(
             row.getLong("id"), row.getLong("organization_id"), row.getString("code"),
-            row.getString("name"), nullableLong(row, "customer_id"),
-            row.getString("customer_display_name"), row.getLong("product_id"),
+            row.getString("name"), row.getString("customer_name"), row.getLong("product_id"),
             row.getString("product_name"), row.getLong("product_version_id"),
             row.getString("version_name"), row.getLong("manager_user_id"),
             row.getString("manager_name"), row.getString("status"), row.getString("current_stage"),
@@ -367,23 +361,6 @@ public class ProjectService {
         "select count(*) from app_user where id=? and organization_id=?",
         Integer.class, userId, organizationId);
     if (count == null || count == 0) throw new NotFoundException("用户不存在");
-  }
-
-  private Map<String, Object> customerForProject(long organizationId, long customerId) {
-    List<Map<String, Object>> values = jdbc.queryForList(
-        "select id,name,status from customer where id=? and organization_id=?",
-        customerId, organizationId);
-    if (values.isEmpty()) throw new NotFoundException("客户不存在");
-    Map<String, Object> customer = values.get(0);
-    if (!"ACTIVE".equals(customer.get("status"))) {
-      throw new IllegalArgumentException("停用客户不能创建项目");
-    }
-    return customer;
-  }
-
-  private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException {
-    Object value = row.getObject(column);
-    return value == null ? null : ((Number) value).longValue();
   }
 
   private boolean hasCrossProjectScope(CurrentUser user) {
