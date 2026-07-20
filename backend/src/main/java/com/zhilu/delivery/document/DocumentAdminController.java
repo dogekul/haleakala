@@ -3,7 +3,6 @@ package com.zhilu.delivery.document;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.iam.service.CurrentUser;
-import com.zhilu.delivery.catalog.ProductDocumentService;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,16 +27,14 @@ public class DocumentAdminController {
   private final OutlineConfigurationService configurations;
   private final OutlineClient outline;
   private final AuditService audit;
-  private final ProductDocumentService productDocuments;
 
   public DocumentAdminController(
       DocumentMigrationService migrations, OutlineConfigurationService configurations,
-      OutlineClient outline, AuditService audit, ProductDocumentService productDocuments) {
+      OutlineClient outline, AuditService audit) {
     this.migrations = migrations;
     this.configurations = configurations;
     this.outline = outline;
     this.audit = audit;
-    this.productDocuments = productDocuments;
   }
 
   @GetMapping("/status")
@@ -93,13 +90,6 @@ public class DocumentAdminController {
   public Map<String, Object> initialize(@AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> value = migrations.initialize(user.getOrganizationId());
     audit(user, "INITIALIZE", "DOCUMENT_CENTER", null, "初始化文档中心根目录");
-    return value;
-  }
-
-  @PostMapping("/initialize-products")
-  public Map<String, Object> initializeProducts(@AuthenticationPrincipal CurrentUser user) {
-    Map<String, Object> value = productDocuments.initializeAll(user.getOrganizationId());
-    audit(user, "INITIALIZE", "PRODUCT_DOCUMENT", null, String.valueOf(value));
     return value;
   }
 

@@ -194,8 +194,12 @@ public class OpportunityStageDocumentService {
     if (productVersionId != null) {
       features = jdbc.queryForList(
           "select f.id feature_id,f.code feature_code,f.name feature_name,"
-              + "f.outline_link_id,pvf.availability from product_version_feature pvf "
+              + "coalesce(n.outline_link_id,f.outline_link_id) spec_outline_link_id,"
+              + "pvf.availability "
+              + "from product_version_feature pvf "
               + "join product_feature f on f.id=pvf.product_feature_id "
+              + "left join product_document_node n on n.product_id=f.product_id "
+              + "and n.linked_feature_id=f.id and n.node_type='DOCUMENT' "
               + "where pvf.product_version_id=? and f.product_id=? "
               + "and pvf.availability in ('INCLUDED','PLANNED') "
               + "and f.status<>'DEPRECATED' order by f.name,f.id",
@@ -203,7 +207,11 @@ public class OpportunityStageDocumentService {
     } else {
       features = jdbc.queryForList(
           "select f.id feature_id,f.code feature_code,f.name feature_name,"
-              + "f.outline_link_id,'ALL' availability from product_feature f "
+              + "coalesce(n.outline_link_id,f.outline_link_id) spec_outline_link_id,"
+              + "'ALL' availability "
+              + "from product_feature f left join product_document_node n "
+              + "on n.product_id=f.product_id and n.linked_feature_id=f.id "
+              + "and n.node_type='DOCUMENT' "
               + "where f.product_id=? and f.status<>'DEPRECATED' order by f.name,f.id",
           productId);
     }
@@ -212,18 +220,17 @@ public class OpportunityStageDocumentService {
       context.append("（没有可用功能）\n");
     }
     for (Map<String, Object> feature : features) {
-      long featureId = ((Number) feature.get("feature_id")).longValue();
       context.append("\n### [").append(text(feature.get("availability"))).append("] ")
           .append(text(feature.get("feature_code"))).append(" · ")
           .append(text(feature.get("feature_name"))).append('\n');
-      if (feature.get("outline_link_id") == null) {
+      if (feature.get("spec_outline_link_id") == null) {
         warnings.add("功能“" + text(feature.get("feature_name")) + "”尚未初始化设计 Spec");
         context.append("（设计 Spec 缺失）\n");
         continue;
       }
       try {
-        DocumentView spec = documents.readBusinessDocument(organizationId,
-            "PRODUCT:" + productId + ":FEATURE:" + featureId + ":SPEC");
+        long linkId = ((Number) feature.get("spec_outline_link_id")).longValue();
+        DocumentView spec = documents.readLink(linkId, organizationId);
         context.append(spec.getMarkdown()).append('\n');
       } catch (RuntimeException unavailable) {
         warnings.add("功能“" + text(feature.get("feature_name")) + "”的设计 Spec 无法读取");

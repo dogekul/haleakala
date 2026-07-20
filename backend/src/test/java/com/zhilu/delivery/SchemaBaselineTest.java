@@ -53,6 +53,165 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void flywayCreatesIndependentProductDocumentNodes() {
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name='product_document_node'", Integer.class));
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='product_document_node' "
+            + "and constraint_name in ('uk_product_document_code',"
+            + "'uk_product_document_outline','uk_product_document_feature')", Integer.class));
+  }
+
+  @Test
+  void v20SeparatesConsumerProtectionDocumentsAndCapabilities() {
+    JdbcTemplate legacy = seedConsumerProtectionV19("consumer-protection-v20");
+    Flyway.configure().dataSource(legacy.getDataSource()).load().migrate();
+
+    assertEquals(Integer.valueOf(11), legacy.queryForObject(
+        "select count(*) from product_document_node where product_id=102 and parent_id is null",
+        Integer.class));
+    assertEquals(Integer.valueOf(39), legacy.queryForObject(
+        "select count(*) from product_document_node where product_id=102 "
+            + "and node_type='DOCUMENT' and (code like 'DOC-%' or code like 'SPRINT-%')",
+        Integer.class));
+    assertEquals(Integer.valueOf(10), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102 and parent_id is null",
+        Integer.class));
+    assertEquals(Integer.valueOf(31), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102 and parent_id is not null",
+        Integer.class));
+    assertEquals(Integer.valueOf(124), legacy.queryForObject(
+        "select count(*) from product_feature where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(124), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(8), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102 "
+            + "and pvf.availability='INCLUDED'", Integer.class));
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_document_node n join outline_document_link l "
+            + "on l.id=n.outline_link_id where n.product_id=102 and n.node_type='DOCUMENT'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), legacy.queryForObject(
+        "select count(*) from product_document_node n join outline_document_link l "
+            + "on l.id=n.outline_link_id where n.product_id=102 "
+            + "and l.sync_status='FAILED' and l.last_error='prior failure'", Integer.class));
+  }
+
+  @Test
+  void v20RejectsSubmoduleCodeDriftWithoutDestroyingLegacyData() {
+    JdbcTemplate legacy = seedConsumerProtectionV19("consumer-protection-v20-drift");
+    legacy.update("update product_feature set code='RULE-LAW-DRIFTED' "
+        + "where product_id=102 and code='RULE-LAW'");
+
+    assertThrows(FlywayException.class,
+        () -> Flyway.configure().dataSource(legacy.getDataSource()).load().migrate());
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_feature where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(26), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
+  }
+
+  private JdbcTemplate seedConsumerProtectionV19(String databaseName) {
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        "jdbc:h2:mem:" + databaseName + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
+            + "DB_CLOSE_DELAY=-1", "sa", "");
+    Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("19"))
+        .load().migrate();
+    JdbcTemplate legacy = new JdbcTemplate(dataSource);
+    legacy.update("insert into organization(id,name,code) values (102,'消保组织','XB-ORG')");
+    legacy.update("insert into product(id,organization_id,code,name,status) "
+        + "values (102,102,'XBHG','消保合规','ACTIVE')");
+    legacy.update("insert into product_version(id,product_id,version_name,status) "
+        + "values (102,102,'版本01','RELEASED')");
+    String[] documentNames = {"01 产品总纲","02 领域建模","03 UI 模式库","04 MVP 范围",
+        "05 Spec 工作区","06 产品模块库","07 ROI 追踪","08 重构工作区","09 学习成长",
+        "10 需求收件箱","11 运营日志"};
+    for (int index = 0; index < documentNames.length; index++) {
+      seedOldModule(legacy, index + 1, null, "DOC-" + two(index + 1), documentNames[index]);
+    }
+    for (int index = 0; index < 5; index++) {
+      seedOldModule(legacy, 12 + index, 5L, "SPRINT-0" + index, "Sprint 0" + index);
+    }
+    String[] capabilityNames = {"法规与规则中心","审查任务中心","智能审查引擎","人工复核中心",
+        "整改闭环","消保专项","报告与洞察","集成开放","安全审计","运营管理"};
+    for (int index = 0; index < capabilityNames.length; index++) {
+      seedOldModule(legacy, 17 + index, 6L, "CAP-" + two(index + 1), capabilityNames[index]);
+    }
+    int featureId = 1;
+    int[] documentCounts = {4,3,3,4,0,0,4,4,4,4,4};
+    for (int module = 1; module <= 11; module++) {
+      for (int item = 1; item <= documentCounts[module - 1]; item++) {
+        seedOldFeature(legacy, featureId++, module,
+            "DOC-" + two(module) + "-" + two(item), "工作区文档 " + module + "-" + item);
+      }
+    }
+    for (int sprint = 0; sprint < 5; sprint++) {
+      seedOldFeature(legacy, featureId++, 12 + sprint,
+          "SPRINT-0" + sprint + "-PLAN", "Sprint 计划 " + sprint);
+    }
+    String[] submoduleCodes = {"RULE-LAW","RULE-INTERNAL","RULE-ORCHESTRATION",
+        "TASK-INTAKE","TASK-MATERIAL","TASK-WORKFLOW","AI-PARSE","AI-RISK","AI-EXPLAIN",
+        "REVIEW-WORKBENCH","REVIEW-COLLAB","REVIEW-ESCALATION","RECTIFY-MANAGE",
+        "RECTIFY-DIFF","RECTIFY-REMIND","SPECIAL-PRODUCT","SPECIAL-MARKETING",
+        "SPECIAL-SALES","SPECIAL-COMPLAINT","REPORT-GENERATE","REPORT-RISK","REPORT-VALUE",
+        "INTEGRATION-IAM","INTEGRATION-BUSINESS","INTEGRATION-OPEN","SECURITY-PERMISSION",
+        "SECURITY-DATA","SECURITY-AUDIT","OPS-RULE","OPS-MODEL","OPS-SYSTEM"};
+    int[] capabilityCounts = {3,3,3,3,3,4,3,3,3,3};
+    int submodule = 0;
+    for (int module = 0; module < capabilityCounts.length; module++) {
+      for (int item = 1; item <= capabilityCounts[module]; item++) {
+        seedOldFeature(legacy, featureId++, 17 + module, submoduleCodes[submodule],
+            "子模块 " + (module + 1) + "-" + item);
+        submodule++;
+      }
+    }
+
+    return legacy;
+  }
+
+  private void seedOldModule(
+      JdbcTemplate legacy, long id, Long parentId, String code, String name) {
+    long linkId = 1000 + id;
+    legacy.update("insert into outline_document_link(id,organization_id,business_key,purpose,"
+            + "outline_collection_id,outline_document_id,outline_url_id,title_cache,sync_status) "
+            + "values (?,?,?,?,?,?,?,?,?)", linkId, 102,
+        "PRODUCT:102:MODULE:" + id, "INDEX", "collection", "module-" + id,
+        "module-url-" + id, name, "READY");
+    legacy.update("insert into product_module(id,product_id,parent_id,code,name,status,sort_order) "
+            + "values (?,?,?,?,?,'ACTIVE',?)", id, 102, parentId, code, name, id);
+  }
+
+  private void seedOldFeature(
+      JdbcTemplate legacy, long id, long moduleId, String code, String name) {
+    long linkId = 2000 + id;
+    String syncStatus = "DOC-01-01".equals(code) ? "FAILED" : "READY";
+    legacy.update("insert into outline_document_link(id,organization_id,business_key,purpose,"
+            + "outline_collection_id,outline_document_id,outline_url_id,title_cache,sync_status,"
+            + "last_error) values (?,?,?,?,?,?,?,?,?,?)", linkId, 102,
+        "PRODUCT:102:FEATURE:" + id + ":SPEC", "PRODUCT_FEATURE_SPEC", "collection",
+        "feature-" + id, "feature-url-" + id, name, syncStatus,
+        "FAILED".equals(syncStatus) ? "prior failure" : null);
+    legacy.update("insert into product_feature(id,product_id,module_id,code,name,status,"
+            + "outline_link_id) values (?,?,?,?,?,'ACTIVE',?)",
+        id, 102, moduleId, code, name, linkId);
+    String availability = "AI-EXPLAIN".equals(code) || "REVIEW-COLLAB".equals(code)
+        || "DOC-09-04".equals(code) ? "INCLUDED" : "REMOVED";
+    legacy.update("insert into product_version_feature(product_version_id,product_feature_id,"
+        + "availability) values (102,?,?)", id, availability);
+  }
+
+  private String two(int value) {
+    return value < 10 ? "0" + value : String.valueOf(value);
+  }
+
+  @Test
   void flywayCreatesCustomerManagementWithoutCustomerCodes() {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.tables where table_schema='public' "

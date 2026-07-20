@@ -1,6 +1,6 @@
 import { api } from '../../services/api'
 import type {
-  Product, ProductCoverage, ProductDocumentNode, ProductDocumentSyncResult, ProductFeature,
+  Product, ProductCoverage, ProductDocumentNode, ProductFeature,
   ProductModule, ProductVersion, VersionManifest,
 } from './types'
 import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
@@ -43,19 +43,24 @@ export const productApi = {
     },
   ),
   coverage: (productId: number) => api<ProductCoverage>(`/api/v1/products/${productId}/coverage`),
-  documents: (productId: number) => api<ProductDocumentNode[]>(
-    `/api/v1/products/${productId}/documents`,
+  documentNodes: (productId: number) => api<ProductDocumentNode[]>(
+    `/api/v1/products/${productId}/document-nodes`,
   ),
-  syncDocuments: (productId: number) => api<ProductDocumentSyncResult>(
-    `/api/v1/products/${productId}/documents/sync`, { method: 'POST' },
+  saveDocumentNode: (productId: number, id: number | undefined, input: Input) => api<ProductDocumentNode>(
+    `/api/v1/products/${productId}/document-nodes${id ? `/${id}` : ''}`, {
+      method: id ? 'PUT' : 'POST', body: JSON.stringify(input),
+    },
   ),
-  featureSpec: (productId: number, featureId: number) => api<DocumentContent>(
-    `/api/v1/products/${productId}/features/${featureId}/spec`,
+  retryDocumentNode: (productId: number, nodeId: number) => api<ProductDocumentNode>(
+    `/api/v1/products/${productId}/document-nodes/${nodeId}/retry`, { method: 'POST' },
   ),
-  saveFeatureSpec: (productId: number, featureId: number, input: SaveDocumentInput) =>
-    api<DocumentContent>(`/api/v1/products/${productId}/features/${featureId}/spec`, {
+  documentNodeContent: (productId: number, nodeId: number) => api<DocumentContent>(
+    `/api/v1/products/${productId}/document-nodes/${nodeId}/content`,
+  ),
+  saveDocumentNodeContent: (productId: number, nodeId: number, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/products/${productId}/document-nodes/${nodeId}/content`, {
       method: 'PUT', body: JSON.stringify(input),
     }),
-  featureSpecExportUrl: (productId: number, featureId: number, format: DocumentFormat) =>
-    apiPath(`/api/v1/products/${productId}/features/${featureId}/spec/export?format=${format}`),
+  documentNodeExportUrl: (productId: number, nodeId: number, format: DocumentFormat) =>
+    apiPath(`/api/v1/products/${productId}/document-nodes/${nodeId}/export?format=${format}`),
 }
