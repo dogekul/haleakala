@@ -111,7 +111,6 @@ services:
       - caddy-config:/config
     depends_on:
       dex: { condition: service_healthy }
-      outline: { condition: service_healthy }
     networks: [private]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]

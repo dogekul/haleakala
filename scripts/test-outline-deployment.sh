@@ -23,6 +23,10 @@ grep -q 'caddy:2.11.4-alpine' "$COMPOSE"
 grep -q '443:443' "$COMPOSE"
 grep -q 'mem_limit: 768m' "$COMPOSE"
 grep -q 'external: true' "$COMPOSE"
+if awk '/^  caddy:/{in_caddy=1; next} /^  [a-z]/{in_caddy=0} in_caddy' "$COMPOSE" | grep -q 'outline:'; then
+  echo 'Caddy must not wait for Outline; Outline needs Caddy for OIDC discovery' >&2
+  exit 1
+fi
 grep -q 'outline.8.166.121.138.sslip.io' "$CADDY"
 grep -q '__DEX_OIDC_CLIENT_SECRET__' "$DEX"
 grep -q '__DEX_ADMIN_PASSWORD_HASH__' "$DEX"
