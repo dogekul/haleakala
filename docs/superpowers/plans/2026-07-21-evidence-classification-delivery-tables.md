@@ -31,7 +31,7 @@
 - Consumes: existing `classification_suggestion` latest-row join.
 - Produces: nullable `details_json`; API fields `classificationEvidence`, `classificationWarnings`, `constructionContents`, `productionPlan`.
 
-- [ ] **Step 1: Write failing schema and mapping tests**
+- [x] **Step 1: Write failing schema and mapping tests**
 
 Add a schema assertion:
 
@@ -50,13 +50,13 @@ assertEquals("客户校验", ((Map<?, ?>) ((List<?>) requirements.get(id)
     .get("constructionContents")).get(0)).get("featureName"));
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run `mvn -q -Dtest=SchemaBaselineTest,ClassificationServiceTest test`.
 
 Expected: FAIL because `details_json` and the six-argument `saveSuggestion` do not exist.
 
-- [ ] **Step 3: Add migration and minimal JSON persistence**
+- [x] **Step 3: Add migration and minimal JSON persistence**
 
 Create:
 
@@ -78,11 +78,11 @@ public Map<String, Object> saveSuggestion(long id, String level, double confiden
 
 Parse only valid object JSON in `map`; historical null or malformed payloads return empty lists without breaking legacy records.
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run the same Maven command and expect all selected tests to pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/resources/db/migration/V22__classification_delivery_tables.sql backend/src/test/java/com/zhilu/delivery/SchemaBaselineTest.java backend/src/main/java/com/zhilu/delivery/requirement/RequirementService.java backend/src/test/java/com/zhilu/delivery/requirement/ClassificationServiceTest.java
@@ -101,7 +101,7 @@ git commit -m "feat: persist requirement classification delivery tables"
 - Consumes: `AiClient.completeJson`, `DocumentCenterService.readLink`, requirement/project/product tables, product version features, product document nodes and manual coverage.
 - Produces: `JsonNode analyze(long requirementId)` with exact fields `level`, `confidence`, `reason`, `evidence`, `warnings`, `constructionContents`, `productionPlan`.
 
-- [ ] **Step 1: Write failing two-stage context test**
+- [x] **Step 1: Write failing two-stage context test**
 
 Seed one formal requirement document, two version functions, manual `PARTIAL` coverage and one linked Spec. Mock ordered AI results `{ "featureIds": [501] }` and a complete final result. Capture prompts and assert:
 
@@ -113,13 +113,13 @@ assertTrue(finalPrompt.contains("PARTIAL"));
 assertTrue(finalPrompt.contains("计划开始"));
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [x] **Step 2: Run test and verify RED**
 
 Run `mvn -q -Dtest=RequirementClassificationAiServiceTest test`.
 
 Expected: FAIL because `RequirementClassificationAiService` does not exist.
 
-- [ ] **Step 3: Implement context loading and candidate selection**
+- [x] **Step 3: Implement context loading and candidate selection**
 
 Create one Spring service with `JdbcTemplate`, `DocumentCenterService`, `AiClient` and `ObjectMapper`. Require `requirement_item.outline_link_id`, read report Markdown and query the complete version catalog:
 
@@ -137,13 +137,13 @@ order by m.sort_order,m.id,f.id
 
 The first schema contains only integer array `featureIds`. Filter unknown IDs, preserve catalog order, take at most 12 AI candidates, then append all manual coverage IDs.
 
-- [ ] **Step 4: Implement final schema, prompts and strict validation**
+- [x] **Step 4: Implement final schema, prompts and strict validation**
 
 Build the nested schema from the exact fields in the design. The prompt states evidence rules, L0/L1/L2 definitions, minimum one row per table, date format and “待确认” fallback. Read candidate Specs individually and append warnings for missing or unavailable Specs.
 
 Validate exact top-level size, enums, confidence range, non-empty arrays, exact row field counts and non-blank text. Throw `AiServiceException(INCOMPATIBLE_RESPONSE)` for any invalid response.
 
-- [ ] **Step 5: Wire RequirementService and verify GREEN**
+- [x] **Step 5: Wire RequirementService and verify GREEN**
 
 Replace its direct AI prompt with:
 
@@ -155,7 +155,7 @@ return saveSuggestion(id, result.get("level").asText(),
 
 Update organization tests to seed required report/catalog and return two staged responses. Run `mvn -q -Dtest=RequirementClassificationAiServiceTest,RequirementAiOrganizationTest,ClassificationServiceTest test` and expect all selected tests to pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/src/main/java/com/zhilu/delivery/requirement/RequirementClassificationAiService.java backend/src/main/java/com/zhilu/delivery/requirement/RequirementService.java backend/src/test/java/com/zhilu/delivery/requirement/RequirementClassificationAiServiceTest.java backend/src/test/java/com/zhilu/delivery/requirement/RequirementAiOrganizationTest.java
@@ -173,7 +173,7 @@ git commit -m "feat: classify requirements from reports and product specs"
 - Consumes: `classificationEvidence`, `classificationWarnings`, `constructionContents`, `productionPlan`.
 - Produces: wide Chinese decision drawer with evidence area and two Ant Design tables.
 
-- [ ] **Step 1: Write failing UI test**
+- [x] **Step 1: Write failing UI test**
 
 Return a classified requirement with one row in each table, open “分类决策”, and assert:
 
@@ -185,23 +185,23 @@ expect(screen.getByText('灰度发布并验证回退')).toBeVisible()
 expect(screen.getByText('资料缺口')).toBeVisible()
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [x] **Step 2: Run test and verify RED**
 
 Run `npm test -- --run src/modules/requirement/RequirementWorkshop.test.tsx`.
 
 Expected: FAIL because the two table tabs are absent.
 
-- [ ] **Step 3: Add types and minimal table UI**
+- [x] **Step 3: Add types and minimal table UI**
 
 Add `ConstructionContent` and `ProductionPlanItem` interfaces matching the design. Import `Tabs`, render both `Table` components when rich details exist, use Chinese change-type labels, `pagination={false}`, stable row keys and drawer width 1180. Show evidence as a compact list and warnings in a warning `Alert`. Preserve the historical compact suggestion card when details are absent.
 
-- [ ] **Step 4: Run test and production build**
+- [x] **Step 4: Run test and production build**
 
 Run the focused test and `npm run build`.
 
 Expected: existing tests plus the new test pass; TypeScript and Vite build succeed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/modules/requirement/types.ts frontend/src/modules/requirement/RequirementWorkshop.tsx frontend/src/modules/requirement/RequirementWorkshop.test.tsx
@@ -217,18 +217,18 @@ git commit -m "feat: show requirement construction and production tables"
 - Consumes: completed Tasks 1-3.
 - Produces: verified branch merged into local `main`, rebuilt local services.
 
-- [ ] **Step 1: Run backend full test suite**
+- [x] **Step 1: Run backend full test suite**
 
 Run `cd backend && mvn test` and require zero failures with `BUILD SUCCESS`.
 
-- [ ] **Step 2: Run frontend full tests and build**
+- [x] **Step 2: Run frontend full tests and build**
 
 Run `cd frontend && npm test -- --run && npm run build` and require zero test failures plus a successful Vite build.
 
-- [ ] **Step 3: Check diff and commit plan progress**
+- [x] **Step 3: Check diff and commit plan progress**
 
 Run `git diff --check`, inspect `git status --short`, then commit only the completed plan markers.
 
-- [ ] **Step 4: Merge and rebuild**
+- [x] **Step 4: Merge and rebuild**
 
 Follow `superpowers:finishing-a-development-branch`, merge locally to `main`, preserve the existing DeepSeek client and Markdown working-tree changes, rebuild with `docker compose -p zhilu-delivery-main up -d --build`, and verify container health, `http://localhost:8082/actuator/health` and HTTP 200 from `http://localhost:53990/requirements`.
