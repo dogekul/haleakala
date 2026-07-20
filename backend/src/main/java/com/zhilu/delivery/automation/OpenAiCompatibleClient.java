@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -44,16 +46,22 @@ public class OpenAiCompatibleClient implements AiClient {
       AiConnection connection, String systemPrompt, String userPrompt, JsonNode schema) {
     if (connection == null || !connection.isConfigured()) throw new AiNotConfiguredException();
     validateApiKey(connection.getApiKey());
+    boolean jsonObject = usesJsonObject(connection);
     ObjectNode request = json.createObjectNode();
     request.put("model", connection.getModel()); request.put("temperature", 0.1);
     ArrayNode messages = request.putArray("messages");
-    messages.add(message("system", systemPrompt));
+    messages.add(message("system", jsonObject
+        ? systemPrompt + "\nReturn only a JSON object matching this JSON Schema exactly:\n"
+            + schema.toString()
+        : systemPrompt));
     messages.add(message("user", userPrompt));
     ObjectNode format = request.putObject("response_format");
-    format.put("type", "json_schema");
-    ObjectNode definition = format.putObject("json_schema");
-    definition.put("name", "delivery_response"); definition.put("strict", true);
-    definition.set("schema", schema);
+    format.put("type", jsonObject ? "json_object" : "json_schema");
+    if (!jsonObject) {
+      ObjectNode definition = format.putObject("json_schema");
+      definition.put("name", "delivery_response"); definition.put("strict", true);
+      definition.set("schema", schema);
+    }
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
     headers.setBearerAuth(connection.getApiKey());
@@ -101,6 +109,14 @@ public class OpenAiCompatibleClient implements AiClient {
     String root = baseUrl.endsWith("/")
         ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     return root.endsWith("/v1") ? root + "/chat/completions" : root + "/v1/chat/completions";
+  }
+
+  private boolean usesJsonObject(AiConnection connection) {
+    String host = URI.create(connection.getBaseUrl()).getHost();
+    String model = connection.getModel().toLowerCase(Locale.ROOT);
+    return model.startsWith("deepseek-")
+        || host != null && ("api.deepseek.com".equalsIgnoreCase(host)
+            || host.toLowerCase(Locale.ROOT).endsWith(".deepseek.com"));
   }
 
   private boolean hasCause(Throwable failure, Class<? extends Throwable> type) {

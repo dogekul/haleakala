@@ -74,6 +74,24 @@ class OpenAiCompatibleClientTest {
   }
 
   @Test
+  void usesJsonObjectModeForDeepSeekAndIncludesTheSchemaInThePrompt() throws Exception {
+    respondWith(200,
+        "{\"choices\":[{\"message\":{\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}}]}");
+    AiConnection deepSeek = new AiConnection(1L,
+        "http://127.0.0.1:" + server.getAddress().getPort(),
+        "deepseek-v4-flash", "test-key", "ORGANIZATION");
+    JsonNode schema = json.createObjectNode().put("type", "object");
+
+    JsonNode result = client.completeJson(deepSeek, "system", "user", schema);
+
+    assertEquals("ok", result.path("status").asText());
+    JsonNode request = json.readTree(requestBody.get());
+    assertEquals("json_object", request.path("response_format").path("type").asText());
+    assertTrue(request.path("messages").path(0).path("content").asText()
+        .contains(schema.toString()));
+  }
+
+  @Test
   void mapsAuthenticationFailures() {
     assertEquals(AiServiceException.Type.AUTHENTICATION, failureFor(401).getType());
     assertEquals(AiServiceException.Type.AUTHENTICATION, failureFor(403).getType());
