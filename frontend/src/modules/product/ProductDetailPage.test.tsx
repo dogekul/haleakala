@@ -109,6 +109,7 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   const fetch = show()
   const user = userEvent.setup()
   expect(await screen.findByRole('tab', { name: '模块与功能' })).toBeVisible()
+  expect(screen.getByRole('link', { name: /返回产品中心/ })).toHaveClass('detail-back-link')
   expect(fetch).not.toHaveBeenCalledWith('/api/v1/products/8/modules', expect.anything())
 
   await user.click(screen.getByRole('tab', { name: '模块与功能' }))

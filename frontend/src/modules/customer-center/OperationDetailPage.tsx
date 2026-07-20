@@ -20,7 +20,7 @@ export function OperationDetailPage() {
     onSuccess: async () => { await Promise.all([client.invalidateQueries({ queryKey: ['operation', id] }), client.invalidateQueries({ queryKey: ['operations'] })]); message.success('运营阶段已推进') },
     onError: (error: Error) => message.error(error.message) })
   const item = query.data
-  return <div className="crm-page operation-detail"><Link className="detail-back" to="/customers/operations"><ArrowLeftOutlined /> 返回客户运营</Link>
+  return <div className="crm-page operation-detail"><Link className="detail-back-link" to="/customers/operations"><ArrowLeftOutlined /> 返回客户运营</Link>
     <PageState loading={query.isLoading} error={query.error} empty={!item} onRetry={() => void query.refetch()}>
       {item && <><div className="crm-detail-hero"><div><Space><Tag color={item.status === 'OPEN' ? 'processing' : 'default'}>{operationStageLabel(item.stage)}</Tag><Tag>{item.status === 'OPEN' ? '进行中' : '已关闭'}</Tag></Space>
         <Typography.Title level={2}>{item.title}</Typography.Title><p>{item.customerName}</p></div>

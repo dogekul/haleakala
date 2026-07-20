@@ -313,6 +313,7 @@ it('商机详情展示活动产出物和客户到运营的全链深链', async (
     ['crm:read', 'crm:write'], '/customers/opportunities/1')
 
   expect(await screen.findByRole('heading', { name: '财务中台升级' })).toBeVisible()
+  expect(screen.getByRole('link', { name: /返回商机总览/ })).toHaveClass('detail-back-link')
   expect(await screen.findByText('确认关键联系人')).toBeVisible()
   expect(screen.getByRole('button', { name: '完成确认关键联系人' })).toBeVisible()
   expect(await screen.findByText('调研结论')).toBeVisible()

@@ -222,6 +222,7 @@ it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', a
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
     managerAuth, '/projects/9')
 
+  expect(await screen.findByRole('link', { name: /返回项目列表/ })).toHaveClass('detail-back-link')
   const advance = await screen.findByRole('button', { name: /推进至需求采集/ })
   await waitFor(() => expect(advance).toBeEnabled())
   await userEvent.click(advance)

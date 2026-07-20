@@ -29,7 +29,7 @@ export function ProjectDetail() {
 function ProjectDetailContent({ project }: { project: Project }) {
   const [tab, setTab] = useState('lifecycle')
   return <div className="project-detail">
-    <div className="detail-back"><Link to="/projects"><ArrowLeftOutlined /> 返回项目列表</Link></div>
+    <div className="detail-back"><Link className="detail-back-link" to="/projects"><ArrowLeftOutlined /> 返回项目列表</Link></div>
     <div className="project-hero">
       <div><Space><Tag color="blue">{project.code}</Tag><Tag color={project.riskLevel === 'RED' ? 'red' : project.riskLevel === 'YELLOW' ? 'orange' : 'green'}>
         {project.riskLevel === 'GREEN' ? '健康' : project.riskLevel === 'YELLOW' ? '需关注' : '高风险'}</Tag></Space>

@@ -28,7 +28,7 @@ export function OpportunityDetailPage() {
     onError: (error: Error) => message.error(error.message) })
 
   return <div className="crm-page opportunity-detail">
-    <Link className="detail-back" to="/customers/opportunities"><ArrowLeftOutlined /> 返回商机总览</Link>
+    <Link className="detail-back-link" to="/customers/opportunities"><ArrowLeftOutlined /> 返回商机总览</Link>
     <PageState loading={opportunity.isLoading} error={opportunity.error} empty={!opportunity.data} onRetry={() => void opportunity.refetch()}>
       {opportunity.data && <><div className="crm-detail-hero"><div><Space><Tag color="blue">{stageLabel(opportunity.data.stage)}</Tag><Tag>{statusLabels[opportunity.data.status]}</Tag></Space>
         <Typography.Title level={2}>{opportunity.data.title}</Typography.Title><p>{opportunity.data.customerName} · {opportunity.data.productName ?? '未关联产品'}</p></div>

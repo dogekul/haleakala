@@ -120,6 +120,7 @@ it('运营详情展示客户商机项目来源和可跳转全链', async () => {
     ['crm:read'], '/customers/operations/51')
 
   expect(await screen.findByRole('heading', { name: '华东银行持续运营' })).toBeVisible()
+  expect(screen.getByRole('link', { name: /返回客户运营/ })).toHaveClass('detail-back-link')
   expect(screen.getByText('周运营')).toBeVisible()
   expect(screen.getByRole('link', { name: '财务中台升级' })).toHaveAttribute('href', '/customers/opportunities/11')
   expect(screen.getByRole('link', { name: '财务中台项目' })).toHaveAttribute('href', '/projects/31')

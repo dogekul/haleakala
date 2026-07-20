@@ -20,7 +20,7 @@ export function ProductDetailPage() {
   if (!validId) return <PageState error={new Error('产品地址无效')}>{null}</PageState>
 
   return <div className="product-detail-page">
-    <Link className="product-detail-back" to="/products"><ArrowLeftOutlined /> 返回产品中心</Link>
+    <Link className="detail-back-link" to="/products"><ArrowLeftOutlined /> 返回产品中心</Link>
     <PageState loading={product.isLoading} error={product.error} onRetry={() => void product.refetch()}>
       {product.data && <>
         <div className="product-detail-heading"><div className="product-detail-title"><span>{product.data.code}</span>
