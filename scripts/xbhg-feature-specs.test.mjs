@@ -94,3 +94,9 @@ test('validator rejects incomplete or placeholder content', () => {
       .some((item) => item.includes('验收标准')));
   assert.ok(validateFeatureSpec(`${valid}\nTODO`, specContext).some((item) => item.includes('占位')));
 });
+
+test('validator accepts Outline-normalized unordered list markers', () => {
+  const specContext = context('LAW-INGEST');
+  const normalized = generateFeatureSpec(specContext).replace(/^- (BR|AC)/gm, '* $1');
+  assert.deepEqual(validateFeatureSpec(normalized, specContext), []);
+});

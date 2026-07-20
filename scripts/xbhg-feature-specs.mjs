@@ -385,8 +385,8 @@ export function validateFeatureSpec(markdown, context = {}) {
   for (const heading of REQUIRED_HEADINGS) {
     if (!markdown.includes(heading)) errors.push(`缺少章节: ${heading}`);
   }
-  if ((markdown.match(/^- BR-\d{2}：/gm) ?? []).length < 5) errors.push('业务规则少于 5 条');
-  if ((markdown.match(/^- AC-\d{2}：/gm) ?? []).length < 6) errors.push('验收标准少于 6 条');
+  if ((markdown.match(/^[*-] BR-\d{2}：/gm) ?? []).length < 5) errors.push('业务规则少于 5 条');
+  if ((markdown.match(/^[*-] AC-\d{2}：/gm) ?? []).length < 6) errors.push('验收标准少于 6 条');
   if (/\b(?:TODO|TBD)\b|请补充|\{\{|\}\}|\|[ \t]*\|/.test(markdown)) errors.push('正文包含占位内容或空表格');
   if (context.code && !markdown.includes(context.code)) errors.push(`正文缺少功能编码: ${context.code}`);
   if (context.name && !markdown.includes(context.name)) errors.push(`正文缺少功能名称: ${context.name}`);
