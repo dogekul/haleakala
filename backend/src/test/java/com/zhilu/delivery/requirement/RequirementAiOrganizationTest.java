@@ -1,17 +1,13 @@
 package com.zhilu.delivery.requirement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.zhilu.delivery.automation.AiClient;
-import com.zhilu.delivery.automation.AiServiceException;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +29,7 @@ class RequirementAiOrganizationTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private RequirementService requirements;
   @Autowired private ObjectMapper json;
-  @MockBean private AiClient ai;
+  @MockBean private RequirementClassificationAiService classifications;
 
   @BeforeEach
   void seed() {
@@ -57,49 +53,42 @@ class RequirementAiOrganizationTest {
         + "title,description,source,priority,status,created_by) values "
         + "(701,4100,4100,'REQ-701','智能分类','需要基于组织配置进行分类','调研','P1','DRAFT',4101)");
 
-    ObjectNode generated = json.createObjectNode();
-    generated.put("level", "L1");
-    generated.put("confidence", 0.9);
-    generated.put("reason", "需要二次开发");
-    when(ai.completeJson(eq(4100L), anyString(), anyString(), any()))
-        .thenReturn(generated);
+    when(classifications.analyze(701L)).thenReturn(completeResult());
   }
 
   @Test
-  void classifyUsesTheRequirementsOrganization() {
-    requirements.classify(701L, ACTOR_ID);
+  void classifyPersistsCompleteEvidenceAndDeliveryTables() {
+    Map<String, Object> result = requirements.classify(701L, ACTOR_ID);
 
-    verify(ai).completeJson(eq(4100L), anyString(), anyString(), any());
+    verify(classifications).analyze(701L);
+    assertEquals("L1", result.get("suggestedLevel"));
+    assertEquals("客户校验 Spec/当前能力",
+        ((List<?>) result.get("classificationEvidence")).get(0));
+    assertEquals("ENHANCEMENT",
+        ((Map<?, ?>) ((List<?>) result.get("constructionContents")).get(0)).get("changeType"));
+    assertEquals("开发与验证",
+        ((Map<?, ?>) ((List<?>) result.get("productionPlan")).get(0)).get("phase"));
   }
 
-  @Test
-  void classificationRejectsExtraResponseFields() {
-    ObjectNode generated = json.createObjectNode();
-    generated.put("level", "L1");
-    generated.put("confidence", 0.9);
-    generated.put("reason", "需要二次开发");
-    generated.put("ignored", true);
-    when(ai.completeJson(eq(4100L), anyString(), anyString(), any()))
-        .thenReturn(generated);
-
-    AiServiceException failure = assertThrows(
-        AiServiceException.class, () -> requirements.classify(701L, ACTOR_ID));
-
-    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE, failure.getType());
-  }
-
-  @Test
-  void classificationRejectsCoercibleWrongScalarTypes() {
-    ObjectNode generated = json.createObjectNode();
-    generated.put("level", "L1");
-    generated.put("confidence", "0.9");
-    generated.put("reason", 123);
-    when(ai.completeJson(eq(4100L), anyString(), anyString(), any()))
-        .thenReturn(generated);
-
-    AiServiceException failure = assertThrows(
-        AiServiceException.class, () -> requirements.classify(701L, ACTOR_ID));
-
-    assertEquals(AiServiceException.Type.INCOMPATIBLE_RESPONSE, failure.getType());
+  private ObjectNode completeResult() {
+    ObjectNode result = json.createObjectNode();
+    result.put("level", "L1"); result.put("confidence", 0.9);
+    result.put("reason", "需要增强开发");
+    result.putArray("evidence").add("客户校验 Spec/当前能力");
+    result.putArray("warnings").add("生产窗口待确认");
+    ObjectNode row = result.putArray("constructionContents").addObject();
+    row.put("moduleName", "客户管理"); row.put("featureCode", "VALIDATION");
+    row.put("featureName", "客户校验"); row.put("versionAvailability", "INCLUDED");
+    row.put("currentCapability", "校验证件格式"); row.put("gap", "缺少有效期校验");
+    row.put("changeType", "ENHANCEMENT"); row.put("constructionContent", "增强开发");
+    row.put("acceptanceCriteria", "无效证件被拦截"); row.put("priority", "P1");
+    row.put("evidence", "客户校验 Spec/当前能力");
+    ObjectNode phase = result.putArray("productionPlan").addObject();
+    phase.put("phase", "开发与验证"); phase.put("workItem", "完成增强和回归测试");
+    phase.put("ownerRole", "研发、测试"); phase.put("plannedStart", "待确认");
+    phase.put("plannedEnd", "待确认"); phase.put("deliverable", "发布包和测试报告");
+    phase.put("entryCriteria", "方案评审通过"); phase.put("exitCriteria", "验收通过");
+    phase.put("riskAndRollback", "灰度发布并验证回退");
+    return result;
   }
 }

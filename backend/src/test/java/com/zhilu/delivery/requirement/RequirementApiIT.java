@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -17,6 +18,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.document.DocumentCenterService;
@@ -54,12 +57,14 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class RequirementApiIT {
   @Autowired private MockMvc mvc;
+  @Autowired private ObjectMapper json;
   @SpyBean private JdbcTemplate jdbc;
   @Autowired private RequirementService requirements;
   @Autowired private RequirementFeatureService features;
   @Autowired private StandardizationService standardization;
   @SpyBean private RequirementDocumentService requirementDocuments;
   @MockBean private DocumentCenterService documents;
+  @MockBean private RequirementClassificationAiService classifications;
   private CurrentUser user;
   private long requirementId;
   private long uncoveredRequirementId;
@@ -118,6 +123,18 @@ class RequirementApiIT {
         .andExpect(jsonPath("$.productId").value(910));
     mvc.perform(get("/api/v1/requirements/funnel").with(authentication(authentication))).andExpect(status().isOk())
         .andExpect(jsonPath("$.L0").value(0));
+  }
+
+  @Test void classifyReturnsCompleteConstructionAndProductionTables() throws Exception {
+    when(classifications.analyze(requirementId)).thenReturn(completeClassification());
+
+    mvc.perform(post("/api/v1/requirements/{id}/classify", requirementId)
+            .with(actor(user, "requirement:classify")).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.classificationEvidence[0]").value("客户校验 Spec/当前能力"))
+        .andExpect(jsonPath("$.classificationWarnings[0]").value("生产窗口待确认"))
+        .andExpect(jsonPath("$.constructionContents[0].changeType").value("ENHANCEMENT"))
+        .andExpect(jsonPath("$.productionPlan[0].phase").value("开发与验证"));
   }
 
   @Test void updatesStructuredFieldsWithOptionalAiReportRegeneration() throws Exception {
@@ -651,6 +668,28 @@ class RequirementApiIT {
     assertEquals("STANDARDIZATION", retained.get("source"));
     assertEquals(910L, ((Number) retained.get("created_by")).longValue());
     assertEquals(originalCreatedAt, retained.get("created_at"));
+  }
+
+  private ObjectNode completeClassification() {
+    ObjectNode result = json.createObjectNode();
+    result.put("level", "L1"); result.put("confidence", 0.9);
+    result.put("reason", "需要增强开发");
+    result.putArray("evidence").add("客户校验 Spec/当前能力");
+    result.putArray("warnings").add("生产窗口待确认");
+    ObjectNode row = result.putArray("constructionContents").addObject();
+    row.put("moduleName", "客户管理"); row.put("featureCode", "VALIDATION");
+    row.put("featureName", "客户校验"); row.put("versionAvailability", "INCLUDED");
+    row.put("currentCapability", "校验证件格式"); row.put("gap", "缺少有效期校验");
+    row.put("changeType", "ENHANCEMENT"); row.put("constructionContent", "增强开发");
+    row.put("acceptanceCriteria", "无效证件被拦截"); row.put("priority", "P1");
+    row.put("evidence", "客户校验 Spec/当前能力");
+    ObjectNode phase = result.putArray("productionPlan").addObject();
+    phase.put("phase", "开发与验证"); phase.put("workItem", "完成增强和回归测试");
+    phase.put("ownerRole", "研发、测试"); phase.put("plannedStart", "待确认");
+    phase.put("plannedEnd", "待确认"); phase.put("deliverable", "发布包和测试报告");
+    phase.put("entryCriteria", "方案评审通过"); phase.put("exitCriteria", "验收通过");
+    phase.put("riskAndRollback", "灰度发布并验证回退");
+    return result;
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor reader() {

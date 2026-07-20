@@ -6,7 +6,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert, Button, Card, Col, Drawer, Empty, Form, Input, List, Modal, Progress,
-  Radio, Row, Segmented, Select, Space, Table, Tag, Typography, message,
+  Radio, Row, Segmented, Select, Space, Table, Tabs, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -14,7 +14,7 @@ import { ApiError } from '../../services/api'
 import { projectApi } from '../project/projectApi'
 import { requirementApi } from './requirementApi'
 import { FeatureCoverageDrawer } from './FeatureCoverageDrawer'
-import type { DuplicateCandidate, Funnel, Requirement } from './types'
+import type { ConstructionContent, DuplicateCandidate, Funnel, ProductionPlanItem, Requirement } from './types'
 
 const levels = {
   L0: { label: '标品满足', description: '现有标品或配置可覆盖', color: '#2ea869' },
@@ -31,6 +31,15 @@ const statuses = {
 } as const
 
 const actionable = (requirement: Requirement) => !['MERGED', 'ABANDONED'].includes(requirement.status)
+
+const changeTypeLabels: Record<ConstructionContent['changeType'], string> = {
+  CONFIGURATION: '配置实施', ENHANCEMENT: '增强开发', NEW_FEATURE: '新增功能',
+  INTEGRATION: '系统集成', DATA: '数据建设', NON_FUNCTIONAL: '非功能建设', OUT_OF_SCOPE: '范围外',
+}
+
+const availabilityLabels: Record<string, string> = {
+  INCLUDED: '当前版本已包含', PLANNED: '规划中', EXCLUDED: '当前版本未包含',
+}
 
 export function RequirementWorkshop() {
   const [searchParams] = useSearchParams()
@@ -188,15 +197,56 @@ function DecisionDrawer({ requirement, onClose }: { requirement?: Requirement; o
   const classify = useMutation({ mutationFn: () => requirementApi.classify(current!.id), onSuccess: async value => { setCurrent(value); setSelectedLevel(value.suggestedLevel); setAiUnavailable(false); await client.invalidateQueries({ queryKey: ['requirements'] }) }, onError: error => { if (error instanceof ApiError && error.code === 'AI_NOT_CONFIGURED') setAiUnavailable(true); else message.error((error as Error).message) } })
   const confirm = useMutation({ mutationFn: () => requirementApi.confirm(current!.id, selected!, reason), onSuccess: async () => { await Promise.all([client.invalidateQueries({ queryKey: ['requirements'] }), client.invalidateQueries({ queryKey: ['requirement-funnel'] })]); message.success('分类结论已确认'); onClose() }, onError: (error: Error) => message.error(error.message) })
   const override = Boolean(current?.suggestedLevel && selected && current.suggestedLevel !== selected)
-  return <Drawer width={620} title="AI 分类决策树" open={Boolean(requirement)} onClose={onClose} extra={<Button type="primary" disabled={!selected || (override && !reason.trim())} loading={confirm.isPending} icon={<CheckOutlined />} onClick={() => confirm.mutate()}>确认结论</Button>}>
+  return <Drawer width="min(1360px, 96vw)" title="AI 分类决策树" open={Boolean(requirement)} onClose={onClose} extra={<Button type="primary" disabled={!selected || (override && !reason.trim())} loading={confirm.isPending} icon={<CheckOutlined />} onClick={() => confirm.mutate()}>确认结论</Button>}>
     {current && <><div className="decision-context"><Tag>{current.priority}</Tag><Typography.Title level={4}>{current.title}</Typography.Title><p>{current.description}</p><span>{current.projectCode} · {current.code}</span></div>
       <Button block icon={<RobotOutlined />} loading={classify.isPending} onClick={() => classify.mutate()}>请求 AI 生成分类建议</Button>
       {aiUnavailable && <Alert className="decision-alert" type="warning" showIcon message="AI 服务未配置" description="仍可由交付工程师手工判断并确认，不影响核心流程。" />}
       {current.suggestedLevel && <Card className="ai-suggestion" size="small"><div><BulbOutlined /><strong> AI 建议 {current.suggestedLevel}</strong><Progress percent={Math.round((current.confidence ?? 0) * 100)} size="small" /></div><p>{current.suggestionReason}</p></Card>}
+      {current.suggestedLevel && <ClassificationDetails requirement={current} />}
       <Typography.Title level={5} className="decision-label">人工确认</Typography.Title><Radio.Group className="level-options" value={selected} onChange={event => setSelectedLevel(event.target.value)}>{(['L0', 'L1', 'L2'] as const).map(level => <Radio.Button value={level} key={level}><strong>{level} · {levels[level].label}</strong><span>{levels[level].description}</span></Radio.Button>)}</Radio.Group>
       {override && <Form.Item className="override-reason" label={<Space><WarningOutlined />改判原因（必填）</Space>} required><Input.TextArea rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明标品边界、客户场景或范围依据" /></Form.Item>}
     </>}
   </Drawer>
+}
+
+function ClassificationDetails({ requirement }: { requirement: Requirement }) {
+  const construction = requirement.constructionContents ?? []
+  const plan = requirement.productionPlan ?? []
+  const constructionColumns = [
+    { title: '模块', dataIndex: 'moduleName' },
+    { title: '功能编码', dataIndex: 'featureCode' },
+    { title: '功能名称', dataIndex: 'featureName' },
+    { title: '版本情况', dataIndex: 'versionAvailability', render: (value: string) => availabilityLabels[value] ?? value },
+    { title: '当前能力', dataIndex: 'currentCapability' },
+    { title: '差距', dataIndex: 'gap' },
+    { title: '改动类型', dataIndex: 'changeType', render: (value: ConstructionContent['changeType']) => <Tag color={value === 'OUT_OF_SCOPE' ? 'red' : 'blue'}>{changeTypeLabels[value]}</Tag> },
+    { title: '建设内容', dataIndex: 'constructionContent' },
+    { title: '验收标准', dataIndex: 'acceptanceCriteria' },
+    { title: '优先级', dataIndex: 'priority', render: (value: string) => <Tag color={value === 'P0' ? 'red' : value === 'P1' ? 'orange' : 'blue'}>{value}</Tag> },
+    { title: '依据', dataIndex: 'evidence' },
+  ]
+  const planColumns = [
+    { title: '阶段', dataIndex: 'phase' },
+    { title: '工作项', dataIndex: 'workItem' },
+    { title: '责任角色', dataIndex: 'ownerRole' },
+    { title: '计划开始', dataIndex: 'plannedStart' },
+    { title: '计划结束', dataIndex: 'plannedEnd' },
+    { title: '交付物', dataIndex: 'deliverable' },
+    { title: '进入条件', dataIndex: 'entryCriteria' },
+    { title: '完成条件', dataIndex: 'exitCriteria' },
+    { title: '风险与回退', dataIndex: 'riskAndRollback' },
+  ]
+  return <div className="classification-details">
+    {(requirement.classificationEvidence?.length ?? 0) > 0 && <Card size="small" title="判断依据">
+      <List size="small" dataSource={requirement.classificationEvidence} renderItem={item => <List.Item>{item}</List.Item>} />
+    </Card>}
+    {(requirement.classificationWarnings?.length ?? 0) > 0 && <Alert type="warning" showIcon message="资料提醒"
+      description={<List size="small" dataSource={requirement.classificationWarnings} renderItem={item => <List.Item>{item}</List.Item>} />} />}
+    <Tabs items={[
+      { key: 'construction', label: '建设内容表', children: <Table<ConstructionContent> size="small" rowKey={row => `${row.moduleName}:${row.featureCode}:${row.featureName}:${row.changeType}`} pagination={false} dataSource={construction} columns={constructionColumns} locale={{ emptyText: '暂无建设内容' }} /> },
+      { key: 'production', label: '投产计划表', children: <Table<ProductionPlanItem> size="small" rowKey={row => `${row.phase}:${row.workItem}:${row.plannedStart}`} pagination={false} dataSource={plan} columns={planColumns} locale={{ emptyText: '暂无投产计划' }} /> },
+    ]} />
+  </div>
 }
 
 function DuplicateModal({ requirement, onClose }: { requirement?: Requirement; onClose(): void }) {

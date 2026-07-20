@@ -53,6 +53,14 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void flywayStoresCompleteRequirementClassificationDetails() {
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='classification_suggestion' and column_name='details_json'",
+        Integer.class));
+  }
+
+  @Test
   void flywayCreatesIndependentProductDocumentNodes() {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.tables where table_schema='public' "
@@ -604,7 +612,7 @@ class SchemaBaselineTest {
 
     Flyway.configure().dataSource(dataSource).load().migrate();
 
-    assertEquals("21", legacy.queryForObject(
+    assertEquals("22", legacy.queryForObject(
         "select version from flyway_schema_history where success=true "
             + "order by installed_rank desc limit 1",
         String.class));

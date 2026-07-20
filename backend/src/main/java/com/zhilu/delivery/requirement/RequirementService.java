@@ -2,9 +2,6 @@ package com.zhilu.delivery.requirement;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.zhilu.delivery.automation.AiClient;
-import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
@@ -13,6 +10,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,15 +26,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class RequirementService {
   private static final Set<String> LEVELS = new HashSet<String>(Arrays.asList("L0", "L1", "L2"));
   private final JdbcTemplate jdbc;
-  private final AiClient ai;
   private final ObjectMapper json;
   private final AuditService audit;
   private final RequirementDocumentService documents;
+  private final RequirementClassificationAiService classifications;
 
-  public RequirementService(JdbcTemplate jdbc, AiClient ai, ObjectMapper json, AuditService audit,
-      RequirementDocumentService documents) {
-    this.jdbc = jdbc; this.ai = ai; this.json = json; this.audit = audit;
+  public RequirementService(JdbcTemplate jdbc, ObjectMapper json, AuditService audit,
+      RequirementDocumentService documents, RequirementClassificationAiService classifications) {
+    this.jdbc = jdbc; this.json = json; this.audit = audit;
     this.documents = documents;
+    this.classifications = classifications;
   }
 
   @Transactional
@@ -67,7 +66,7 @@ public class RequirementService {
   }
 
   public List<Map<String, Object>> list(CurrentUser user, Long projectId, String keyword, String status) {
-    StringBuilder sql = new StringBuilder("select r.*,p.product_id,p.code project_code,p.name project_name,d.confirmed_level,s.suggested_level,s.confidence,s.reason suggestion_reason "
+    StringBuilder sql = new StringBuilder("select r.*,p.product_id,p.code project_code,p.name project_name,d.confirmed_level,s.suggested_level,s.confidence,s.reason suggestion_reason,s.details_json "
         + "from requirement_item r join delivery_project p on p.id=r.project_id "
         + "left join classification_decision d on d.requirement_id=r.id "
         + "left join classification_suggestion s on s.id=(select max(s2.id) from classification_suggestion s2 where s2.requirement_id=r.id) "
@@ -115,7 +114,7 @@ public class RequirementService {
 
   public Map<String, Object> get(long id) {
     List<Map<String, Object>> values = jdbc.query("select r.*,p.product_id,p.code project_code,p.name project_name,d.confirmed_level,d.suggestion_level decision_suggestion_level,d.override_reason,"
-        + "s.suggested_level,s.confidence,s.reason suggestion_reason from requirement_item r join delivery_project p on p.id=r.project_id "
+        + "s.suggested_level,s.confidence,s.reason suggestion_reason,s.details_json from requirement_item r join delivery_project p on p.id=r.project_id "
         + "left join classification_decision d on d.requirement_id=r.id left join classification_suggestion s on s.id=(select max(s2.id) from classification_suggestion s2 where s2.requirement_id=r.id) where r.id=?",
         (row, index) -> map(row), id);
     if (values.isEmpty()) throw new NotFoundException("需求不存在");
@@ -128,37 +127,26 @@ public class RequirementService {
   public Map<String, Object> classify(long id, long actorUserId) {
     Map<String, Object> requirement = get(id);
     assertActionable(requirement);
-    ObjectNode schema = json.createObjectNode(); schema.put("type", "object");
-    ObjectNode properties = schema.putObject("properties");
-    properties.putObject("level").put("type", "string").putArray("enum").add("L0").add("L1").add("L2");
-    properties.putObject("confidence").put("type", "number");
-    properties.putObject("reason").put("type", "string");
-    schema.putArray("required").add("level").add("confidence").add("reason"); schema.put("additionalProperties", false);
-    long organizationId = ((Number) requirement.get("organizationId")).longValue();
-    JsonNode result = ai.completeJson(organizationId,
-        "你是交付需求分类助手。L0=标品已有，L1=需要二开，L2=不在产品范围。只返回符合 schema 的 JSON。",
-        "需求标题：" + requirement.get("title") + "\n需求描述：" + requirement.get("description"), schema);
-    if (result == null || !result.isObject() || result.size() != 3
-        || result.get("level") == null || !result.get("level").isTextual()
-        || result.get("confidence") == null || !result.get("confidence").isNumber()
-        || result.get("reason") == null || !result.get("reason").isTextual()) {
-      throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
-    }
+    JsonNode result = classifications.analyze(id);
     String level = result.get("level").asText();
     double confidence = result.get("confidence").asDouble();
     String reason = result.get("reason").asText();
-    if (!LEVELS.contains(level) || Double.isNaN(confidence)
-        || confidence < 0 || confidence > 1 || blank(reason)) {
-      throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
-    }
-    return saveSuggestion(id, level, confidence, reason, "AI");
+    return saveSuggestion(id, level, confidence, reason, "AI", result);
   }
 
   @Transactional
   public Map<String, Object> saveSuggestion(long id, String level, double confidence, String reason, String source) {
+    return saveSuggestion(id, level, confidence, reason, source, null);
+  }
+
+  @Transactional
+  public Map<String, Object> saveSuggestion(long id, String level, double confidence,
+      String reason, String source, JsonNode details) {
     validateLevel(level); assertActionable(get(id));
-    jdbc.update("insert into classification_suggestion(requirement_id,suggested_level,confidence,reason,source) values (?,?,?,?,?)",
-        id, level, confidence, reason, blank(source) ? "MANUAL" : source);
+    jdbc.update("insert into classification_suggestion(requirement_id,suggested_level,confidence,"
+            + "reason,source,details_json) values (?,?,?,?,?,?)",
+        id, level, confidence, reason, blank(source) ? "MANUAL" : source,
+        details == null ? null : details.toString());
     jdbc.update("update requirement_item set status='SUBMITTED',updated_at=current_timestamp,version=version+1 where id=? and status='DRAFT'", id);
     return get(id);
   }
@@ -254,7 +242,29 @@ public class RequirementService {
     value.put("sourceTemplateRevision", nullableLong(row, "source_template_revision"));
     value.put("suggestedLevel", safe(row, "suggested_level")); value.put("confidence", safe(row, "confidence")); value.put("suggestionReason", safe(row, "suggestion_reason"));
     value.put("confirmedLevel", safe(row, "confirmed_level")); value.put("overrideReason", safe(row, "override_reason"));
+    classificationDetails(value, safe(row, "details_json"));
     return value;
+  }
+  private void classificationDetails(Map<String, Object> value, Object raw) {
+    value.put("classificationEvidence", Collections.emptyList());
+    value.put("classificationWarnings", Collections.emptyList());
+    value.put("constructionContents", Collections.emptyList());
+    value.put("productionPlan", Collections.emptyList());
+    if (raw == null || blank(String.valueOf(raw))) return;
+    try {
+      JsonNode details = json.readTree(String.valueOf(raw));
+      if (details == null || !details.isObject()) return;
+      detail(value, details, "evidence", "classificationEvidence");
+      detail(value, details, "warnings", "classificationWarnings");
+      detail(value, details, "constructionContents", "constructionContents");
+      detail(value, details, "productionPlan", "productionPlan");
+    } catch (java.io.IOException ignored) { }
+  }
+  private void detail(Map<String, Object> value, JsonNode details, String source, String target) {
+    JsonNode current = details.get(source);
+    if (current != null && current.isArray()) {
+      value.put(target, json.convertValue(current, List.class));
+    }
   }
   private Object safe(java.sql.ResultSet row, String column) { try { return row.getObject(column); } catch (java.sql.SQLException missing) { return null; } }
   private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException { long value = row.getLong(column); return row.wasNull() ? null : value; }
