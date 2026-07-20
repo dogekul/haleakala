@@ -10,7 +10,7 @@ export interface Requirement {
   description: string
   source?: string
   priority: 'P0' | 'P1' | 'P2' | 'P3'
-  status: 'DRAFT' | 'SUBMITTED' | 'CONFIRMED' | 'MERGED'
+  status: 'DRAFT' | 'SUBMITTED' | 'CONFIRMED' | 'MERGED' | 'ABANDONED'
   validationWarning?: string
   suggestedLevel?: 'L0' | 'L1' | 'L2'
   confidence?: number
