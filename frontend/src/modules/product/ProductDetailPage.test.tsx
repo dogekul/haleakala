@@ -33,7 +33,7 @@ const coverage = {
   uncoveredRequirements: [{ requirementId: 41, requirementCode: 'REQ-41', title: '跨区域核算差异支持和特别长的需求标题', projectCode: 'PRJ-1', debtLinked: false }],
 }
 const productDocuments = [
-  { id: 101, productId: 8, nodeType: 'FOLDER', code: 'DOC-01', title: '01 产品总纲', sortOrder: 1, syncStatus: 'READY', version: 0 },
+  { id: 101, productId: 8, parentId: null, nodeType: 'FOLDER', code: 'DOC-01', title: '01 产品总纲', sortOrder: 1, syncStatus: 'READY', version: 0 },
   { id: 102, productId: 8, parentId: 101, nodeType: 'DOCUMENT', code: 'DOC-01-01', title: '产品一页纸', sortOrder: 1, syncStatus: 'READY', version: 0 },
 ]
 const featureSpec = {

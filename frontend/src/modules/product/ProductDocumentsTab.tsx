@@ -77,7 +77,7 @@ export function ProductDocumentsTab({ productId, readOnly }: {
 
 function buildDocumentTree(values: ProductDocumentNode[]): Array<DataNode & { documentNodeId?: number }> {
   const children = (parentId?: number): Array<DataNode & { documentNodeId?: number }> =>
-    values.filter(item => item.parentId === parentId).map(item => {
+    values.filter(item => parentId === undefined ? item.parentId == null : item.parentId === parentId).map(item => {
       const meta = statusMeta[item.syncStatus]
       const document = item.nodeType === 'DOCUMENT'
       return {

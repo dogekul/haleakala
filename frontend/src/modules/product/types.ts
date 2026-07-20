@@ -80,7 +80,7 @@ export type ProductDocumentNodeType = 'FOLDER' | 'DOCUMENT'
 export interface ProductDocumentNode {
   id: number
   productId: number
-  parentId?: number
+  parentId?: number | null
   nodeType: ProductDocumentNodeType
   code: string
   title: string
