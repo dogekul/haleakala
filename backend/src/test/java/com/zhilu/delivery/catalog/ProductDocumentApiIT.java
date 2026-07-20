@@ -96,6 +96,16 @@ class ProductDocumentApiIT {
   }
 
   @Test
+  void synchronizesOneFeatureSpec() throws Exception {
+    mvc.perform(post("/api/v1/products/3300/features/3302/spec/sync")
+            .with(actor("product:write")).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("线索管理 Spec"))
+        .andExpect(jsonPath("$.markdown").value("# 线索管理"))
+        .andExpect(jsonPath("$.revision").isNumber());
+  }
+
+  @Test
   void synchronizesListsReadsAndUpdatesFeatureSpecs() throws Exception {
     mvc.perform(post("/api/v1/products/3300/documents/sync").with(actor("product:write"))
             .with(csrf()))
