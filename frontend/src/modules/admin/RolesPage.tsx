@@ -1,6 +1,6 @@
-import { LockOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { DeleteOutlined, LockOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Checkbox, Col, Drawer, Empty, Row, Space, Tag, Typography, message } from 'antd'
+import { Button, Card, Checkbox, Col, Drawer, Empty, Popconfirm, Row, Space, Tag, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { adminApi } from './adminApi'
 import { AdminQueryAlert } from './AdminQueryAlert'
@@ -11,6 +11,16 @@ export function RolesPage() {
   const roles = useQuery({ queryKey: ['admin-roles'], queryFn: adminApi.roles })
   const permissions = useQuery({ queryKey: ['admin-permissions'], queryFn: adminApi.permissions })
   const [editing, setEditing] = useState<Role>()
+  const client = useQueryClient()
+  const remove = useMutation({
+    mutationFn: adminApi.deleteRole,
+    onSuccess: async (_, id) => {
+      if (editing?.id === id) setEditing(undefined)
+      await client.invalidateQueries({ queryKey: ['admin-roles'] })
+      message.success('角色已删除')
+    },
+    onError: (error: Error) => message.error(error.message),
+  })
   return <section>
     <PageHeading title="角色权限" description="按业务角色分配最小必要权限；系统管理员始终保留系统管理权限。" />
     <AdminQueryAlert errors={[roles.error, permissions.error]} onRetry={() => { void Promise.all([roles.refetch(), permissions.refetch()]) }} />
@@ -19,7 +29,11 @@ export function RolesPage() {
         <Typography.Paragraph>{role.description || '暂无说明'}</Typography.Paragraph>
         <div className="role-permission-count"><strong>{role.permissions.length}</strong><span>项权限</span></div>
         <Space size={[0, 4]} wrap>{role.permissions.slice(0, 4).map(code => <Tag key={code}>{permissions.data?.find(item => item.code === code)?.name ?? code}</Tag>)}{role.permissions.length > 4 && <Tag>+{role.permissions.length - 4}</Tag>}</Space>
-        <Button block className="role-edit" icon={<LockOutlined />} onClick={() => setEditing(role)}>配置权限</Button>
+        <div className="role-actions">
+          <Button block icon={<LockOutlined />} onClick={() => setEditing(role)}>配置权限</Button>
+          {role.builtIn ? <Button block danger disabled icon={<DeleteOutlined />}>内置角色不可删除</Button>
+            : <Popconfirm title={`确认删除角色“${role.name}”？`} description="已分配给用户的角色不能删除。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => remove.mutate(role.id)}><Button block danger icon={<DeleteOutlined />} loading={remove.isPending && remove.variables === role.id} aria-label={`删除角色${role.name}`}>删除角色</Button></Popconfirm>}
+        </div>
       </Card></Col>)}
     </Row>
     {!roles.isLoading && !roles.data?.length && <Card><Empty description="暂无角色" /></Card>}

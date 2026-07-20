@@ -112,6 +112,7 @@ git commit -m "feat: add safe admin deletion endpoints"
 - Modify: `frontend/src/modules/admin/adminApi.ts`
 - Modify: `frontend/src/modules/admin/UsersTeamsPage.tsx`
 - Modify: `frontend/src/modules/admin/RolesPage.tsx`
+- Modify: `frontend/src/styles/global.css`
 
 **Interfaces:**
 - Consumes: Task 1 的三个 HTTP 204 DELETE 端点，以及现有 `api<void>`、React Query 查询键 `admin-users`、`admin-teams`、`admin-roles`。
@@ -159,6 +160,7 @@ deleteRole: (id: number) => api<void>(`/api/v1/admin/roles/${id}`, { method: 'DE
 - [ ] **Step 5: 实现角色删除与内置保护提示**
 
 在 `RolesPage` 增加角色删除 mutation。非内置角色显示 danger 按钮和确认框；内置角色显示禁用的“内置角色不可删除”按钮。删除成功刷新 `admin-roles` 并关闭可能打开的该角色权限抽屉。
+在 `global.css` 中用 `.role-actions` 将配置与删除按钮纵向等距排列，并让操作区固定贴近卡片底部，保持所有角色卡片高度和按钮布局一致。
 
 ```tsx
 {role.builtIn ? (
@@ -183,7 +185,7 @@ Expected: PASS，无 TypeScript 错误。
 - [ ] **Step 7: 提交前端变更**
 
 ```bash
-git add frontend/src/modules/admin/adminApi.ts frontend/src/modules/admin/adminApi.test.ts frontend/src/modules/admin/UsersTeamsPage.tsx frontend/src/modules/admin/UsersTeamsPage.test.tsx frontend/src/modules/admin/RolesPage.tsx frontend/src/modules/admin/AdminFlows.test.tsx
+git add frontend/src/modules/admin/adminApi.ts frontend/src/modules/admin/adminApi.test.ts frontend/src/modules/admin/UsersTeamsPage.tsx frontend/src/modules/admin/UsersTeamsPage.test.tsx frontend/src/modules/admin/RolesPage.tsx frontend/src/modules/admin/AdminFlows.test.tsx frontend/src/styles/global.css docs/superpowers/plans/2026-07-20-admin-safe-deletion.md
 git commit -m "feat: add admin deletion controls"
 ```
 

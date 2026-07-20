@@ -485,7 +485,7 @@ button, input { font: inherit; }
 .role-permission-count { display: flex; align-items: baseline; gap: 6px; margin-bottom: 12px; }
 .role-permission-count strong { color: #245bdb; font-size: 25px; }
 .role-permission-count span { color: #8f959e; font-size: 12px; }
-.role-edit { margin-top: auto; }
+.role-actions { margin-top: auto; display: grid; gap: 8px; }
 .permission-group { margin-bottom: 24px; padding: 16px; border: 1px solid #e5e6eb; border-radius: 8px; }
 .permission-group > strong { display: block; margin-bottom: 13px; }
 .permission-group .ant-checkbox-group { width: 100%; }

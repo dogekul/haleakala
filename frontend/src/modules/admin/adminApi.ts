@@ -14,12 +14,15 @@ export const adminApi = {
   userStatus: (id: number, status: AdminUser['status']) => api<void>(`/api/v1/admin/users/${id}/status`, {
     method: 'PUT', body: JSON.stringify({ status }),
   }),
+  deleteUser: (id: number) => api<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' }),
   teams: () => api<Team[]>('/api/v1/admin/teams'),
   saveTeam: (id: number | undefined, input: Record<string, unknown>) => api<Team>(
     `/api/v1/admin/teams${id ? `/${id}` : ''}`,
     { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) },
   ),
+  deleteTeam: (id: number) => api<void>(`/api/v1/admin/teams/${id}`, { method: 'DELETE' }),
   roles: () => api<Role[]>('/api/v1/admin/roles'),
+  deleteRole: (id: number) => api<void>(`/api/v1/admin/roles/${id}`, { method: 'DELETE' }),
   permissions: () => api<Permission[]>('/api/v1/admin/permissions'),
   saveRolePermissions: (id: number, permissionCodes: string[]) => api<Role>(
     `/api/v1/admin/roles/${id}/permissions`,

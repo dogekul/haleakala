@@ -37,6 +37,27 @@ it('从角色抽屉保存权限并刷新角色', async () => {
   })))
 })
 
+it('非内置角色可确认删除且内置角色保持受保护', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+    if (url.endsWith('/permissions')) return json([])
+    return json([
+      { id: 1, code: 'ADMIN', name: '系统管理员', description: '', builtIn: true, permissions: [] },
+      { id: 100, code: 'CUSTOM', name: '自定义角色', description: '', builtIn: false, permissions: [] },
+    ])
+  })
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show(<RolesPage />)
+
+  expect(await screen.findByRole('button', { name: /内置角色不可删除/ })).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: '删除角色自定义角色' }))
+  await user.click(screen.getByRole('button', { name: /^删\s*除$/ }))
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/admin/roles/100', expect.objectContaining({ method: 'DELETE' })))
+})
+
 it('从设置表单保存平台配置', async () => {
   const original = { platformName: '智鹿交付', environmentLabel: '内部生产环境', timezone: 'Asia/Shanghai', supportEmail: '', agentTimeoutMinutes: 30 }
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {

@@ -1,4 +1,4 @@
-import { PlusOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
@@ -18,6 +18,16 @@ export function UsersTeamsPage() {
     onSuccess: async () => { await client.invalidateQueries({ queryKey: ['admin-users'] }); message.success('用户状态已更新') },
     onError: (error: Error) => message.error(error.message),
   })
+  const removeUser = useMutation({
+    mutationFn: adminApi.deleteUser,
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['admin-users'] }); message.success('用户已删除') },
+    onError: (error: Error) => message.error(error.message),
+  })
+  const removeTeam = useMutation({
+    mutationFn: adminApi.deleteTeam,
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['admin-teams'] }); message.success('团队已删除') },
+    onError: (error: Error) => message.error(error.message),
+  })
 
   return <section>
     <PageHeading title="用户与团队" description="管理组织成员、归属团队和业务角色，停用用户不会破坏历史交付记录。"
@@ -34,7 +44,11 @@ export function UsersTeamsPage() {
         { title: '团队', dataIndex: 'primaryTeamName', render: (value: string | null) => value || <span className="muted">未分配</span> },
         { title: '角色', dataIndex: 'roles', render: (values: string[]) => <Space size={[0, 4]} wrap>{values.map(value => <Tag key={value}>{roleName(value, roles.data)}</Tag>)}</Space> },
         { title: '状态', dataIndex: 'status', width: 90, render: (value: string) => <Tag color={value === 'ACTIVE' ? 'success' : 'default'}>{value === 'ACTIVE' ? '启用' : '停用'}</Tag> },
-        { title: '操作', width: 150, render: (_, item: AdminUser) => <Space><Button type="link" size="small" onClick={() => setEditingUser(item)}>编辑</Button><Popconfirm title={`确认${item.status === 'ACTIVE' ? '停用' : '启用'}该用户？`} onConfirm={() => status.mutate({ id: item.id, value: item.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' })}><Button type="link" size="small">{item.status === 'ACTIVE' ? '停用' : '启用'}</Button></Popconfirm></Space> },
+        { title: '操作', width: 230, render: (_, item: AdminUser) => <Space size={2}>
+          <Button type="link" size="small" onClick={() => setEditingUser(item)}>编辑</Button>
+          <Popconfirm title={`确认${item.status === 'ACTIVE' ? '停用' : '启用'}该用户？`} okText="确认" cancelText="取消" onConfirm={() => status.mutate({ id: item.id, value: item.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' })}><Button type="link" size="small">{item.status === 'ACTIVE' ? '停用' : '启用'}</Button></Popconfirm>
+          <Popconfirm title={`确认删除用户“${item.displayName}”？`} description="删除后无法恢复。已有业务记录的用户请改为停用。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => removeUser.mutate(item.id)}><Button type="link" danger size="small" icon={<DeleteOutlined />} loading={removeUser.isPending && removeUser.variables === item.id} aria-label={`删除用户${item.displayName}`}>删除</Button></Popconfirm>
+        </Space> },
       ]} />
     </Card>
     <Card className="admin-surface" title="团队结构" extra={`${teams.data?.length ?? 0} 个团队`}>
@@ -42,7 +56,10 @@ export function UsersTeamsPage() {
         { title: '团队名称', dataIndex: 'name' }, { title: '编码', dataIndex: 'code' },
         { title: '上级团队', dataIndex: 'parentId', render: (value: number | null) => teams.data?.find(item => item.id === value)?.name ?? '—' },
         { title: '状态', dataIndex: 'enabled', render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag> },
-        { title: '操作', width: 90, render: (_, item: Team) => <Button type="link" size="small" onClick={() => setEditingTeam(item)}>编辑</Button> },
+        { title: '操作', width: 150, render: (_, item: Team) => <Space size={2}>
+          <Button type="link" size="small" onClick={() => setEditingTeam(item)}>编辑</Button>
+          <Popconfirm title={`确认删除团队“${item.name}”？`} description="请先移出团队成员并删除下级团队。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => removeTeam.mutate(item.id)}><Button type="link" danger size="small" icon={<DeleteOutlined />} loading={removeTeam.isPending && removeTeam.variables === item.id} aria-label={`删除团队${item.name}`}>删除</Button></Popconfirm>
+        </Space> },
       ]} />
     </Card>
     <UserEditor value={editingUser} teams={teams.data ?? []} roles={roles.data ?? []} onClose={() => setEditingUser(undefined)} />

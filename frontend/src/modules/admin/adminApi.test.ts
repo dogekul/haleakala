@@ -56,3 +56,17 @@ it('用相同草稿测试并保存 AI 服务配置', async () => {
     method: 'PUT', body: JSON.stringify(input),
   }))
 })
+
+it('用户、团队和角色删除接口使用 DELETE 方法', async () => {
+  const fetch = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+    Promise.resolve(new Response(null, { status: 204 })))
+  vi.stubGlobal('fetch', fetch)
+
+  await adminApi.deleteUser(11)
+  await adminApi.deleteTeam(22)
+  await adminApi.deleteRole(33)
+
+  expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/admin/users/11', expect.objectContaining({ method: 'DELETE' }))
+  expect(fetch).toHaveBeenNthCalledWith(2, '/api/v1/admin/teams/22', expect.objectContaining({ method: 'DELETE' }))
+  expect(fetch).toHaveBeenNthCalledWith(3, '/api/v1/admin/roles/33', expect.objectContaining({ method: 'DELETE' }))
+})
