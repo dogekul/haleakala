@@ -25,13 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductCatalogController {
   private final ProductCatalogService catalog;
   private final AuditService audit;
-  private final ProductDocumentService documents;
 
-  public ProductCatalogController(
-      ProductCatalogService catalog, AuditService audit, ProductDocumentService documents) {
+  public ProductCatalogController(ProductCatalogService catalog, AuditService audit) {
     this.catalog = catalog;
     this.audit = audit;
-    this.documents = documents;
   }
 
   @GetMapping
@@ -55,7 +52,6 @@ public class ProductCatalogController {
         catalog.createProduct(user.getOrganizationId(), request.ownerUserId,
             request.code, request.name, request.category, request.description);
     audit(user, "CREATE", "PRODUCT", product.get("id"), request.name);
-    syncProductDocuments(user.getOrganizationId(), product);
     return product;
   }
 
@@ -67,7 +63,6 @@ public class ProductCatalogController {
         catalog.updateProduct(user.getOrganizationId(), id, request.ownerUserId,
             request.name, request.category, request.description, request.status, request.version);
     audit(user, "UPDATE", "PRODUCT", id, request.name);
-    syncProductDocuments(user.getOrganizationId(), product);
     return product;
   }
 
@@ -115,15 +110,6 @@ public class ProductCatalogController {
       Object resourceId, String details) {
     audit.record(user.getOrganizationId(), user.getId(), action, resourceType,
         String.valueOf(resourceId), details);
-  }
-
-  private void syncProductDocuments(long organizationId, Map<String, Object> product) {
-    try {
-      documents.syncProduct(
-          organizationId, ((Number) product.get("id")).longValue());
-    } catch (RuntimeException unavailable) {
-      // Product data is authoritative. Administrators can retry document initialization later.
-    }
   }
 
   public static final class ProductRequest {
