@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.clearInvocations;
 
 import com.zhilu.delivery.document.DocumentView;
 import com.zhilu.delivery.document.OutlineClient;
@@ -110,5 +111,20 @@ class ProductDocumentServiceTest {
     documents.syncFeature(3200, 3200, 3203);
     verify(outline, times(5)).create(any(OutlineConnection.class), anyString(), anyString(),
         anyString(), anyString(), nullable(String.class), anyBoolean());
+  }
+
+  @Test
+  void initializesAnotherFeatureWithoutRecheckingReadyAncestors() {
+    documents.syncFeature(3200, 3200, 3203);
+    jdbc.update("insert into product_feature(id,product_id,module_id,code,name,description,status) "
+        + "values (3204,3200,3202,'AR-02','应收账龄','按区间分析应收余额','ACTIVE')");
+    clearInvocations(outline);
+
+    DocumentView spec = documents.ensureFeatureSpec(3200, 3200, 3204);
+
+    assertEquals("应收账龄 · 设计 Spec", spec.getTitle());
+    verify(outline, times(1)).create(any(OutlineConnection.class), anyString(), anyString(),
+        anyString(), anyString(), nullable(String.class), anyBoolean());
+    verify(outline, times(2)).info(any(OutlineConnection.class), anyString());
   }
 }

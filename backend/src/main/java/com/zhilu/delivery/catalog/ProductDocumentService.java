@@ -46,6 +46,31 @@ public class ProductDocumentService {
     return documents.readBusinessDocument(organizationId, businessKey);
   }
 
+  public DocumentView ensureFeatureSpec(
+      long organizationId, long productId, long featureId) {
+    Map<String, Object> feature = feature(organizationId, productId, featureId);
+    Long parentLinkId = readyLink(
+        organizationId,
+        moduleKey(productId, ((Number) feature.get("module_id")).longValue()));
+    if (parentLinkId == null) return syncFeature(organizationId, productId, featureId);
+
+    String businessKey = featureKey(productId, featureId);
+    if (feature.get("outline_link_id") != null) {
+      DocumentView current = documents.readBusinessDocument(organizationId, businessKey);
+      String title = feature.get("feature_name") + " · 设计 Spec";
+      return title.equals(current.getTitle()) ? current : documents.updateBusinessDocument(
+          organizationId, businessKey, title, current.getMarkdown(), current.getRevision());
+    }
+
+    Template template = template(organizationId);
+    long linkId = documents.createDocument(
+        organizationId, businessKey, KnowledgeService.PRODUCT_FEATURE_SPEC,
+        replace(template.title, feature), replace(template.markdown, feature),
+        parentLinkId.longValue());
+    bindFeature(organizationId, productId, featureId, linkId, template);
+    return documents.readBusinessDocument(organizationId, businessKey);
+  }
+
   public Map<String, Object> syncAllForProduct(long organizationId, long productId) {
     product(organizationId, productId);
     int completed = 0;
@@ -200,6 +225,14 @@ public class ProductDocumentService {
         ((Number) value.get("published_revision")).longValue(),
         String.valueOf(value.get("published_title_snapshot")),
         String.valueOf(value.get("published_markdown_snapshot")));
+  }
+
+  private Long readyLink(long organizationId, String businessKey) {
+    List<Long> values = jdbc.queryForList(
+        "select id from outline_document_link where organization_id=? and business_key=? "
+            + "and sync_status='READY' and outline_document_id is not null",
+        Long.class, organizationId, businessKey);
+    return values.isEmpty() ? null : values.get(0);
   }
 
   private Map<String, Object> product(long organizationId, long productId) {

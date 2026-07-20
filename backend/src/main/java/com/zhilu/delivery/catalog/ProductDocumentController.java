@@ -51,7 +51,7 @@ public class ProductDocumentController {
   public DocumentView syncFeature(
       @PathVariable long productId, @PathVariable long featureId,
       @AuthenticationPrincipal CurrentUser user) {
-    return documents.syncFeature(user.getOrganizationId(), productId, featureId);
+    return documents.ensureFeatureSpec(user.getOrganizationId(), productId, featureId);
   }
 
   @GetMapping("/features/{featureId}/spec")
