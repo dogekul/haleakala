@@ -75,3 +75,18 @@ export interface ProductCoverage {
   features: CoverageFeature[]
   uncoveredRequirements: UncoveredRequirement[]
 }
+
+export type ProductDocumentNodeType = 'FOLDER' | 'DOCUMENT'
+export interface ProductDocumentNode {
+  id: number
+  productId: number
+  parentId?: number | null
+  nodeType: ProductDocumentNodeType
+  code: string
+  title: string
+  description?: string
+  sortOrder: number
+  syncStatus: 'PENDING' | 'CREATING' | 'READY' | 'FAILED'
+  linkedFeatureId?: number
+  version: number
+}

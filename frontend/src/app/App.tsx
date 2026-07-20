@@ -11,7 +11,7 @@ const ProjectDetail = lazy(() => import('../modules/project/ProjectDetail').then
 const ProjectWorkspace = lazy(() => import('../modules/project/ProjectWorkspace').then(module => ({ default: module.ProjectWorkspace })))
 const ProductCenterRoutes = lazy(() => import('../modules/product/ProductCenterRoutes').then(module => ({ default: module.ProductCenterRoutes })))
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage').then(module => ({ default: module.DashboardPage })))
-const CustomerPage = lazy(() => import('../modules/customer/CustomerPage').then(module => ({ default: module.CustomerPage })))
+const CustomerCenterRoutes = lazy(() => import('../modules/customer-center/CustomerCenterRoutes').then(module => ({ default: module.CustomerCenterRoutes })))
 const RequirementWorkshop = lazy(() => import('../modules/requirement/RequirementWorkshop').then(module => ({ default: module.RequirementWorkshop })))
 const StandardizationPage = lazy(() => import('../modules/standardization/StandardizationPage').then(module => ({ default: module.StandardizationPage })))
 const KnowledgePage = lazy(() => import('../modules/knowledge/KnowledgePage').then(module => ({ default: module.KnowledgePage })))
@@ -26,9 +26,9 @@ export function App() {
     <Route path="/dashboard/*" element={<RequireAuth><RequirePermission code="dashboard:read">
       <AppShell><LazyPage><DashboardPage /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />
-    <Route path="/customers/*" element={<RequireAuth><RequirePermission code="customer:read">
-      <AppShell><LazyPage><CustomerPage /></LazyPage></AppShell>
-    </RequirePermission></RequireAuth>} />
+    <Route path="/customers/*" element={<RequireAuth>
+      <AppShell><LazyPage><CustomerCenterRoutes /></LazyPage></AppShell>
+    </RequireAuth>} />
     <Route path="/requirements/*" element={<RequireAuth><RequirePermission code="requirement:read">
       <AppShell><LazyPage><RequirementWorkshop /></LazyPage></AppShell>
     </RequirePermission></RequireAuth>} />

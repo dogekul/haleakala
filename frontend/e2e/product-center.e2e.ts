@@ -16,6 +16,8 @@ test('product capability flows from catalog to delivery and back', async ({ page
   const catalogFeature = `E2E 标准功能 ${suffix}`
   const projectCode = `PRJ-E2E-${suffix}`
   const projectName = `E2E 产品交付项目 ${suffix}`
+  const customerName = `E2E 追溯客户 ${suffix}`
+  const customerOption = `${customerName} · E2E客户`
   const requirementTitle = `E2E 产品追溯需求 ${suffix}`
   const tracedFeature = `E2E 标准化回流功能 ${suffix}`
   const financeModule = `E2E 对账模块 ${suffix}`
@@ -119,13 +121,29 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await unbindableProductDrawer.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('产品已创建')).toBeVisible()
 
+  await nav(page, '客户中心').click()
+  await expect(page.getByRole('heading', { name: '客户管理' })).toBeVisible()
+  await page.getByRole('button', { name: '新建客户' }).click()
+  const customerDrawer = page.getByRole('dialog', { name: '新建客户' })
+  await customerDrawer.getByLabel('客户名称').fill(customerName)
+  await customerDrawer.getByLabel('客户简称').fill('E2E客户')
+  await customerDrawer.getByLabel('联系人').fill('E2E经理')
+  await customerDrawer.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('客户已创建')).toBeVisible()
+  await page.getByPlaceholder('搜索客户、简称或联系人').fill(customerName)
+  await page.getByRole('button', { name: `编辑${customerName}` }).click()
+  const editCustomerDrawer = page.getByRole('dialog', { name: '编辑客户' })
+  await editCustomerDrawer.getByLabel('联系电话').fill('13800000000')
+  await editCustomerDrawer.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('客户已更新')).toBeVisible()
+
   await nav(page, '项目空间').click()
   await expect(page.getByRole('heading', { name: '项目空间' })).toBeVisible()
   await page.getByRole('button', { name: /创建项目$/ }).click()
   const projectDrawer = page.getByRole('dialog', { name: '创建交付项目' })
   await projectDrawer.getByLabel('项目编号').fill(projectCode)
   await projectDrawer.getByLabel('项目名称').fill(projectName)
-  await projectDrawer.getByLabel('客户名称').fill('E2E 追溯客户')
+  await choose(page, projectDrawer, '客户', customerOption, true)
   const projectProductSelect = projectDrawer.getByRole('combobox', { name: '产品' })
   await projectProductSelect.click()
   const productDropdown = page.locator('.ant-select-dropdown:visible')
@@ -144,6 +162,21 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await page.getByRole('link', { name: projectName, exact: true }).click()
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible()
   await expect(page.getByText(`${productName} ${releasedVersion}`, { exact: true })).toBeVisible()
+
+  await nav(page, '客户中心').click()
+  await page.getByPlaceholder('搜索客户、简称或联系人').fill(customerName)
+  await page.getByRole('button', { name: `编辑${customerName}` }).click()
+  const stopCustomerDrawer = page.getByRole('dialog', { name: '编辑客户' })
+  await choose(page, stopCustomerDrawer, '状态', '停用')
+  await stopCustomerDrawer.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('客户已更新')).toBeVisible()
+  await nav(page, '项目空间').click()
+  await page.getByRole('button', { name: /创建项目$/ }).click()
+  const inactiveCustomerProjectDrawer = page.getByRole('dialog', { name: '创建交付项目' })
+  const activeCustomerSelect = inactiveCustomerProjectDrawer.getByRole('combobox', { name: '客户' })
+  await activeCustomerSelect.fill(customerName)
+  await expect(page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: customerOption })).toHaveCount(0)
+  await inactiveCustomerProjectDrawer.getByRole('button', { name: '关闭' }).click()
 
   await nav(page, '需求工坊').click()
   await page.getByRole('button', { name: '采集需求' }).click()

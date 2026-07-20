@@ -1,0 +1,16 @@
+{
+  auto_https disable_redirects
+}
+
+outline.8.166.121.138.sslip.io {
+  encode zstd gzip
+
+  @dex path /dex /dex/*
+  handle @dex {
+    reverse_proxy dex:5556
+  }
+
+  handle {
+    reverse_proxy outline:3000
+  }
+}

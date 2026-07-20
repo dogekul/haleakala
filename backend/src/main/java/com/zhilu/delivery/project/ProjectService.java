@@ -2,7 +2,10 @@ package com.zhilu.delivery.project;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.document.DocumentJobService;
+import com.zhilu.delivery.document.ProjectDocumentService;
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.operation.CustomerOperationService;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -22,9 +25,17 @@ public class ProjectService {
   private static final List<String> PROJECT_STATUSES =
       Arrays.asList("ACTIVE", "SUSPENDED", "CLOSING", "CLOSED");
   private final JdbcTemplate jdbc;
+  private final CustomerOperationService operations;
+  private final DocumentJobService documentJobs;
+  private final ProjectDocumentService projectDocuments;
 
-  public ProjectService(JdbcTemplate jdbc) {
+  public ProjectService(
+      JdbcTemplate jdbc, CustomerOperationService operations, DocumentJobService documentJobs,
+      ProjectDocumentService projectDocuments) {
     this.jdbc = jdbc;
+    this.operations = operations;
+    this.documentJobs = documentJobs;
+    this.projectDocuments = projectDocuments;
   }
 
   @Transactional
@@ -38,12 +49,15 @@ public class ProjectService {
     if (validVersion == null || validVersion != 1) {
       throw new IllegalArgumentException("产品或版本不可用于新项目");
     }
+    Map<String, Object> customer = customerForProject(
+        command.getOrganizationId(), command.getCustomerId());
     assertOrganizationUser(command.getOrganizationId(), command.getManagerUserId());
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("organization_id", command.getOrganizationId());
     values.put("code", command.getCode().trim());
     values.put("name", command.getName().trim());
-    values.put("customer_name", command.getCustomerName().trim());
+    values.put("customer_id", command.getCustomerId());
+    values.put("customer_name", customer.get("name"));
     values.put("product_id", command.getProductId());
     values.put("product_version_id", command.getProductVersionId());
     values.put("manager_user_id", command.getManagerUserId());
@@ -74,6 +88,8 @@ public class ProjectService {
           projectId, command.getCreatedByUserId(), "DELIVERY_ENGINEER");
     }
     activity(projectId, command.getCreatedByUserId(), "PROJECT_CREATED", "创建项目并初始化七阶段", null);
+    projectDocuments.snapshotTemplates(projectId, command.getOrganizationId());
+    documentJobs.enqueueProjectInitialization(command.getOrganizationId(), projectId);
     return get(projectId);
   }
 
@@ -104,17 +120,22 @@ public class ProjectService {
 
   public ProjectView get(long projectId) {
     List<ProjectView> values = jdbc.query(
-        "select p.*,pr.name product_name,pv.version_name,u.display_name manager_name "
+        "select p.*,coalesce(c.name,p.customer_name) customer_display_name,"
+            + "pr.name product_name,pv.version_name,u.display_name manager_name "
             + "from delivery_project p join product pr on pr.id=p.product_id "
             + "join product_version pv on pv.id=p.product_version_id "
-            + "join app_user u on u.id=p.manager_user_id where p.id=?",
+            + "join app_user u on u.id=p.manager_user_id "
+            + "left join customer c on c.id=p.customer_id where p.id=?",
         (row, index) -> new ProjectView(
             row.getLong("id"), row.getLong("organization_id"), row.getString("code"),
-            row.getString("name"), row.getString("customer_name"), row.getLong("product_id"),
+            row.getString("name"), nullableLong(row, "customer_id"),
+            row.getString("customer_display_name"), row.getLong("product_id"),
             row.getString("product_name"), row.getLong("product_version_id"),
             row.getString("version_name"), row.getLong("manager_user_id"),
             row.getString("manager_name"), row.getString("status"), row.getString("current_stage"),
-            row.getString("risk_level"), row.getString("gate_mode"), localDate(row.getDate("start_date")),
+            row.getString("risk_level"), row.getString("gate_mode"),
+            row.getString("document_space_status"), row.getString("document_space_error"),
+            localDate(row.getDate("start_date")),
             localDate(row.getDate("planned_end_date")), row.getLong("version"),
             stages(projectId), members(projectId), risks(projectId), milestones(projectId),
             templates(projectId), artifacts(projectId), activities(projectId)), projectId);
@@ -124,6 +145,21 @@ public class ProjectService {
 
   public ProjectView get(long projectId, CurrentUser user) {
     if (user != null) assertProjectAccess(projectId, user);
+    return get(projectId);
+  }
+
+  public ProjectView getForOrganization(long projectId, long organizationId) {
+    Integer count = jdbc.queryForObject(
+        "select count(*) from delivery_project where id=? and organization_id=?",
+        Integer.class, projectId, organizationId);
+    if (count == null || count == 0) throw new NotFoundException("项目不存在");
+    return get(projectId);
+  }
+
+  @Transactional
+  public ProjectView retryDocumentInitialization(long projectId, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    documentJobs.retryProjectInitialization(project.getOrganizationId(), projectId);
     return get(projectId);
   }
 
@@ -142,8 +178,22 @@ public class ProjectService {
         "select gate_status,gate_message from stage_instance where project_id=? and stage_code=?",
         projectId, current.name());
     boolean blocked = "BLOCKING".equals(gate.get("gate_status"));
-    if (blocked && GateMode.BLOCK.name().equals(project.getGateMode())) {
-      throw new ConflictException(String.valueOf(gate.get("gate_message")));
+    List<String> warnings = new ArrayList<String>();
+    if (blocked) {
+      Object gateMessage = gate.get("gate_message");
+      warnings.add(gateMessage == null ? "阶段门禁未通过" : String.valueOf(gateMessage));
+    }
+    List<Map<String, Object>> incompleteDocuments =
+        projectDocuments.incompleteRequired(projectId, current);
+    if (!incompleteDocuments.isEmpty()) {
+      List<String> titles = new ArrayList<String>();
+      for (Map<String, Object> document : incompleteDocuments) {
+        titles.add(String.valueOf(document.get("title")));
+      }
+      warnings.add("未完成必需文档：" + String.join("、", titles));
+    }
+    if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
+      throw new ConflictException(String.join("；", warnings));
     }
     jdbc.update("update stage_instance set status='COMPLETED',completed_at=current_timestamp,"
             + "updated_at=current_timestamp,version=version+1 where project_id=? and stage_code=?",
@@ -153,10 +203,14 @@ public class ProjectService {
         projectId, target.name());
     jdbc.update("update delivery_project set current_stage=?,updated_at=current_timestamp,"
             + "version=version+1 where id=?", target.name(), projectId);
+    boolean warned = !warnings.isEmpty();
     activity(projectId, user.getId(),
-        blocked ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
+        warned ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
         "项目阶段推进至" + target.getDisplayName(),
-        blocked ? String.valueOf(gate.get("gate_message")) : null);
+        warned ? String.join("；", warnings) : null);
+    if (target == DeliveryStage.CLOSE) {
+      operations.ensureForClosedProject(user.getOrganizationId(), projectId, user.getId());
+    }
     return get(projectId);
   }
 
@@ -358,9 +412,26 @@ public class ProjectService {
   private void assertOrganizationUser(long organizationId, Long userId) {
     if (userId == null) return;
     Integer count = jdbc.queryForObject(
-        "select count(*) from app_user where id=? and organization_id=?",
+        "select count(*) from app_user where id=? and organization_id=? and status='ACTIVE'",
         Integer.class, userId, organizationId);
-    if (count == null || count == 0) throw new NotFoundException("用户不存在");
+    if (count == null || count == 0) throw new NotFoundException("用户不存在或已停用");
+  }
+
+  private Map<String, Object> customerForProject(long organizationId, long customerId) {
+    List<Map<String, Object>> values = jdbc.queryForList(
+        "select id,name,status from customer where id=? and organization_id=?",
+        customerId, organizationId);
+    if (values.isEmpty()) throw new NotFoundException("客户不存在");
+    Map<String, Object> customer = values.get(0);
+    if (!"ACTIVE".equals(customer.get("status"))) {
+      throw new IllegalArgumentException("停用客户不能创建项目");
+    }
+    return customer;
+  }
+
+  private Long nullableLong(java.sql.ResultSet row, String column) throws java.sql.SQLException {
+    Object value = row.getObject(column);
+    return value == null ? null : ((Number) value).longValue();
   }
 
   private boolean hasCrossProjectScope(CurrentUser user) {

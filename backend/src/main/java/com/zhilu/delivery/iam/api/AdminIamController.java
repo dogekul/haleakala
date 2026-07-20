@@ -13,6 +13,7 @@ import javax.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -79,6 +80,16 @@ public class AdminIamController {
     return updated;
   }
 
+  @DeleteMapping("/users/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
+  public void deleteUser(
+      @PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    admin.deleteUser(user, id);
+    record(user, "USER_DELETED", "USER", id, "删除用户");
+  }
+
   @GetMapping("/teams")
   public List<Map<String, Object>> teams(@AuthenticationPrincipal CurrentUser user) {
     return admin.teams(user.getOrganizationId());
@@ -108,9 +119,29 @@ public class AdminIamController {
     return updated;
   }
 
+  @DeleteMapping("/teams/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
+  public void deleteTeam(
+      @PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    admin.deleteTeam(user.getOrganizationId(), id);
+    record(user, "TEAM_DELETED", "TEAM", id, "删除团队");
+  }
+
   @GetMapping("/roles")
   public List<Map<String, Object>> roles() {
     return admin.roles();
+  }
+
+  @DeleteMapping("/roles/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
+  public void deleteRole(
+      @PathVariable long id,
+      @AuthenticationPrincipal CurrentUser user) {
+    admin.deleteRole(id);
+    record(user, "ROLE_DELETED", "ROLE", id, "删除角色");
   }
 
   @GetMapping("/permissions")

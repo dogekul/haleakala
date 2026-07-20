@@ -21,6 +21,8 @@ public final class ProjectView {
   private final String currentStage;
   private final String riskLevel;
   private final String gateMode;
+  private final String documentSpaceStatus;
+  private final String documentSpaceError;
   private final LocalDate startDate;
   private final LocalDate plannedEndDate;
   private final long version;
@@ -36,7 +38,8 @@ public final class ProjectView {
       long id, long organizationId, String code, String name, Long customerId, String customerName,
       long productId, String productName, long productVersionId, String productVersionName,
       long managerUserId, String managerName, String status, String currentStage,
-      String riskLevel, String gateMode, LocalDate startDate, LocalDate plannedEndDate, long version,
+      String riskLevel, String gateMode, String documentSpaceStatus, String documentSpaceError,
+      LocalDate startDate, LocalDate plannedEndDate, long version,
       List<StageView> stages, List<Map<String, Object>> members,
       List<Map<String, Object>> risks, List<Map<String, Object>> milestones,
       List<Map<String, Object>> templates, List<Map<String, Object>> artifacts,
@@ -57,6 +60,8 @@ public final class ProjectView {
     this.currentStage = currentStage;
     this.riskLevel = riskLevel;
     this.gateMode = gateMode;
+    this.documentSpaceStatus = documentSpaceStatus;
+    this.documentSpaceError = documentSpaceError;
     this.startDate = startDate;
     this.plannedEndDate = plannedEndDate;
     this.version = version;
@@ -85,6 +90,8 @@ public final class ProjectView {
   public String getCurrentStage() { return currentStage; }
   public String getRiskLevel() { return riskLevel; }
   public String getGateMode() { return gateMode; }
+  public String getDocumentSpaceStatus() { return documentSpaceStatus; }
+  public String getDocumentSpaceError() { return documentSpaceError; }
   public LocalDate getStartDate() { return startDate; }
   public LocalDate getPlannedEndDate() { return plannedEndDate; }
   public long getVersion() { return version; }

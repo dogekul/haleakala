@@ -1,5 +1,7 @@
 package com.zhilu.delivery.project;
 
+import com.zhilu.delivery.audit.AuditService;
+import com.zhilu.delivery.document.ProjectDocumentService;
 import com.zhilu.delivery.iam.service.CurrentUser;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,9 +26,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/projects")
 public class ProjectController {
   private final ProjectService projects;
+  private final ProjectDocumentService projectDocuments;
+  private final AuditService audit;
 
-  public ProjectController(ProjectService projects) {
+  public ProjectController(
+      ProjectService projects, ProjectDocumentService projectDocuments, AuditService audit) {
     this.projects = projects;
+    this.projectDocuments = projectDocuments;
+    this.audit = audit;
   }
 
   @GetMapping
@@ -58,6 +65,32 @@ public class ProjectController {
       @AuthenticationPrincipal CurrentUser user) {
     return projects.advanceStage(id, DeliveryStage.valueOf(request.targetStage),
         user);
+  }
+
+  @PostMapping("/{id}/documents/retry")
+  public ProjectView retryDocuments(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    ProjectView value = projects.retryDocumentInitialization(id, user);
+    audit.record(user.getOrganizationId(), user.getId(), "RETRY", "PROJECT_DOCUMENT_SPACE",
+        String.valueOf(id), value.getCode());
+    return value;
+  }
+
+  @GetMapping("/{id}/documents")
+  public List<Map<String, Object>> documents(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    return projectDocuments.list(id, user);
+  }
+
+  @PostMapping("/{id}/documents/{documentId}/confirm")
+  public Map<String, Object> confirmDocument(
+      @PathVariable long id,
+      @PathVariable long documentId,
+      @AuthenticationPrincipal CurrentUser user) {
+    Map<String, Object> value = projectDocuments.confirm(id, documentId, user);
+    audit.record(user.getOrganizationId(), user.getId(), "CONFIRM", "PROJECT_DOCUMENT",
+        String.valueOf(documentId), "project " + id + " · revision " + value.get("revision"));
+    return value;
   }
 
   @PutMapping("/{id}/stages/{stageCode}/gate")

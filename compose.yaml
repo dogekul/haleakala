@@ -63,6 +63,20 @@ services:
       timeout: 3s
       retries: 20
 
+  mock-outline:
+    build: ./mock-outline
+    profiles: ["e2e"]
+    environment:
+      PORT: 3000
+      OUTLINE_API_TOKEN: ${MOCK_OUTLINE_TOKEN:-ol_api_e2e}
+    ports:
+      - "${OUTLINE_MOCK_PORT:-3010}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   backend:
     build: ./backend
     environment:
@@ -78,10 +92,17 @@ services:
       AGENT_BASE_URL: http://mock-agent:8090
       AGENT_CALLBACK_URL: http://backend:8080/api/v1/integrations/agent/events
       AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-local-agent-secret}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-${AGENT_SHARED_SECRET:-local-agent-secret}}
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration,classpath:db/demo
       AI_BASE_URL: ${AI_BASE_URL:-}
       AI_MODEL: ${AI_MODEL:-}
       AI_API_KEY: ${AI_API_KEY:-}
+      OUTLINE_BASE_URL: ${OUTLINE_BASE_URL:-http://host.docker.internal:3000}
+      OUTLINE_PUBLIC_BASE_URL: ${OUTLINE_PUBLIC_BASE_URL:-http://localhost:3000}
+      OUTLINE_API_TOKEN: ${OUTLINE_API_TOKEN:-}
+      OUTLINE_COLLECTION_ID: ${OUTLINE_COLLECTION_ID:-a4296a54-2044-4529-ba86-d598a5322e06}
+      DELIVERY_OUTLINE_JOB_INITIAL_DELAY_MS: ${DELIVERY_OUTLINE_JOB_INITIAL_DELAY_MS:-60000}
+      DELIVERY_OUTLINE_JOB_SCAN_MS: ${DELIVERY_OUTLINE_JOB_SCAN_MS:-5000}
       TZ: Asia/Shanghai
     ports:
       - "${BACKEND_PORT:-8082}:8080"

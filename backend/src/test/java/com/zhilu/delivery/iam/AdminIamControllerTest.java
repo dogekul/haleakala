@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -46,7 +47,11 @@ class AdminIamControllerTest {
   @BeforeEach
   void seedOrganization() {
     jdbc.update("delete from audit_log");
+    jdbc.update("delete from sso_identity");
+    jdbc.update("delete from user_team");
     jdbc.update("delete from user_role");
+    jdbc.update("delete from role_permission where role_id>=100");
+    jdbc.update("delete from role where id>=100");
     jdbc.update("delete from app_user");
     jdbc.update("delete from team");
     jdbc.update("delete from organization");
@@ -180,6 +185,97 @@ class AdminIamControllerTest {
     assertEquals(Integer.valueOf(0), jdbc.queryForObject(
         "select count(*) from team where organization_id=300 and code='DELIVERY-2'",
         Integer.class));
+  }
+
+  @Test
+  void adminCanDeleteUnreferencedUserTeamAndCustomRole() throws Exception {
+    jdbc.update("insert into team(id,organization_id,name,code) "
+        + "values (310,300,'临时团队','TEMP-TEAM')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (310,300,'temporary','临时用户','ACTIVE')");
+    jdbc.update("insert into user_role(user_id,role_id) values (310,4)");
+    jdbc.update("insert into user_team(user_id,team_id) values (310,310)");
+    jdbc.update("insert into sso_identity(user_id,provider,subject,email) "
+        + "values (310,'oidc','temporary-subject','temporary@example.com')");
+    jdbc.update("insert into role(id,code,name,description,built_in) "
+        + "values (100,'CUSTOM_TEMP','临时角色','用于删除测试',false)");
+    jdbc.update("insert into role_permission(role_id,permission_id) values (100,2)");
+
+    mvc.perform(delete("/api/v1/admin/users/310").with(admin()).with(csrf()))
+        .andExpect(status().isNoContent());
+    mvc.perform(delete("/api/v1/admin/teams/310").with(admin()).with(csrf()))
+        .andExpect(status().isNoContent());
+    mvc.perform(delete("/api/v1/admin/roles/100").with(admin()).with(csrf()))
+        .andExpect(status().isNoContent());
+
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from app_user where id=310", Integer.class));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from team where id=310", Integer.class));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+        "select count(*) from role where id=100", Integer.class));
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
+        "select count(*) from audit_log where organization_id=300 and action in "
+            + "('USER_DELETED','TEAM_DELETED','ROLE_DELETED')", Integer.class));
+  }
+
+  @Test
+  void protectedUsersTeamsAndRolesReturnConflict() throws Exception {
+    jdbc.update("insert into team(id,organization_id,name,code) "
+        + "values (310,300,'有成员团队','TEAM-WITH-USER')");
+    jdbc.update("insert into app_user(id,organization_id,primary_team_id,username,display_name,status) "
+        + "values (310,300,310,'member','团队成员','ACTIVE')");
+    jdbc.update("insert into team(id,organization_id,name,code) "
+        + "values (311,300,'父团队','PARENT-TEAM')");
+    jdbc.update("insert into team(id,organization_id,parent_id,name,code) "
+        + "values (312,300,311,'子团队','CHILD-TEAM')");
+    jdbc.update("insert into role(id,code,name,description,built_in) "
+        + "values (100,'CUSTOM_ASSIGNED','已分配角色','用于保护测试',false)");
+    jdbc.update("insert into user_role(user_id,role_id) values (310,100)");
+
+    mvc.perform(delete("/api/v1/admin/users/300").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("不能删除当前登录用户"));
+    mvc.perform(delete("/api/v1/admin/teams/310").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("团队仍有用户，不能删除"));
+    mvc.perform(delete("/api/v1/admin/teams/311").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("团队仍有下级团队，不能删除"));
+    mvc.perform(delete("/api/v1/admin/roles/1").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("内置角色不能删除"));
+    mvc.perform(delete("/api/v1/admin/roles/100").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("角色已分配给用户，不能删除"));
+  }
+
+  @Test
+  void userWithBusinessHistoryCannotBeDeletedAndIdentityRelationsRollBack() throws Exception {
+    jdbc.update("insert into team(id,organization_id,name,code) "
+        + "values (310,300,'临时团队','TEMP-TEAM')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (310,300,'historical','历史用户','ACTIVE')");
+    jdbc.update("insert into user_role(user_id,role_id) values (310,4)");
+    jdbc.update("insert into user_team(user_id,team_id) values (310,310)");
+    jdbc.update("insert into sso_identity(user_id,provider,subject,email) "
+        + "values (310,'oidc','historical-subject','historical@example.com')");
+    jdbc.update("insert into audit_log(organization_id,actor_user_id,action,resource_type,"
+        + "resource_id,trace_id,details_text) values (300,310,'TEST_ACTION','USER','310',"
+        + "'trace-history','历史业务记录')");
+
+    mvc.perform(delete("/api/v1/admin/users/310").with(admin()).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("用户已有业务记录，不能删除；请停用用户"));
+
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from app_user where id=310", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from user_role where user_id=310", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from user_team where user_id=310", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from sso_identity where user_id=310", Integer.class));
   }
 
   private RequestPostProcessor admin() {

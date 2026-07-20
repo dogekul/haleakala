@@ -8,6 +8,8 @@
 
 ## 首次部署
 
+- `SETTINGS_ENCRYPTION_KEY` 用于加密管理页保存的 API Token。生产环境必须设置独立、稳定的高强度值；更换前需先完成密钥轮换，直接更换会导致已有密文无法解密。
+
 ```bash
 cp .env.example .env
 # 先修改 .env 中的数据库、MinIO 和 Agent 密钥
@@ -47,6 +49,35 @@ docker volume ls | grep zhilu-delivery
 ```
 
 MySQL 是业务事实的权威数据源；Redis 只保存会话，恢复失败时用户需重新登录。MinIO 中的对象必须与 MySQL `file_object/file_version` 同步备份。
+
+## 阿里云 Outline
+
+- 公网入口：`https://outline.8.166.121.138.sslip.io`
+- ECS 目录：`/opt/outline-stack`
+- 备份目录：`/opt/outline-backups`
+- 智鹿文档中心的服务地址和浏览器地址均使用上述 HTTPS 入口。Outline 开启强制 HTTPS 时，直连 `http://outline:3000` 会拒绝 POST API 请求。
+
+常用运维命令：
+
+```bash
+cd /opt/outline-stack
+docker compose --env-file .env -f docker-compose.ecs.yml ps
+docker compose --env-file .env -f docker-compose.ecs.yml logs --tail=200 outline dex caddy
+docker compose --env-file .env -f docker-compose.ecs.yml restart outline
+./verify-outline-aliyun.sh
+```
+
+`/etc/cron.d/outline-backup` 每天 03:30（Asia/Shanghai）运行 `/opt/outline-stack/backup-outline-aliyun.sh`，保留最近 7 份完整备份。备份先写入隐藏的 `.partial` 目录，数据库、卷归档和 SHA-256 校验全部通过后才发布为时间戳目录。
+
+恢复顺序：
+
+1. 停止 `outline` 和 `caddy`，保留 PostgreSQL、Redis 和所有 Docker volume。
+2. 根据 `SHA256SUMS` 校验备份，用 `pg_restore --clean --if-exists` 恢复 `outline.pgdump`。
+3. 依次恢复 `outline-data.tar.gz`、`dex-data.tar.gz` 和 `caddy-data.tar.gz`。
+4. 仅在原服务器配置丢失时，从加密灾备包恢复 `.env`、Dex 和 Caddy 配置。
+5. 先启动 PostgreSQL、Redis、Dex 和 Caddy，运行 Outline 数据库迁移，再启动 Outline 并执行验证脚本。
+
+升级时先生成并验证备份，再修改锁定的镜像版本、拉取镜像、运行迁移和健康检查。重启或升级时绝对不能轮换 `SECRET_KEY`，否则已加密的 Outline 数据将无法解密。
 
 ## 安全基线
 

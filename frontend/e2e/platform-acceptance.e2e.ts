@@ -14,6 +14,17 @@ test('admin can log in, explore the platform, and capture a requirement', async 
   await page.getByText('列表', { exact: true }).click()
   await expect(page.getByRole('table').first()).toBeVisible()
 
+  await page.getByRole('link', { name: /客户中心/ }).click()
+  await expect(page).toHaveURL(/\/customers/)
+  for (const tab of ['客户管理', '商机总览', '售前推进', '实施协同', '实施驾驶舱', '客户运营']) {
+    await expect(page.getByRole('link', { name: tab, exact: true })).toBeVisible()
+  }
+  await expect(page.getByRole('heading', { name: '客户管理' })).toBeVisible()
+  await page.getByRole('link', { name: '商机总览', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '商机总览' })).toBeVisible()
+  await page.getByRole('link', { name: '实施驾驶舱', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '实施驾驶舱' })).toBeVisible()
+
   for (const module of [
     { label: '项目空间', path: /\/projects$/, heading: '项目空间' },
     { label: '标准化中心', path: /\/standardization/, heading: '标准化中心' },

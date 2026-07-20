@@ -1,7 +1,10 @@
 import { api } from '../../services/api'
 import type {
-  Product, ProductCoverage, ProductFeature, ProductModule, ProductVersion, VersionManifest,
+  Product, ProductCoverage, ProductDocumentNode, ProductFeature,
+  ProductModule, ProductVersion, VersionManifest,
 } from './types'
+import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
+import { apiPath } from '../../services/apiPath'
 
 type Input = Record<string, unknown>
 
@@ -40,4 +43,24 @@ export const productApi = {
     },
   ),
   coverage: (productId: number) => api<ProductCoverage>(`/api/v1/products/${productId}/coverage`),
+  documentNodes: (productId: number) => api<ProductDocumentNode[]>(
+    `/api/v1/products/${productId}/document-nodes`,
+  ),
+  saveDocumentNode: (productId: number, id: number | undefined, input: Input) => api<ProductDocumentNode>(
+    `/api/v1/products/${productId}/document-nodes${id ? `/${id}` : ''}`, {
+      method: id ? 'PUT' : 'POST', body: JSON.stringify(input),
+    },
+  ),
+  retryDocumentNode: (productId: number, nodeId: number) => api<ProductDocumentNode>(
+    `/api/v1/products/${productId}/document-nodes/${nodeId}/retry`, { method: 'POST' },
+  ),
+  documentNodeContent: (productId: number, nodeId: number) => api<DocumentContent>(
+    `/api/v1/products/${productId}/document-nodes/${nodeId}/content`,
+  ),
+  saveDocumentNodeContent: (productId: number, nodeId: number, input: SaveDocumentInput) =>
+    api<DocumentContent>(`/api/v1/products/${productId}/document-nodes/${nodeId}/content`, {
+      method: 'PUT', body: JSON.stringify(input),
+    }),
+  documentNodeExportUrl: (productId: number, nodeId: number, format: DocumentFormat) =>
+    apiPath(`/api/v1/products/${productId}/document-nodes/${nodeId}/export?format=${format}`),
 }

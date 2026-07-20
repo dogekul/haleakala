@@ -49,11 +49,12 @@ public class DashboardQueryService {
 
   public List<Map<String, Object>> projects(CurrentUser user, DashboardFilter filter) {
     Query query = baseQuery(user, filter);
-    String sql = "select p.id,p.code,p.name,p.customer_name,p.status,p.current_stage,p.risk_level,"
+    String sql = "select p.id,p.code,p.name,coalesce(c.name,p.customer_name) customer_name,p.status,p.current_stage,p.risk_level,"
         + "p.start_date,p.planned_end_date,p.product_id,pr.name product_name,pv.version_name,u.display_name manager_name,"
         + "(select count(*) from project_risk r where r.project_id=p.id and r.status='OPEN') open_risk_count,"
         + "(select count(*) from milestone m where m.project_id=p.id and m.status<>'COMPLETED' and m.due_date<current_date) overdue_count "
-        + "from delivery_project p join product pr on pr.id=p.product_id "
+        + "from delivery_project p left join customer c on c.id=p.customer_id and c.organization_id=p.organization_id "
+        + "join product pr on pr.id=p.product_id "
         + "join product_version pv on pv.id=p.product_version_id join app_user u on u.id=p.manager_user_id "
         + query.where + " order by case p.risk_level when 'RED' then 1 when 'YELLOW' then 2 else 3 end,p.updated_at desc";
     return jdbc.query(sql, (row, index) -> {
@@ -77,7 +78,8 @@ public class DashboardQueryService {
   public List<Map<String, Object>> riskHeatmap(CurrentUser user) {
     Query query = baseQuery(user, new DashboardFilter());
     String sql = "select p.id project_id,p.code,p.name,r.category,count(*) risk_count,max(r.probability*r.impact) max_score "
-        + "from delivery_project p join project_risk r on r.project_id=p.id " + query.where
+        + "from delivery_project p left join customer c on c.id=p.customer_id and c.organization_id=p.organization_id "
+        + "join project_risk r on r.project_id=p.id " + query.where
         + " and r.status='OPEN' group by p.id,p.code,p.name,r.category order by max_score desc,risk_count desc";
     return jdbc.query(sql, (row, index) -> {
       Map<String, Object> value = new LinkedHashMap<String, Object>();
@@ -111,7 +113,7 @@ public class DashboardQueryService {
       args.add(user.getId());
     }
     if (filter != null && present(filter.getKeyword())) {
-      where.append(" and (lower(p.name) like ? or lower(p.code) like ? or lower(p.customer_name) like ?)");
+      where.append(" and (lower(p.name) like ? or lower(p.code) like ? or lower(coalesce(c.name,p.customer_name)) like ?)");
       String keyword = "%" + filter.getKeyword().trim().toLowerCase(java.util.Locale.ROOT) + "%";
       args.add(keyword); args.add(keyword); args.add(keyword);
     }

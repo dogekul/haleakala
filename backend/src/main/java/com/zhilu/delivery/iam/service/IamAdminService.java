@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -127,6 +128,27 @@ public class IamAdminService {
   }
 
   @Transactional
+  public void deleteUser(CurrentUser actor, long userId) {
+    if (actor.getId() == userId) {
+      throw new ConflictException("不能删除当前登录用户");
+    }
+    Integer count = jdbc.queryForObject(
+        "select count(*) from app_user where id=? and organization_id=?",
+        Integer.class, userId, actor.getOrganizationId());
+    if (count == null || count == 0) throw new NotFoundException("用户不存在");
+
+    jdbc.update("delete from user_role where user_id=?", userId);
+    jdbc.update("delete from user_team where user_id=?", userId);
+    jdbc.update("delete from sso_identity where user_id=?", userId);
+    try {
+      jdbc.update("delete from app_user where id=? and organization_id=?",
+          userId, actor.getOrganizationId());
+    } catch (DataIntegrityViolationException referenced) {
+      throw new ConflictException("用户已有业务记录，不能删除；请停用用户");
+    }
+  }
+
+  @Transactional
   public Map<String, Object> updateTeam(long organizationId, long teamId, Long parentId,
       String name, String code, boolean enabled) {
     validateTeam(organizationId, parentId, teamId);
@@ -142,6 +164,30 @@ public class IamAdminService {
     }
   }
 
+  @Transactional
+  public void deleteTeam(long organizationId, long teamId) {
+    Integer exists = jdbc.queryForObject(
+        "select count(*) from team where id=? and organization_id=?",
+        Integer.class, teamId, organizationId);
+    if (exists == null || exists == 0) throw new NotFoundException("团队不存在");
+
+    Integer childTeams = jdbc.queryForObject(
+        "select count(*) from team where parent_id=? and organization_id=?",
+        Integer.class, teamId, organizationId);
+    if (childTeams != null && childTeams > 0) {
+      throw new ConflictException("团队仍有下级团队，不能删除");
+    }
+    Integer users = jdbc.queryForObject(
+        "select count(*) from app_user where primary_team_id=? and organization_id=?",
+        Integer.class, teamId, organizationId);
+    Integer members = jdbc.queryForObject(
+        "select count(*) from user_team where team_id=?", Integer.class, teamId);
+    if ((users != null && users > 0) || (members != null && members > 0)) {
+      throw new ConflictException("团队仍有用户，不能删除");
+    }
+    jdbc.update("delete from team where id=? and organization_id=?", teamId, organizationId);
+  }
+
   public List<Map<String, Object>> roles() {
     List<Long> ids = jdbc.queryForList("select id from role order by id", Long.class);
     List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
@@ -149,6 +195,23 @@ public class IamAdminService {
       result.add(role(id));
     }
     return result;
+  }
+
+  @Transactional
+  public void deleteRole(long roleId) {
+    List<Boolean> builtIn = jdbc.queryForList(
+        "select built_in from role where id=?", Boolean.class, roleId);
+    if (builtIn.isEmpty()) throw new NotFoundException("角色不存在");
+    if (Boolean.TRUE.equals(builtIn.get(0))) {
+      throw new ConflictException("内置角色不能删除");
+    }
+    Integer assigned = jdbc.queryForObject(
+        "select count(*) from user_role where role_id=?", Integer.class, roleId);
+    if (assigned != null && assigned > 0) {
+      throw new ConflictException("角色已分配给用户，不能删除");
+    }
+    jdbc.update("delete from role_permission where role_id=?", roleId);
+    jdbc.update("delete from role where id=?", roleId);
   }
 
   public List<Map<String, Object>> permissions() {

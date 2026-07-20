@@ -40,11 +40,11 @@ it('只显示当前用户有权访问的模块入口', () => {
   )
 
   expect(screen.getByRole('link', { name: /项目空间/ })).toBeVisible()
-  expect(screen.getByRole('link', { name: /客户管理/ })).toBeVisible()
+  expect(screen.getByRole('link', { name: /客户中心/ })).toBeVisible()
   expect(screen.getByRole('link', { name: /产品中心/ })).toBeVisible()
   expect(screen.getByRole('link', { name: /需求工坊/ })).toBeVisible()
   const links = screen.getAllByRole('link').map(link => link.textContent)
-  expect(links.indexOf('客户管理')).toBeLessThan(links.indexOf('项目空间'))
+  expect(links.indexOf('客户中心')).toBeLessThan(links.indexOf('项目空间'))
   expect(links.indexOf('产品中心')).toBeGreaterThan(links.indexOf('项目空间'))
   expect(links.indexOf('产品中心')).toBeLessThan(links.indexOf('需求工坊'))
   expect(screen.queryByRole('link', { name: /资源中心/ })).not.toBeInTheDocument()
@@ -52,6 +52,24 @@ it('只显示当前用户有权访问的模块入口', () => {
   expect(screen.queryByRole('button', { name: /项目列表/ })).not.toBeInTheDocument()
   expect(document.querySelector('.section-sidebar')).not.toBeInTheDocument()
   expect(screen.getByText('项目内容')).toBeVisible()
+})
+
+it('只有CRM权限时仍显示客户中心入口', () => {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+    platformName: '智鹿交付', environmentLabel: '验收环境', timezone: 'Asia/Shanghai',
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }))))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const crmAuth: AuthState = { ...auth, me: { ...auth.me!, permissions: ['crm:read'] } }
+  render(<QueryClientProvider client={client}>
+    <AuthContext.Provider value={crmAuth}>
+      <MemoryRouter initialEntries={['/customers/opportunities']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AppShell><div>商机内容</div></AppShell>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  </QueryClientProvider>)
+
+  expect(screen.getByRole('link', { name: /客户中心/ })).toBeVisible()
 })
 
 it('管理员保存的平台名称和环境标识会刷新应用壳层', async () => {

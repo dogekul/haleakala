@@ -34,6 +34,18 @@ management:
         include: health,info
 
 delivery:
+  settings:
+    encryption-key: ${SETTINGS_ENCRYPTION_KEY:${AGENT_SHARED_SECRET:change-me}}
+  outline:
+    base-url: ${OUTLINE_BASE_URL:http://localhost:3000}
+    public-base-url: ${OUTLINE_PUBLIC_BASE_URL:}
+    api-token: ${OUTLINE_API_TOKEN:}
+    collection-id: ${OUTLINE_COLLECTION_ID:}
+    connect-timeout: ${OUTLINE_CONNECT_TIMEOUT:3s}
+    read-timeout: ${OUTLINE_READ_TIMEOUT:10s}
+    max-attempts: ${OUTLINE_MAX_ATTEMPTS:5}
+    initial-backoff: ${OUTLINE_INITIAL_BACKOFF:30s}
+    stale-after: ${OUTLINE_STALE_AFTER:5m}
   agent:
     base-url: ${AGENT_BASE_URL:http://localhost:8090}
     callback-url: ${AGENT_CALLBACK_URL:http://backend:8080/api/v1/integrations/agent/events}

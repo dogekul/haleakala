@@ -13,6 +13,7 @@ export interface Project {
   organizationId: number
   code: string
   name: string
+  customerId: number | null
   customerName: string
   productId: number
   productName: string
@@ -24,6 +25,8 @@ export interface Project {
   currentStage: string
   riskLevel: 'GREEN' | 'YELLOW' | 'RED'
   gateMode?: 'BLOCK' | 'WARNING'
+  documentSpaceStatus?: 'PENDING' | 'INITIALIZING' | 'READY' | 'FAILED'
+  documentSpaceError?: string
   startDate?: string
   plannedEndDate?: string
   version: number
@@ -34,6 +37,24 @@ export interface Project {
   templates: Array<Record<string, unknown>>
   artifacts: Array<Record<string, unknown>>
   activities: Array<Record<string, unknown>>
+}
+
+export interface ProjectDocument {
+  id: number
+  stageCode: string
+  title: string
+  requirement: 'REQUIRED' | 'OPTIONAL'
+  status: 'PENDING' | 'TODO' | 'PENDING_CONFIRMATION' | 'COMPLETED' | 'FAILED'
+  revision?: number
+  confirmedRevision?: number
+  confirmedBy?: number
+  confirmedByName?: string
+  confirmedAt?: string
+  outlineUrl?: string
+  lastError?: string
+  lastSyncedAt?: string
+  sourceTemplateId: number
+  sourceTemplateRevision: number
 }
 
 export interface Product {

@@ -32,6 +32,15 @@ const coverage = {
   features: [{ featureId: 21, featureCode: 'FIN-GL', featureName: '总账处理', moduleName: '财务管理', fullCount: 3, partialCount: 1 }],
   uncoveredRequirements: [{ requirementId: 41, requirementCode: 'REQ-41', title: '跨区域核算差异支持和特别长的需求标题', projectCode: 'PRJ-1', debtLinked: false }],
 }
+const productDocuments = [
+  { id: 101, productId: 8, parentId: null, nodeType: 'FOLDER', code: 'DOC-01', title: '01 产品总纲', sortOrder: 1, syncStatus: 'READY', version: 0 },
+  { id: 102, productId: 8, parentId: 101, nodeType: 'DOCUMENT', code: 'DOC-01-01', title: '产品一页纸', sortOrder: 1, syncStatus: 'READY', version: 0 },
+]
+const featureSpec = {
+  linkId: 88, title: '产品一页纸', markdown: '# 产品一页纸',
+  renderedHtml: '<h1>产品一页纸</h1>', revision: 3, updatedAt: '2026-07-17T08:00:00Z',
+  syncStatus: 'READY', outlineUrl: 'http://outline/doc/product-one-pager',
+}
 
 const auth: AuthState = {
   loading: false,
@@ -46,11 +55,13 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
 function responseFor(path: string) {
   if (path === '/api/v1/products/8') return json(product)
   if (path === '/api/v1/products/8/modules') return json(modules)
+  if (path === '/api/v1/products/8/document-nodes/102/content') return json(featureSpec)
   if (path.startsWith('/api/v1/products/8/features')) return json(features)
   if (path === '/api/v1/products/8/versions') return json(versions)
   if (path === '/api/v1/products/8/versions/31/features') return json({ versionId: 31, version: 3, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
   if (path === '/api/v1/products/8/versions/32/features') return json({ versionId: 32, version: 5, entries: [{ featureId: 21, availability: 'INCLUDED' }] })
   if (path === '/api/v1/products/8/coverage') return json(coverage)
+  if (path === '/api/v1/products/8/document-nodes') return json(productDocuments)
   if (path === '/api/v1/requirements/funnel') return json({ L0: 1, L1: 0, L2: 0 })
   if (path === '/api/v1/requirements') return json([{
     id: 41, organizationId: 1, projectId: 51, projectCode: 'PRJ-1', projectName: '区域财务项目', code: 'REQ-41',
@@ -96,6 +107,7 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   const fetch = show()
   const user = userEvent.setup()
   expect(await screen.findByRole('tab', { name: '模块与功能' })).toBeVisible()
+  expect(screen.getByRole('link', { name: /返回产品中心/ })).toHaveClass('detail-back-link')
   expect(fetch).not.toHaveBeenCalledWith('/api/v1/products/8/modules', expect.anything())
 
   await user.click(screen.getByRole('tab', { name: '模块与功能' }))
@@ -106,6 +118,31 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   await user.click(screen.getByText('AR · 应收管理'))
   expect(await screen.findByText('应收对账')).toBeVisible()
   expect(screen.queryByText('总账处理')).not.toBeInTheDocument()
+})
+
+it('产品文档使用独立目录并支持编辑 Outline 正文', async () => {
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (init?.method === 'PUT' && path === '/api/v1/products/8/document-nodes/102/content') {
+      return json({ ...featureSpec, markdown: '# 产品一页纸\n\n补充边界', revision: 4 })
+    }
+    return responseFor(path)
+  })
+  show(fetch)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('tab', { name: '产品文档' }))
+  expect(await screen.findByText('独立文档工作区 · 内容同步至 Outline')).toBeVisible()
+  expect(screen.queryByText('产品结构与 Outline 实时对应')).not.toBeInTheDocument()
+  await user.click(await screen.findByText('产品一页纸'))
+  expect(await screen.findByRole('heading', { name: '产品一页纸' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '编辑' }))
+  await user.type(screen.getByLabelText('Markdown 正文'), '\n\n补充边界')
+  await user.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/products/8/document-nodes/102/content', expect.objectContaining({
+      method: 'PUT', body: expect.stringContaining('"revision":3'),
+    }),
+  ))
 })
 
 it('创建模块并编辑功能时提交乐观锁版本并刷新覆盖度', async () => {

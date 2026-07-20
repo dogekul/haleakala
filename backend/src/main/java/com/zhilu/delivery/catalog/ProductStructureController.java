@@ -42,18 +42,22 @@ public class ProductStructureController {
   public Map<String, Object> createModule(
       @PathVariable long productId, @Valid @RequestBody ModuleRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveModule(user.getOrganizationId(), user.getId(), productId, null,
+    Map<String, Object> module = structures.saveModule(
+        user.getOrganizationId(), user.getId(), productId, null,
         request.parentId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.sortOrder, request.version);
+    return module;
   }
 
   @PutMapping("/modules/{moduleId}")
   public Map<String, Object> updateModule(
       @PathVariable long productId, @PathVariable long moduleId,
       @Valid @RequestBody ModuleRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveModule(user.getOrganizationId(), user.getId(), productId, moduleId,
+    Map<String, Object> module = structures.saveModule(
+        user.getOrganizationId(), user.getId(), productId, moduleId,
         request.parentId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.sortOrder, request.version);
+    return module;
   }
 
   @GetMapping("/features")
@@ -68,18 +72,22 @@ public class ProductStructureController {
   public Map<String, Object> createFeature(
       @PathVariable long productId, @Valid @RequestBody FeatureRequest request,
       @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveFeature(user.getOrganizationId(), user.getId(), productId, null,
+    Map<String, Object> feature = structures.saveFeature(
+        user.getOrganizationId(), user.getId(), productId, null,
         request.moduleId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.version);
+    return feature;
   }
 
   @PutMapping("/features/{featureId}")
   public Map<String, Object> updateFeature(
       @PathVariable long productId, @PathVariable long featureId,
       @Valid @RequestBody FeatureRequest request, @AuthenticationPrincipal CurrentUser user) {
-    return structures.saveFeature(user.getOrganizationId(), user.getId(), productId, featureId,
+    Map<String, Object> feature = structures.saveFeature(
+        user.getOrganizationId(), user.getId(), productId, featureId,
         request.moduleId, request.ownerUserId, request.code, request.name, request.description,
         request.status, request.version);
+    return feature;
   }
 
   @GetMapping("/versions/{versionId}/features")

@@ -1,6 +1,8 @@
 import { api } from '../../services/api'
 import type {
-  AdminUser, AuditResult, Permission, Role, SystemSettings, Team,
+  AdminUser, AiConfiguration, AiConfigurationInput, AiConnectionTest, AuditResult,
+  DocumentCenterJob, DocumentCenterStatus, Permission, Role,
+  OutlineConfiguration, OutlineConfigurationInput, OutlineConnectionTest, SystemSettings, Team,
 } from './types'
 
 export const adminApi = {
@@ -12,12 +14,15 @@ export const adminApi = {
   userStatus: (id: number, status: AdminUser['status']) => api<void>(`/api/v1/admin/users/${id}/status`, {
     method: 'PUT', body: JSON.stringify({ status }),
   }),
+  deleteUser: (id: number) => api<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' }),
   teams: () => api<Team[]>('/api/v1/admin/teams'),
   saveTeam: (id: number | undefined, input: Record<string, unknown>) => api<Team>(
     `/api/v1/admin/teams${id ? `/${id}` : ''}`,
     { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) },
   ),
+  deleteTeam: (id: number) => api<void>(`/api/v1/admin/teams/${id}`, { method: 'DELETE' }),
   roles: () => api<Role[]>('/api/v1/admin/roles'),
+  deleteRole: (id: number) => api<void>(`/api/v1/admin/roles/${id}`, { method: 'DELETE' }),
   permissions: () => api<Permission[]>('/api/v1/admin/permissions'),
   saveRolePermissions: (id: number, permissionCodes: string[]) => api<Role>(
     `/api/v1/admin/roles/${id}/permissions`,
@@ -36,4 +41,47 @@ export const adminApi = {
   saveSettings: (input: SystemSettings) => api<SystemSettings>('/api/v1/admin/settings', {
     method: 'PUT', body: JSON.stringify(input),
   }),
+  documentCenterStatus: () => api<DocumentCenterStatus>(
+    '/api/v1/admin/document-center/status',
+  ),
+  outlineConfiguration: () => api<OutlineConfiguration>(
+    '/api/v1/admin/document-center/config',
+  ),
+  testOutlineConfiguration: (input: OutlineConfigurationInput) =>
+    api<OutlineConnectionTest>(
+      '/api/v1/admin/document-center/config/test',
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  saveOutlineConfiguration: (input: OutlineConfigurationInput) =>
+    api<OutlineConfiguration>(
+      '/api/v1/admin/document-center/config',
+      { method: 'PUT', body: JSON.stringify(input) },
+    ),
+  aiConfiguration: () => api<AiConfiguration>('/api/v1/admin/ai-service/config'),
+  testAiConfiguration: (input: AiConfigurationInput) => api<AiConnectionTest>(
+    '/api/v1/admin/ai-service/config/test',
+    { method: 'POST', body: JSON.stringify(input) },
+  ),
+  saveAiConfiguration: (input: AiConfigurationInput) => api<AiConfiguration>(
+    '/api/v1/admin/ai-service/config',
+    { method: 'PUT', body: JSON.stringify(input) },
+  ),
+  documentCenterJobs: (status?: DocumentCenterJob['status']) => api<DocumentCenterJob[]>(
+    `/api/v1/admin/document-center/jobs${status ? `?status=${status}` : ''}`,
+  ),
+  initializeDocumentCenter: () => api<Record<string, unknown>>(
+    '/api/v1/admin/document-center/initialize', { method: 'POST' },
+  ),
+  initializeProductDocuments: () => api<{ completed: number; failed: number }>(
+    '/api/v1/admin/document-center/initialize-products', { method: 'POST' },
+  ),
+  migrateKnowledgeDocuments: () => api<{ enqueued: number }>(
+    '/api/v1/admin/document-center/migrate-knowledge', { method: 'POST' },
+  ),
+  migrateProjectDocuments: () => api<{ enqueued: number }>(
+    '/api/v1/admin/document-center/migrate-projects', { method: 'POST' },
+  ),
+  retryDocumentJob: (id: number) => api<{ id: number; status: string }>(
+    `/api/v1/admin/document-center/jobs/${id}/retry`, { method: 'POST' },
+  ),
 }
