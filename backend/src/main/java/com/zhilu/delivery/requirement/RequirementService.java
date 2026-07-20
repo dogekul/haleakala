@@ -2,9 +2,6 @@ package com.zhilu.delivery.requirement;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.zhilu.delivery.automation.AiClient;
-import com.zhilu.delivery.automation.AiServiceException;
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
@@ -29,15 +26,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class RequirementService {
   private static final Set<String> LEVELS = new HashSet<String>(Arrays.asList("L0", "L1", "L2"));
   private final JdbcTemplate jdbc;
-  private final AiClient ai;
   private final ObjectMapper json;
   private final AuditService audit;
   private final RequirementDocumentService documents;
+  private final RequirementClassificationAiService classifications;
 
-  public RequirementService(JdbcTemplate jdbc, AiClient ai, ObjectMapper json, AuditService audit,
-      RequirementDocumentService documents) {
-    this.jdbc = jdbc; this.ai = ai; this.json = json; this.audit = audit;
+  public RequirementService(JdbcTemplate jdbc, ObjectMapper json, AuditService audit,
+      RequirementDocumentService documents, RequirementClassificationAiService classifications) {
+    this.jdbc = jdbc; this.json = json; this.audit = audit;
     this.documents = documents;
+    this.classifications = classifications;
   }
 
   @Transactional
@@ -129,30 +127,11 @@ public class RequirementService {
   public Map<String, Object> classify(long id, long actorUserId) {
     Map<String, Object> requirement = get(id);
     assertActionable(requirement);
-    ObjectNode schema = json.createObjectNode(); schema.put("type", "object");
-    ObjectNode properties = schema.putObject("properties");
-    properties.putObject("level").put("type", "string").putArray("enum").add("L0").add("L1").add("L2");
-    properties.putObject("confidence").put("type", "number");
-    properties.putObject("reason").put("type", "string");
-    schema.putArray("required").add("level").add("confidence").add("reason"); schema.put("additionalProperties", false);
-    long organizationId = ((Number) requirement.get("organizationId")).longValue();
-    JsonNode result = ai.completeJson(organizationId,
-        "你是交付需求分类助手。L0=标品已有，L1=需要二开，L2=不在产品范围。只返回符合 schema 的 JSON。",
-        "需求标题：" + requirement.get("title") + "\n需求描述：" + requirement.get("description"), schema);
-    if (result == null || !result.isObject() || result.size() != 3
-        || result.get("level") == null || !result.get("level").isTextual()
-        || result.get("confidence") == null || !result.get("confidence").isNumber()
-        || result.get("reason") == null || !result.get("reason").isTextual()) {
-      throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
-    }
+    JsonNode result = classifications.analyze(id);
     String level = result.get("level").asText();
     double confidence = result.get("confidence").asDouble();
     String reason = result.get("reason").asText();
-    if (!LEVELS.contains(level) || Double.isNaN(confidence)
-        || confidence < 0 || confidence > 1 || blank(reason)) {
-      throw new AiServiceException(AiServiceException.Type.INCOMPATIBLE_RESPONSE);
-    }
-    return saveSuggestion(id, level, confidence, reason, "AI");
+    return saveSuggestion(id, level, confidence, reason, "AI", result);
   }
 
   @Transactional
