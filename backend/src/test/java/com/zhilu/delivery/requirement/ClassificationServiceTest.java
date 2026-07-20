@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +24,7 @@ import com.zhilu.delivery.automation.AiClient;
 class ClassificationServiceTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private RequirementService requirements;
+  @Autowired private ObjectMapper json;
   @MockBean private AiClient ai;
 
   @BeforeEach
@@ -46,6 +50,35 @@ class ClassificationServiceTest {
     requirements.confirm(id, "L1", null, 900);
     assertEquals(1L, ((Number) requirements.funnel(900).get("L1")).longValue());
     assertEquals(1, jdbc.queryForObject("select count(*) from custom_dev_task where requirement_id=?", Integer.class, id));
+  }
+
+  @Test
+  void completeAiSuggestionRoundTripsEvidenceAndDeliveryTables() {
+    Map<String, Object> requirement = requirements.create(900, "客户校验增强",
+        "需要增强客户校验并安排投产", "访谈", "P1", 900);
+    long id = ((Number) requirement.get("id")).longValue();
+    ObjectNode details = json.createObjectNode();
+    details.put("level", "L1"); details.put("confidence", 0.91);
+    details.put("reason", "现有客户校验只覆盖基础规则");
+    details.putArray("evidence").add("需求调研报告/详细需求");
+    details.putArray("warnings").add("生产窗口待确认");
+    ObjectNode construction = details.putArray("constructionContents").addObject();
+    construction.put("moduleName", "客户管理"); construction.put("featureCode", "VALIDATION");
+    construction.put("featureName", "客户校验");
+    ObjectNode plan = details.putArray("productionPlan").addObject();
+    plan.put("phase", "开发"); plan.put("workItem", "增强客户校验");
+
+    Map<String, Object> saved = requirements.saveSuggestion(
+        id, "L1", 0.91, "现有客户校验只覆盖基础规则", "AI", details);
+
+    assertEquals("需求调研报告/详细需求",
+        ((List<?>) saved.get("classificationEvidence")).get(0));
+    assertEquals("生产窗口待确认",
+        ((List<?>) saved.get("classificationWarnings")).get(0));
+    assertEquals("客户校验", ((Map<?, ?>) ((List<?>)
+        saved.get("constructionContents")).get(0)).get("featureName"));
+    assertEquals("开发", ((Map<?, ?>) ((List<?>)
+        saved.get("productionPlan")).get(0)).get("phase"));
   }
 
   @Test
