@@ -6,6 +6,7 @@ import { afterEach } from 'vitest'
 import { Modal } from 'antd'
 import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { RequirementWorkshop } from './RequirementWorkshop'
+import type { Requirement } from './types'
 
 const auth: AuthState = {
   loading: false,
@@ -341,12 +342,12 @@ it('只为已关联 Outline 的需求显示查看文档并打开最新地址', a
     'http://localhost:3000/doc/req-51', '_blank', 'noopener,noreferrer'))
 })
 
-function editableRequirement() {
+function editableRequirement(): Requirement {
   return {
     id: 61, organizationId: 1, projectId: 41, productId: 8, projectCode: 'PRJ-041',
     projectName: '消保合规交付', code: 'REQ-061', title: '交易限额校验',
-    description: '付款前校验客户交易限额', source: '客户访谈', priority: 'P1' as const,
-    status: 'DRAFT' as const, version: 3, outlineLinkId: 71,
+    description: '付款前校验客户交易限额', source: '客户访谈', priority: 'P1',
+    status: 'DRAFT', version: 3, outlineLinkId: 71,
   }
 }
 
