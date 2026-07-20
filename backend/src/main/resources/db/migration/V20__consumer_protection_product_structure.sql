@@ -48,12 +48,29 @@ JOIN product_feature f ON f.id=pvf.product_feature_id
 JOIN product p ON p.id=f.product_id AND p.code='XBHG' AND p.name='消保合规'
 JOIN product_module m ON m.id=f.module_id AND m.code LIKE 'CAP-%';
 
+CREATE TEMPORARY TABLE v20_expected_submodule (
+  code VARCHAR(96) NOT NULL,
+  PRIMARY KEY (code)
+);
+INSERT INTO v20_expected_submodule(code) VALUES
+('RULE-LAW'),('RULE-INTERNAL'),('RULE-ORCHESTRATION'),
+('TASK-INTAKE'),('TASK-MATERIAL'),('TASK-WORKFLOW'),
+('AI-PARSE'),('AI-RISK'),('AI-EXPLAIN'),
+('REVIEW-WORKBENCH'),('REVIEW-COLLAB'),('REVIEW-ESCALATION'),
+('RECTIFY-MANAGE'),('RECTIFY-DIFF'),('RECTIFY-REMIND'),
+('SPECIAL-PRODUCT'),('SPECIAL-MARKETING'),('SPECIAL-SALES'),('SPECIAL-COMPLAINT'),
+('REPORT-GENERATE'),('REPORT-RISK'),('REPORT-VALUE'),
+('INTEGRATION-IAM'),('INTEGRATION-BUSINESS'),('INTEGRATION-OPEN'),
+('SECURITY-PERMISSION'),('SECURITY-DATA'),('SECURITY-AUDIT'),
+('OPS-RULE'),('OPS-MODEL'),('OPS-SYSTEM');
+
 -- Abort before destructive cleanup unless the generated structure is exactly the known dataset.
 CREATE TEMPORARY TABLE v20_consumer_protection_guard (
   guard_key INT NOT NULL,
   CONSTRAINT v20_consumer_protection_guard_key UNIQUE (guard_key)
 );
-INSERT INTO v20_consumer_protection_guard(guard_key) VALUES (1),(2),(3),(4),(5),(6),(7),(8);
+INSERT INTO v20_consumer_protection_guard(guard_key)
+VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12);
 INSERT INTO v20_consumer_protection_guard(guard_key)
 SELECT 1 WHERE (SELECT COUNT(*) FROM product WHERE code='XBHG' AND name='消保合规')>1;
 INSERT INTO v20_consumer_protection_guard(guard_key)
@@ -81,6 +98,12 @@ SELECT 7 WHERE EXISTS (SELECT 1 FROM requirement_product_feature x JOIN product_
 INSERT INTO v20_consumer_protection_guard(guard_key)
 SELECT 8 WHERE EXISTS (SELECT 1 FROM standardization_debt d JOIN product_feature f ON f.id=d.converted_feature_id
   JOIN product p ON p.id=f.product_id WHERE p.code='XBHG' AND p.name='消保合规');
+INSERT INTO v20_consumer_protection_guard(guard_key)
+SELECT 9 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保合规')
+  AND (SELECT COUNT(*) FROM product_feature f
+  JOIN product p ON p.id=f.product_id AND p.code='XBHG' AND p.name='消保合规'
+  JOIN product_module m ON m.id=f.module_id AND m.code LIKE 'CAP-%'
+  JOIN v20_expected_submodule e ON e.code=f.code)<>31;
 
 -- Promote ten business domains and convert the 31 coarse capability records into submodules.
 UPDATE product_module SET parent_id=NULL
@@ -741,6 +764,31 @@ JOIN product_feature feature ON feature.product_id=product.id AND feature.module
 
 UPDATE product_version SET version=version+1,updated_at=current_timestamp
 WHERE product_id IN (SELECT id FROM product WHERE code='XBHG' AND name='消保合规');
+
+-- Abort and roll back if any INSERT ... SELECT silently produced fewer rows.
+INSERT INTO v20_consumer_protection_guard(guard_key)
+SELECT 10 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保合规')
+  AND ((SELECT COUNT(*) FROM product_module m JOIN product p ON p.id=m.product_id
+        WHERE p.code='XBHG' AND p.name='消保合规' AND m.parent_id IS NULL)<>10
+    OR (SELECT COUNT(*) FROM product_module m JOIN product p ON p.id=m.product_id
+        WHERE p.code='XBHG' AND p.name='消保合规' AND m.parent_id IS NOT NULL)<>31);
+INSERT INTO v20_consumer_protection_guard(guard_key)
+SELECT 11 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保合规')
+  AND (SELECT COUNT(*) FROM product_feature f JOIN product p ON p.id=f.product_id
+       WHERE p.code='XBHG' AND p.name='消保合规')<>124;
+INSERT INTO v20_consumer_protection_guard(guard_key)
+SELECT 12 WHERE EXISTS (SELECT 1 FROM product WHERE code='XBHG' AND name='消保合规')
+  AND ((SELECT COUNT(*) FROM product_document_node n JOIN product p ON p.id=n.product_id
+        WHERE p.code='XBHG' AND p.name='消保合规' AND n.parent_id IS NULL)<>11
+    OR (SELECT COUNT(*) FROM product_document_node n JOIN product p ON p.id=n.product_id
+        WHERE p.code='XBHG' AND p.name='消保合规' AND n.node_type='FOLDER')<>26
+    OR (SELECT COUNT(*) FROM product_document_node n JOIN product p ON p.id=n.product_id
+        WHERE p.code='XBHG' AND p.name='消保合规' AND n.node_type='DOCUMENT')<>70
+    OR (SELECT COUNT(*) FROM product_version_feature pvf JOIN product_version pv ON pv.id=pvf.product_version_id
+        JOIN product p ON p.id=pv.product_id WHERE p.code='XBHG' AND p.name='消保合规')<>124
+    OR (SELECT COUNT(*) FROM product_version_feature pvf JOIN product_version pv ON pv.id=pvf.product_version_id
+        JOIN product p ON p.id=pv.product_id WHERE p.code='XBHG' AND p.name='消保合规'
+        AND pvf.availability='INCLUDED')<>8);
 
 COMMIT;
 SET AUTOCOMMIT = 1;

@@ -66,8 +66,61 @@ class SchemaBaselineTest {
 
   @Test
   void v20SeparatesConsumerProtectionDocumentsAndCapabilities() {
+    JdbcTemplate legacy = seedConsumerProtectionV19("consumer-protection-v20");
+    Flyway.configure().dataSource(legacy.getDataSource()).load().migrate();
+
+    assertEquals(Integer.valueOf(11), legacy.queryForObject(
+        "select count(*) from product_document_node where product_id=102 and parent_id is null",
+        Integer.class));
+    assertEquals(Integer.valueOf(39), legacy.queryForObject(
+        "select count(*) from product_document_node where product_id=102 "
+            + "and node_type='DOCUMENT' and (code like 'DOC-%' or code like 'SPRINT-%')",
+        Integer.class));
+    assertEquals(Integer.valueOf(10), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102 and parent_id is null",
+        Integer.class));
+    assertEquals(Integer.valueOf(31), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102 and parent_id is not null",
+        Integer.class));
+    assertEquals(Integer.valueOf(124), legacy.queryForObject(
+        "select count(*) from product_feature where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(124), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(8), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102 "
+            + "and pvf.availability='INCLUDED'", Integer.class));
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_document_node n join outline_document_link l "
+            + "on l.id=n.outline_link_id where n.product_id=102 and n.node_type='DOCUMENT'",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), legacy.queryForObject(
+        "select count(*) from product_document_node n join outline_document_link l "
+            + "on l.id=n.outline_link_id where n.product_id=102 "
+            + "and l.sync_status='FAILED' and l.last_error='prior failure'", Integer.class));
+  }
+
+  @Test
+  void v20RejectsSubmoduleCodeDriftWithoutDestroyingLegacyData() {
+    JdbcTemplate legacy = seedConsumerProtectionV19("consumer-protection-v20-drift");
+    legacy.update("update product_feature set code='RULE-LAW-DRIFTED' "
+        + "where product_id=102 and code='RULE-LAW'");
+
+    assertThrows(FlywayException.class,
+        () -> Flyway.configure().dataSource(legacy.getDataSource()).load().migrate());
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_feature where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(26), legacy.queryForObject(
+        "select count(*) from product_module where product_id=102", Integer.class));
+    assertEquals(Integer.valueOf(70), legacy.queryForObject(
+        "select count(*) from product_version_feature pvf join product_feature f "
+            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
+  }
+
+  private JdbcTemplate seedConsumerProtectionV19(String databaseName) {
     DriverManagerDataSource dataSource = new DriverManagerDataSource(
-        "jdbc:h2:mem:consumer-protection-v20;MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
+        "jdbc:h2:mem:" + databaseName + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;"
             + "DB_CLOSE_DELAY=-1", "sa", "");
     Flyway.configure().dataSource(dataSource).target(MigrationVersion.fromVersion("19"))
         .load().migrate();
@@ -120,38 +173,7 @@ class SchemaBaselineTest {
       }
     }
 
-    Flyway.configure().dataSource(dataSource).load().migrate();
-
-    assertEquals(Integer.valueOf(11), legacy.queryForObject(
-        "select count(*) from product_document_node where product_id=102 and parent_id is null",
-        Integer.class));
-    assertEquals(Integer.valueOf(39), legacy.queryForObject(
-        "select count(*) from product_document_node where product_id=102 "
-            + "and node_type='DOCUMENT' and (code like 'DOC-%' or code like 'SPRINT-%')",
-        Integer.class));
-    assertEquals(Integer.valueOf(10), legacy.queryForObject(
-        "select count(*) from product_module where product_id=102 and parent_id is null",
-        Integer.class));
-    assertEquals(Integer.valueOf(31), legacy.queryForObject(
-        "select count(*) from product_module where product_id=102 and parent_id is not null",
-        Integer.class));
-    assertEquals(Integer.valueOf(124), legacy.queryForObject(
-        "select count(*) from product_feature where product_id=102", Integer.class));
-    assertEquals(Integer.valueOf(124), legacy.queryForObject(
-        "select count(*) from product_version_feature pvf join product_feature f "
-            + "on f.id=pvf.product_feature_id where f.product_id=102", Integer.class));
-    assertEquals(Integer.valueOf(8), legacy.queryForObject(
-        "select count(*) from product_version_feature pvf join product_feature f "
-            + "on f.id=pvf.product_feature_id where f.product_id=102 "
-            + "and pvf.availability='INCLUDED'", Integer.class));
-    assertEquals(Integer.valueOf(70), legacy.queryForObject(
-        "select count(*) from product_document_node n join outline_document_link l "
-            + "on l.id=n.outline_link_id where n.product_id=102 and n.node_type='DOCUMENT'",
-        Integer.class));
-    assertEquals(Integer.valueOf(1), legacy.queryForObject(
-        "select count(*) from product_document_node n join outline_document_link l "
-            + "on l.id=n.outline_link_id where n.product_id=102 "
-            + "and l.sync_status='FAILED' and l.last_error='prior failure'", Integer.class));
+    return legacy;
   }
 
   private void seedOldModule(
