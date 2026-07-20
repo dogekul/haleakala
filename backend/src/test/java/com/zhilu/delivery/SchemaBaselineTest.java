@@ -53,6 +53,18 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void flywayCreatesIndependentProductDocumentNodes() {
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name='product_document_node'", Integer.class));
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
+        "select count(*) from information_schema.table_constraints "
+            + "where table_schema='public' and table_name='product_document_node' "
+            + "and constraint_name in ('uk_product_document_code',"
+            + "'uk_product_document_outline','uk_product_document_feature')", Integer.class));
+  }
+
+  @Test
   void flywayCreatesCustomerManagementWithoutCustomerCodes() {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.tables where table_schema='public' "
