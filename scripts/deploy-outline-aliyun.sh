@@ -48,7 +48,7 @@ set -a
 . ./.env
 set +a
 docker compose --env-file .env -f deploy/aliyun/docker-compose.ecs.yml exec -T mysql \
-  mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers delivery \
+  mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers delivery < /dev/null \
   | gzip -9 > "$backup_dir/preflight/zhilu-$stamp.sql.gz"
 gzip -t "$backup_dir/preflight/zhilu-$stamp.sql.gz"
 

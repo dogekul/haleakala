@@ -48,6 +48,7 @@ for script in deploy-outline-aliyun.sh backup-outline-aliyun.sh verify-outline-a
 done
 grep -q 'swapon' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'mysqldump' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
+grep -q '< /dev/null' "$ROOT_DIR/scripts/deploy-outline-aliyun.sh"
 grep -q 'pg_dump' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 grep -q 'sha256sum' "$ROOT_DIR/scripts/backup-outline-aliyun.sh"
 ! grep -R -E 'Admin@123|ol_api_[A-Za-z0-9]+' \
