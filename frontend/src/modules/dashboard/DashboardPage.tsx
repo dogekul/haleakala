@@ -7,7 +7,7 @@ import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Drawer, Form, Input, Progress,
   Row, Segmented, Select, Space, Statistic, Table, Tag, Typography, message,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { api } from '../../services/api'
@@ -103,6 +103,7 @@ function ProductMatrix({ values }: { values: MatrixRow[] }) {
 
 function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
+  const lastSuggestedName = useRef<string>()
   const customerId = Form.useWatch<number>('customerId', form)
   const productId = Form.useWatch<number>('productId', form)
   const productVersionId = Form.useWatch<number>('productVersionId', form)
@@ -115,15 +116,19 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
     const product = products.data?.find(item => item.id === productId)
     const version = versions.data?.find(item => item.id === productVersionId)
     const suggestedName = buildProjectName(customer?.name, product?.name, version?.versionName)
-    if (suggestedName) form.setFieldValue('name', suggestedName)
+    if (!suggestedName) return
+    const currentName = form.getFieldValue('name')
+    if (!currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    lastSuggestedName.current = suggestedName
   }, [customerId, productId, productVersionId, customers.data, products.data, versions.data, form])
+  const close = () => { form.resetFields(); onClose() }
   const create = useMutation({ mutationFn: async (values: Record<string, unknown>) => {
     const initialize = Boolean(values.initializeAgent)
     const project = await projectApi.create({ ...values, initializeAgent: undefined, startDate: formatDate(values.startDate), plannedEndDate: formatDate(values.plannedEndDate), gateMode: 'BLOCK' })
     if (initialize) await api(`/api/v1/projects/${project.id}/agent-jobs`, { method: 'POST', headers: { 'Idempotency-Key': `init-${project.id}` }, body: JSON.stringify({ skill: 'deliver-init', scenario: 'normal' }) })
     return project
   }, onSuccess: async (project: Project) => { await Promise.all([client.invalidateQueries({ queryKey: ['dashboard-summary'] }), client.invalidateQueries({ queryKey: ['dashboard-projects'] })]); form.resetFields(); onClose(); message.success(`${project.name} 已创建`) }, onError: (error: Error) => message.error(error.message) })
-  return <Drawer title="快速创建交付项目" width={520} open={open} onClose={onClose} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
+  return <Drawer title="快速创建交付项目" width={520} open={open} onClose={close} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
     <Alert className="drawer-hint" type="info" showIcon message="创建后自动初始化七阶段，可选立即执行 deliver-init。" />
     <Form form={form} layout="vertical" initialValues={{ initializeAgent: true }} onFinish={values => create.mutate(values)}>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>

@@ -36,11 +36,11 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
 
 function show(node: React.ReactNode, permissions = ['crm:read', 'crm:write'], path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>
+  return Object.assign(render(<QueryClientProvider client={client}>
     <AuthContext.Provider value={{ ...auth, me: { ...auth.me!, permissions } }}>
       <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{node}</MemoryRouter>
     </AuthContext.Provider>
-  </QueryClientProvider>)
+  </QueryClientProvider>), { client })
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -279,7 +279,7 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
   await user.click(within(artifactDrawer).getByRole('button', { name: 'Close' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '补充产出物' })).not.toBeInTheDocument())
   view.unmount()
-  show(<PresaleBoardPage />)
+  const handoffView = show(<PresaleBoardPage />)
   await screen.findByText('待交接合同')
   await user.click(screen.getByRole('button', { name: '转交待交接合同' }))
   const handoff = await screen.findByRole('dialog', { name: '转交实施' })
@@ -298,6 +298,11 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
   await waitFor(() => expect(projectName).toHaveValue('华东银行 - 企业财务云 V5.0 实施项目'))
   await user.clear(projectName)
   await user.type(projectName, '财务中台实施')
+  handoffView.client.setQueryData(['products', 'bindable'], [
+    { id: 20, name: '企业财务云', status: 'ACTIVE' },
+    { id: 22, name: '无关产品', status: 'ACTIVE' },
+  ])
+  await waitFor(() => expect(projectName).toHaveValue('财务中台实施'))
   await user.type(within(handoff).getByLabelText('开始日期'), '2026-07-21')
   await user.type(within(handoff).getByLabelText('计划结束'), '2026-10-31')
   await user.click(within(handoff).getByRole('button', { name: '确认转交' }))

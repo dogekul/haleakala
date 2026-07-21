@@ -1,7 +1,7 @@
 import { FileAddOutlined, FileTextOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tabs, Tag, Typography, Upload, message } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
@@ -256,6 +256,7 @@ function ArtifactDrawer({ opportunity, error, canWrite, onClose }: { opportunity
 
 function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; onClose: () => void }) {
   const [form] = Form.useForm()
+  const lastSuggestedName = useRef<string>()
   const client = useQueryClient()
   const mode = Form.useWatch('mode', form) ?? 'CREATE'
   const productId = Form.useWatch('productId', form)
@@ -274,7 +275,10 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
     const product = products.data?.find(item => item.id === productId)
     const version = versions.data?.find(item => item.id === productVersionId)
     const suggestedName = buildProjectName(opportunity?.customerName, product?.name, version?.versionName)
-    if (suggestedName) form.setFieldValue('name', suggestedName)
+    if (!suggestedName) return
+    const currentName = form.getFieldValue('name')
+    if (!currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    lastSuggestedName.current = suggestedName
   }, [opportunity?.customerName, productId, productVersionId, products.data, versions.data, form])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => crmApi.handoff(opportunity!.id,
     input.mode === 'LINK'

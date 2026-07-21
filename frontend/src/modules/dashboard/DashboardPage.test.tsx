@@ -63,7 +63,7 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
   const user = userEvent.setup()
 
   await user.click(await screen.findByRole('button', { name: /快速创建项目$/ }))
-  const drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
+  let drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
   await user.click(within(drawer).getByRole('combobox', { name: '客户' }))
   expect(await screen.findByRole('option', { name: /华东银行.*华东行/ })).toBeInTheDocument()
   await user.click(screen.getByText(/华东银行.*华东行/))
@@ -73,14 +73,32 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
   expect(await screen.findByRole('option', { name: 'ACTIVE · 生效产品' })).toBeVisible()
   expect(screen.queryByRole('option', { name: 'DRAFT · 规划产品' })).not.toBeInTheDocument()
   await user.click(screen.getByText('ACTIVE · 生效产品'))
-  const version = within(drawer).getByRole('combobox', { name: '版本' })
+  let version = within(drawer).getByRole('combobox', { name: '版本' })
   await waitFor(() => expect(version).toBeEnabled())
   await user.click(version)
   expect(await screen.findByRole('option', { name: 'V1 已发布' })).toBeVisible()
   expect(screen.queryByRole('option', { name: 'V2 规划中' })).not.toBeInTheDocument()
   await user.click(screen.getByText('V1 已发布'))
-  const versionSelect = version.closest('.ant-select') as HTMLElement
+  let versionSelect = version.closest('.ant-select') as HTMLElement
   expect(versionSelect.querySelector('.ant-select-selection-item')).toHaveTextContent('V1 已发布')
+
+  await user.click(within(drawer).getByRole('button', { name: 'Close' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '快速创建交付项目' })).not.toBeInTheDocument())
+  await user.click(screen.getByRole('button', { name: /快速创建项目$/ }))
+  drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
+  for (const field of ['客户', '产品', '版本']) {
+    const select = within(drawer).getByRole('combobox', { name: field }).closest('.ant-select')
+    expect(select?.querySelector('.ant-select-selection-item')).toBeNull()
+  }
+  expect(within(drawer).getByRole('textbox', { name: '项目名称' })).toHaveValue('')
+  await user.click(within(drawer).getByRole('combobox', { name: '客户' }))
+  await user.click(await screen.findByText(/华东银行.*华东行/))
+  await user.click(within(drawer).getByRole('combobox', { name: '产品' }))
+  await user.click(await screen.findByText('ACTIVE · 生效产品'))
+  version = within(drawer).getByRole('combobox', { name: '版本' })
+  await user.click(version)
+  await user.click(await screen.findByText('V1 已发布'))
+  versionSelect = version.closest('.ant-select') as HTMLElement
 
   await user.click(within(drawer).getByRole('combobox', { name: '产品' }))
   await user.click(screen.getByText('NEXT · 另一产品'))
@@ -100,6 +118,12 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
   expect(name).toHaveValue('华东银行 - 另一产品 V3 已发布 实施项目')
   await user.clear(name)
   await user.type(name, '人工项目名称')
+  client.setQueryData(['bindable-products'], [
+    { id: 1, code: 'ACTIVE', name: '生效产品', status: 'ACTIVE' },
+    { id: 2, code: 'NEXT', name: '另一产品', status: 'ACTIVE' },
+    { id: 3, code: 'OTHER', name: '无关产品', status: 'ACTIVE' },
+  ])
+  await waitFor(() => expect(name).toHaveValue('人工项目名称'))
   await user.click(within(drawer).getByRole('checkbox', { name: '创建后执行项目初始化 Skill' }))
   await user.click(within(drawer).getByRole('button', { name: '创建项目' }))
   await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81, name: '人工项目名称' })))

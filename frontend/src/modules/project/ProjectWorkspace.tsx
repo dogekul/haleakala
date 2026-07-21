@@ -8,7 +8,7 @@ import {
   Select, Space, Table, Tag, Typography, message,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { customerApi } from '../customer/customerApi'
@@ -96,6 +96,7 @@ function ProjectCard({ project }: { project: Project }) {
 
 function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
+  const lastSuggestedName = useRef<string>()
   const customerId = Form.useWatch<number>('customerId', form)
   const productId = Form.useWatch<number>('productId', form)
   const productVersionId = Form.useWatch<number>('productVersionId', form)
@@ -109,14 +110,18 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
     const product = products.data?.find(item => item.id === productId)
     const version = versions.data?.find(item => item.id === productVersionId)
     const suggestedName = buildProjectName(customer?.name, product?.name, version?.versionName)
-    if (suggestedName) form.setFieldValue('name', suggestedName)
+    if (!suggestedName) return
+    const currentName = form.getFieldValue('name')
+    if (!currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    lastSuggestedName.current = suggestedName
   }, [customerId, productId, productVersionId, customers.data, products.data, versions.data, form])
+  const close = () => { form.resetFields(); onClose() }
   const create = useMutation({ mutationFn: projectApi.create, onSuccess: async () => {
     await client.invalidateQueries({ queryKey: ['projects'] })
     message.success('项目创建成功，七阶段已初始化')
     form.resetFields(); onClose()
   } })
-  return <Drawer width={520} open={open} onClose={onClose} title="创建交付项目"
+  return <Drawer width={520} open={open} onClose={close} title="创建交付项目"
     extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
     <div className="drawer-hint">项目创建后会自动生成七阶段、初始负责人和项目活动记录。</div>
     <Form form={form} layout="vertical" onFinish={values => create.mutate({ ...values,
