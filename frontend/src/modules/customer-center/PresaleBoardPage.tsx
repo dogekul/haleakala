@@ -257,6 +257,7 @@ function ArtifactDrawer({ opportunity, error, canWrite, onClose }: { opportunity
 function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; onClose: () => void }) {
   const [form] = Form.useForm()
   const lastSuggestedName = useRef<string>()
+  const lastSelectionKey = useRef<string>()
   const client = useQueryClient()
   const mode = Form.useWatch('mode', form) ?? 'CREATE'
   const productId = Form.useWatch('productId', form)
@@ -272,12 +273,15 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
       productVersionId: opportunity.productVersionId, managerUserId: opportunity.projectManagerUserId })
   }, [form, opportunity])
   useEffect(() => {
+    const selectionKey = JSON.stringify([opportunity?.customerId, opportunity?.customerName, productId, productVersionId])
+    const selectionChanged = selectionKey !== lastSelectionKey.current
     const product = products.data?.find(item => item.id === productId)
     const version = versions.data?.find(item => item.id === productVersionId)
     const suggestedName = buildProjectName(opportunity?.customerName, product?.name, version?.versionName)
     if (!suggestedName) return
+    lastSelectionKey.current = selectionKey
     const currentName = form.getFieldValue('name')
-    if (!currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    if (selectionChanged || !currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
     lastSuggestedName.current = suggestedName
   }, [opportunity?.customerName, productId, productVersionId, products.data, versions.data, form])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => crmApi.handoff(opportunity!.id,

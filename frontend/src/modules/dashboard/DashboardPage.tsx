@@ -104,6 +104,7 @@ function ProductMatrix({ values }: { values: MatrixRow[] }) {
 function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
   const lastSuggestedName = useRef<string>()
+  const lastSelectionKey = useRef<string>()
   const customerId = Form.useWatch<number>('customerId', form)
   const productId = Form.useWatch<number>('productId', form)
   const productVersionId = Form.useWatch<number>('productVersionId', form)
@@ -112,13 +113,16 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
   const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
   const versions = useQuery({ queryKey: ['bindable-product-versions', productId], queryFn: () => projectApi.bindableVersions(productId), enabled: open && Boolean(productId) })
   useEffect(() => {
+    const selectionKey = JSON.stringify([customerId, productId, productVersionId])
+    const selectionChanged = selectionKey !== lastSelectionKey.current
     const customer = customers.data?.find(item => item.id === customerId)
     const product = products.data?.find(item => item.id === productId)
     const version = versions.data?.find(item => item.id === productVersionId)
     const suggestedName = buildProjectName(customer?.name, product?.name, version?.versionName)
     if (!suggestedName) return
+    lastSelectionKey.current = selectionKey
     const currentName = form.getFieldValue('name')
-    if (!currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    if (selectionChanged || !currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
     lastSuggestedName.current = suggestedName
   }, [customerId, productId, productVersionId, customers.data, products.data, versions.data, form])
   const close = () => { form.resetFields(); onClose() }

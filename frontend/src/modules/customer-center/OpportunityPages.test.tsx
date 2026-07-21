@@ -256,6 +256,7 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
       return json({ id: 88, opportunityId: contract.id, stageFrom: 'CONTRACT', artifactType: 'CONTRACT', title: '合同', fileId: 77 })
     }
     if (value.includes('/api/v1/products/20/versions')) return json([{ id: 21, versionName: 'V5.0', status: 'RELEASED' }])
+    if (value.includes('/api/v1/products/22/versions')) return json([{ id: 23, versionName: 'V6.0', status: 'RELEASED' }])
     if (value.includes('/api/v1/products')) return json([{ id: 20, name: '企业财务云', status: 'ACTIVE' }])
     if (value.includes('/api/v1/crm/owner-options')) return json([{ id: 30, displayName: '周项目' }])
     if (value.includes('/api/v1/opportunities')) return json([contract])
@@ -300,9 +301,16 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
   await user.type(projectName, '财务中台实施')
   handoffView.client.setQueryData(['products', 'bindable'], [
     { id: 20, name: '企业财务云', status: 'ACTIVE' },
-    { id: 22, name: '无关产品', status: 'ACTIVE' },
+    { id: 22, name: '数据平台', status: 'ACTIVE' },
   ])
   await waitFor(() => expect(projectName).toHaveValue('财务中台实施'))
+  await user.click(within(handoff).getByRole('combobox', { name: /^产品$/ }))
+  await user.click(await screen.findByText('数据平台'))
+  await user.click(within(handoff).getByRole('combobox', { name: /^产品版本$/ }))
+  await user.click(await screen.findByText('V6.0'))
+  await waitFor(() => expect(projectName).toHaveValue('华东银行 - 数据平台 V6.0 实施项目'))
+  await user.clear(projectName)
+  await user.type(projectName, '财务中台实施')
   await user.type(within(handoff).getByLabelText('开始日期'), '2026-07-21')
   await user.type(within(handoff).getByLabelText('计划结束'), '2026-10-31')
   await user.click(within(handoff).getByRole('button', { name: '确认转交' }))
