@@ -6,9 +6,7 @@ test('Outline drives knowledge templates and project stage documents end to end'
   test.setTimeout(240_000)
   const suffix = String(Date.now())
   const templateTitle = `项目启动检查单 ${suffix}`
-  const projectCode = `DOC-E2E-${suffix}`
   const projectName = `文档中心项目 ${suffix}`
-  const failedProjectCode = `DOC-FAIL-${suffix}`
   const failedProjectName = `文档故障项目 ${suffix}`
   const outlineURL = process.env.E2E_OUTLINE_URL
   if (!outlineURL) throw new Error('E2E_OUTLINE_URL is required')
@@ -65,7 +63,7 @@ test('Outline drives knowledge templates and project stage documents end to end'
   await templateCard.getByRole('button', { name: '发布' }).click()
   await expect(templateCard.getByText('已发布')).toBeVisible()
 
-  const projectId = await createProject(page, projectCode, projectName)
+  const projectId = await createProject(page, projectName)
   await expect.poll(async () => {
     const value = await api<Project>(page, `/api/v1/projects/${projectId}`)
     return value.documentSpaceStatus
@@ -130,7 +128,7 @@ test('Outline drives knowledge templates and project stage documents end to end'
   expect((await request.post(`${outlineURL}/__test__/availability`, {
     data: { available: false },
   })).ok()).toBe(true)
-  const failedProjectId = await createProject(page, failedProjectCode, failedProjectName)
+  const failedProjectId = await createProject(page, failedProjectName)
   await expect.poll(async () => {
     const value = await api<Project>(page, `/api/v1/projects/${failedProjectId}`)
     return value.documentSpaceStatus
@@ -178,12 +176,11 @@ function nav(page: Page, label: string) {
 }
 
 async function createProject(
-  page: Page, code: string, name: string,
+  page: Page, name: string,
 ) {
   await nav(page, '项目空间').click()
   await page.getByRole('button', { name: /创建项目$/ }).click()
   const drawer = page.getByRole('dialog', { name: '创建交付项目' })
-  await drawer.getByLabel('项目编号').fill(code)
   await drawer.getByLabel('项目名称').fill(name)
   await choose(page, drawer, '客户', '华东银行', true)
   await choose(page, drawer, '产品', '企业财务云')

@@ -4,7 +4,6 @@ import java.time.LocalDate;
 
 public final class CreateProjectCommand {
   private final long organizationId;
-  private final String code;
   private final String name;
   private final long customerId;
   private final long productId;
@@ -17,7 +16,6 @@ public final class CreateProjectCommand {
 
   public CreateProjectCommand(
       long organizationId,
-      String code,
       String name,
       long customerId,
       long productId,
@@ -26,13 +24,12 @@ public final class CreateProjectCommand {
       LocalDate startDate,
       LocalDate plannedEndDate,
       String gateMode) {
-    this(organizationId, code, name, customerId, productId, productVersionId, managerUserId,
+    this(organizationId, name, customerId, productId, productVersionId, managerUserId,
         managerUserId, startDate, plannedEndDate, gateMode);
   }
 
   public CreateProjectCommand(
       long organizationId,
-      String code,
       String name,
       long customerId,
       long productId,
@@ -43,7 +40,6 @@ public final class CreateProjectCommand {
       LocalDate plannedEndDate,
       String gateMode) {
     this.organizationId = organizationId;
-    this.code = code;
     this.name = name;
     this.customerId = customerId;
     this.productId = productId;
@@ -56,7 +52,6 @@ public final class CreateProjectCommand {
   }
 
   public long getOrganizationId() { return organizationId; }
-  public String getCode() { return code; }
   public String getName() { return name; }
   public long getCustomerId() { return customerId; }
   public long getProductId() { return productId; }

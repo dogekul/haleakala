@@ -124,7 +124,7 @@ class ProjectDocumentInitializationTest {
     seedTemplate(7103, "草稿模板", "GO_LIVE", "REQUIRED", true, "DRAFT", 4);
     seedTemplate(7105, "需求调研报告", "OPPORTUNITY_RESEARCH", "REQUIRED", true,
         "PUBLISHED", 2);
-    ProjectView project = projects.create(command("PRJ-701"));
+    ProjectView project = projects.create(command());
 
     assertEquals("PENDING", project.getDocumentSpaceStatus());
     assertEquals(0, outlineIds.get());
@@ -191,7 +191,7 @@ class ProjectDocumentInitializationTest {
     jdbc.update("update document_template_config set published_title_snapshot=null,"
         + "published_markdown_snapshot=null where knowledge_item_id=7852");
 
-    ProjectView project = projects.create(command("PRJ-LEGACY-TEMPLATE"));
+    ProjectView project = projects.create(command());
 
     Map<String, Object> published = jdbc.queryForMap(
         "select published_title_snapshot,published_markdown_snapshot "
@@ -217,7 +217,7 @@ class ProjectDocumentInitializationTest {
         "template-7152", null, "无法恢复的旧模板（已修改）", "# 新正文", 8));
 
     ConflictException failure = assertThrows(
-        ConflictException.class, () -> projects.create(command("PRJ-LEGACY-CONFLICT")));
+        ConflictException.class, () -> projects.create(command()));
 
     assertTrue(failure.getMessage().contains("重新发布"));
     assertEquals(Integer.valueOf(0), jdbc.queryForObject(
@@ -227,7 +227,7 @@ class ProjectDocumentInitializationTest {
 
   @Test
   void hydratesLegacyPendingProjectSnapshotBeforeInitialization() {
-    ProjectView project = projects.create(command("PRJ-LEGACY-PENDING"));
+    ProjectView project = projects.create(command());
     seedTemplate(7153, "旧项目待初始化模板", "START", "REQUIRED", true, "PUBLISHED", 9);
     jdbc.update("insert into project_document(project_id,stage_code,source_template_id,"
             + "source_template_revision,requirement,status) values (?,?,?,?,?,'PENDING')",
@@ -251,7 +251,7 @@ class ProjectDocumentInitializationTest {
 
   @Test
   void rejectsLegacyPendingProjectWhenSourceRevisionCannotBeRecovered() {
-    ProjectView project = projects.create(command("PRJ-LEGACY-PENDING-CONFLICT"));
+    ProjectView project = projects.create(command());
     seedTemplate(7154, "旧项目冲突模板", "START", "REQUIRED", true, "PUBLISHED", 9);
     jdbc.update("insert into project_document(project_id,stage_code,source_template_id,"
             + "source_template_revision,requirement,status) values (?,?,?,?,?,'PENDING')",
@@ -272,7 +272,7 @@ class ProjectDocumentInitializationTest {
   void retriesUnavailableOutlineThenAllowsManualRecovery() throws Exception {
     seedTemplate(7201, "需求调研纪要", "REQUIREMENT", "REQUIRED", true, "PUBLISHED", 2);
     outlineAvailable.set(false);
-    ProjectView project = projects.create(command("PRJ-702"));
+    ProjectView project = projects.create(command());
 
     jobs.runDueJobs();
     assertEquals("RETRY", jobStatus(project.getId()));
@@ -299,7 +299,7 @@ class ProjectDocumentInitializationTest {
 
   @Test
   void recoversAJobLeftRunningByAStoppedProcess() {
-    ProjectView project = projects.create(command("PRJ-703"));
+    ProjectView project = projects.create(command());
     jdbc.update("update document_job set status='RUNNING',lease_token='stale-worker',"
             + "lease_expires_at=?,started_at=?,updated_at=? "
             + "where job_type='PROJECT_INIT' and business_id=?",
@@ -315,7 +315,7 @@ class ProjectDocumentInitializationTest {
 
   @Test
   void doesNotReclaimAJobWhoseLeaseIsStillActive() {
-    ProjectView project = projects.create(command("PRJ-704"));
+    ProjectView project = projects.create(command());
     jdbc.update("update document_job set status='RUNNING',lease_token='active-worker',"
             + "lease_expires_at=?,started_at=?,updated_at=? "
             + "where job_type='PROJECT_INIT' and business_id=?",
@@ -331,7 +331,7 @@ class ProjectDocumentInitializationTest {
 
   @Test
   void heartbeatsPreventReclaimWhileAProjectInitializationIsStillRunning() throws Exception {
-    ProjectView project = projects.create(command("PRJ-705"));
+    ProjectView project = projects.create(command());
     blockNextCreate.set(true);
     ExecutorService pool = Executors.newSingleThreadExecutor();
     try {
@@ -391,9 +391,9 @@ class ProjectDocumentInitializationTest {
         .collect(Collectors.toList());
   }
 
-  private CreateProjectCommand command(String code) {
+  private CreateProjectCommand command() {
     return new CreateProjectCommand(
-        701, code, "华东银行核心系统交付", 701, 701, 701, 701, 701,
+        701, "华东银行核心系统交付", 701, 701, 701, 701, 701,
         LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
   }
 

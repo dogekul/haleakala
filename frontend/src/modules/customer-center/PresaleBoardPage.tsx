@@ -272,7 +272,7 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
     input.mode === 'LINK'
       ? { mode: 'LINK', version: opportunity!.version, projectId: input.projectId }
       : { mode: 'CREATE', version: opportunity!.version, project: {
-        code: input.code, name: input.name, productId: input.productId,
+        name: input.name, productId: input.productId,
         productVersionId: input.productVersionId, managerUserId: input.managerUserId,
         gateMode: input.gateMode, startDate: input.startDate, plannedEndDate: input.plannedEndDate,
       } }),
@@ -283,7 +283,8 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
       <Form.Item name="mode" label="交接方式"><Radio.Group options={[{ label: '创建项目', value: 'CREATE' }, { label: '关联项目', value: 'LINK' }]} /></Form.Item>
       {mode === 'LINK' ? <Form.Item name="projectId" label="同客户项目" rules={[{ required: true }]}><Select virtual={false}
         options={(projects.data ?? []).filter(item => item.customerId === opportunity?.customerId).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
-        : <><Row gutter={12}><Col span={10}><Form.Item name="code" label="项目编码" rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={14}><Form.Item name="name" label="项目名称" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
+        : <><Form.Item name="name" label="项目名称" extra="项目编号由系统自动生成"
+          rules={[{ required: true }]}><Input /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={products.isLoading}
             onChange={() => form.setFieldValue('productVersionId', undefined)} options={(products.data ?? []).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
           <Col span={12}><Form.Item name="productVersionId" label="产品版本" rules={[{ required: true }]}><Select virtual={false} disabled={!productId} loading={versions.isLoading}

@@ -127,7 +127,10 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
     }
   }, [form, value])
   const save = useMutation({
-    mutationFn: (input: Record<string, unknown>) => productApi.saveProduct(value?.id, { ...input, version: value?.version ?? 0 }),
+    mutationFn: (input: Record<string, unknown>) => {
+      const { code: _code, ...payload } = input
+      return productApi.saveProduct(value?.id, { ...payload, version: value?.version ?? 0 })
+    },
     onSuccess: async () => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['products'] }),
@@ -144,8 +147,8 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
     extra={!readOnly && <Button type="primary" aria-label="保存" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     {readOnly && <Alert type="info" showIcon message={value?.status === 'ARCHIVED' ? '归档产品仅可查看' : '当前账号仅可查看产品'} />}
     <Form form={form} layout="vertical" disabled={readOnly} onFinish={canWrite ? save.mutate : undefined} className="product-editor-form">
-      <Row gutter={12}><Col span={10}><Form.Item label="产品编码" name="code" rules={[{ required: true, message: '请输入产品编码' }]}>
-        <Input disabled={Boolean(value)} /></Form.Item></Col><Col span={14}><Form.Item label="产品名称" name="name" rules={[{ required: true, message: '请输入产品名称' }]}><Input /></Form.Item></Col></Row>
+      <Form.Item label="产品名称" name="name" extra="产品编号由系统自动生成"
+        rules={[{ required: true, message: '请输入产品名称' }]}><Input /></Form.Item>
       <Form.Item label="分类" name="category"><Input placeholder="例如：企业应用" /></Form.Item>
       <Form.Item label="负责人 ID" name="ownerUserId"><InputNumber min={1} style={{ width: '100%' }} placeholder="选填" /></Form.Item>
       <Form.Item label="产品说明" name="description"><Input.TextArea rows={4} maxLength={500} showCount /></Form.Item>

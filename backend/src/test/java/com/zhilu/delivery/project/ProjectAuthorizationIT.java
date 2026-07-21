@@ -60,7 +60,7 @@ class ProjectAuthorizationIT {
     jdbc.update("insert into customer(id,organization_id,name,status) values "
         + "(620,620,'客户','ACTIVE'),(621,621,'其他客户','ACTIVE'),"
         + "(622,620,'停用客户','INACTIVE')");
-    ProjectView project = projects.create(new CreateProjectCommand(620, "PRJ-AUTH", "安全项目",
+    ProjectView project = projects.create(new CreateProjectCommand(620, "安全项目",
         620, 620, 620, 620, 620, LocalDate.of(2026, 7, 1),
         LocalDate.of(2026, 12, 31), "BLOCK"));
     projectId = project.getId();
@@ -169,7 +169,7 @@ class ProjectAuthorizationIT {
     mvc.perform(post("/api/v1/projects")
             .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"code\":\"PRJ-CUSTOMER\",\"name\":\"客户关联项目\","
+            .content("{\"name\":\"客户关联项目\","
                 + "\"customerId\":620,\"customerName\":\"伪造名称\","
                 + "\"productId\":620,\"productVersionId\":620,\"gateMode\":\"BLOCK\"}"))
         .andExpect(status().isCreated())

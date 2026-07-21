@@ -53,7 +53,7 @@ class CrmImplementationQueryIT {
     jdbc.execute("set referential_integrity true");
     organization(700, "CRM-IMPL-A", "华东银行", "CRM", "V1");
     organization(701, "CRM-IMPL-B", "其他客户", "OTHER", "OTHER-V1");
-    ProjectView project = projects.create(new CreateProjectCommand(700, "PRJ-IMPL-001",
+    ProjectView project = projects.create(new CreateProjectCommand(700,
         "财务中台实施", 700, 700, 700, 700, 700, LocalDate.of(2026, 1, 1),
         LocalDate.of(2026, 12, 31), "BLOCK"));
     jdbc.update("update delivery_project set current_stage='CUSTOM_DEV',risk_level='RED' where id=?",
@@ -72,7 +72,7 @@ class CrmImplementationQueryIT {
     opportunityId = jdbc.queryForObject(
         "select id from sales_opportunity where title='财务中台升级'", Long.class);
 
-    ProjectView other = projects.create(new CreateProjectCommand(701, "PRJ-OTHER-001",
+    ProjectView other = projects.create(new CreateProjectCommand(701,
         "其他项目", 701, 701, 701, 701, 701, LocalDate.of(2026, 1, 1),
         LocalDate.of(2026, 12, 31), "BLOCK"));
     jdbc.update("insert into sales_opportunity(organization_id,customer_id,customer_name_snapshot,"

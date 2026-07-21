@@ -6,7 +6,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
   test.setTimeout(120_000)
   const suffix = String(Date.now())
   const productName = `产品中心 E2E ${suffix}`
-  const productCode = `E2E-${suffix}`
   const plannedProductName = `E2E 未启用产品 ${suffix}`
   const releasedVersion = `V-${suffix}`
   const planningVersion = `NEXT-${suffix}`
@@ -14,7 +13,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
   const childModule = `E2E 二级模块 ${suffix}`
   const leafModule = `E2E 三级模块 ${suffix}`
   const catalogFeature = `E2E 标准功能 ${suffix}`
-  const projectCode = `PRJ-E2E-${suffix}`
   const projectName = `E2E 产品交付项目 ${suffix}`
   const customerName = `E2E 追溯客户 ${suffix}`
   const customerOption = `${customerName} · E2E客户`
@@ -40,7 +38,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
 
   await page.getByRole('button', { name: '新建产品' }).click()
   const newProductDrawer = page.getByRole('dialog', { name: '新建产品' })
-  await newProductDrawer.getByLabel('产品编码').fill(productCode)
   await newProductDrawer.getByLabel('产品名称').fill(productName)
   await newProductDrawer.getByLabel('分类', { exact: true }).fill('E2E')
   await newProductDrawer.getByRole('button', { name: '保存', exact: true }).click()
@@ -115,7 +112,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await productSearch.fill('')
   await page.getByRole('button', { name: '新建产品' }).click()
   const unbindableProductDrawer = page.getByRole('dialog', { name: '新建产品' })
-  await unbindableProductDrawer.getByLabel('产品编码').fill(`UNBOUND-${suffix}`)
   await unbindableProductDrawer.getByLabel('产品名称').fill(plannedProductName)
   await unbindableProductDrawer.getByLabel('分类', { exact: true }).fill('E2E')
   await unbindableProductDrawer.getByRole('button', { name: '保存', exact: true }).click()
@@ -141,7 +137,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(page.getByRole('heading', { name: '项目空间' })).toBeVisible()
   await page.getByRole('button', { name: /创建项目$/ }).click()
   const projectDrawer = page.getByRole('dialog', { name: '创建交付项目' })
-  await projectDrawer.getByLabel('项目编号').fill(projectCode)
   await projectDrawer.getByLabel('项目名称').fill(projectName)
   await choose(page, projectDrawer, '客户', customerOption, true)
   const projectProductSelect = projectDrawer.getByRole('combobox', { name: '产品' })
@@ -157,7 +152,12 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(versionDropdown.getByText(releasedVersion, { exact: true })).toBeVisible()
   await expect(versionDropdown.getByText(planningVersion, { exact: true })).toHaveCount(0)
   await versionDropdown.getByText(releasedVersion, { exact: true }).click()
+  const projectResponse = page.waitForResponse(response =>
+    response.url().endsWith('/api/v1/projects') && response.request().method() === 'POST')
   await projectDrawer.getByRole('button', { name: '创建项目', exact: true }).click()
+  const createdProject = await (await projectResponse).json() as { id: number; code: string }
+  const projectCode = String(createdProject.id)
+  expect(createdProject.code).toBe(projectCode)
   await expect(page.getByText('项目创建成功，七阶段已初始化')).toBeVisible()
   await page.getByRole('link', { name: projectName, exact: true }).click()
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible()

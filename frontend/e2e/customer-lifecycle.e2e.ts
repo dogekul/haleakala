@@ -5,7 +5,6 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
   const suffix = String(Date.now())
   const customerName = `生命周期客户 ${suffix}`
   const opportunityTitle = `生命周期商机 ${suffix}`
-  const projectCode = `CRM-E2E-${suffix}`
   const projectName = `生命周期交付项目 ${suffix}`
 
   await page.goto('/login')
@@ -66,7 +65,6 @@ test('customer lifecycle flows from opportunity to delivery and closed operation
   await choose(page, handoff, 'productId', '企业财务云')
   await choose(page, handoff, 'productVersionId', 'V5.0')
   await choose(page, handoff, 'managerUserId', '系统管理员')
-  await handoff.getByLabel('项目编码').fill(projectCode)
   await handoff.getByLabel('项目名称').fill(projectName)
   await handoff.getByLabel('开始日期').fill('2026-07-16')
   await handoff.getByLabel('计划结束').fill('2026-12-31')

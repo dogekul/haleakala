@@ -50,7 +50,7 @@ public class ProductCatalogController {
       @AuthenticationPrincipal CurrentUser user) {
     Map<String, Object> product =
         catalog.createProduct(user.getOrganizationId(), request.ownerUserId,
-            request.code, request.name, request.category, request.description);
+            request.name, request.category, request.description);
     audit(user, "CREATE", "PRODUCT", product.get("id"), request.name);
     return product;
   }
@@ -114,7 +114,6 @@ public class ProductCatalogController {
 
   public static final class ProductRequest {
     public Long ownerUserId;
-    @NotBlank public String code;
     @NotBlank public String name;
     public String category;
     public String description;
