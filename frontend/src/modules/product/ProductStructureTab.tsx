@@ -24,6 +24,11 @@ export function ProductStructureTab({ productId, readOnly }: { productId: number
   const [selectedModuleId, setSelectedModuleId] = useState<number>()
   const [editingModule, setEditingModule] = useState<ProductModule | null | undefined>()
   const [editingFeature, setEditingFeature] = useState<ProductFeature | null | undefined>()
+  const owners = useQuery({
+    queryKey: ['product-owner-options'], queryFn: productApi.ownerOptions,
+    enabled: !readOnly && (editingModule !== undefined || editingFeature !== undefined),
+  })
+  const ownerOptions = (owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))
 
   useEffect(() => {
     if (!selectedModuleId && modules.data?.length) setSelectedModuleId(modules.data[0].id)
@@ -57,14 +62,17 @@ export function ProductStructureTab({ productId, readOnly }: { productId: number
       </Card>
     </div>
     {editingModule !== undefined && <ModuleEditor productId={productId} values={modules.data ?? []} value={editingModule} readOnly={readOnly}
+      ownerOptions={ownerOptions} ownerOptionsLoading={owners.isLoading}
       onClose={() => setEditingModule(undefined)} />}
     {editingFeature !== undefined && <FeatureEditor productId={productId} modules={modules.data ?? []} defaultModuleId={selectedModuleId}
-      value={editingFeature} readOnly={readOnly} onClose={() => setEditingFeature(undefined)} />}
+      value={editingFeature} readOnly={readOnly} ownerOptions={ownerOptions} ownerOptionsLoading={owners.isLoading}
+      onClose={() => setEditingFeature(undefined)} />}
   </PageState>
 }
 
-function ModuleEditor({ productId, values, value, readOnly, onClose }: {
-  productId: number; values: ProductModule[]; value: ProductModule | null | undefined; readOnly: boolean; onClose: () => void
+function ModuleEditor({ productId, values, value, readOnly, ownerOptions, ownerOptionsLoading, onClose }: {
+  productId: number; values: ProductModule[]; value: ProductModule | null | undefined; readOnly: boolean
+  ownerOptions: OwnerOption[]; ownerOptionsLoading: boolean; onClose: () => void
 }) {
   const [form] = Form.useForm()
   const client = useQueryClient()
@@ -89,6 +97,7 @@ function ModuleEditor({ productId, values, value, readOnly, onClose }: {
   })
   const parentOptions = validParentModules(values, value ?? undefined).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))
   const disabled = readOnly || value?.status === 'DEPRECATED'
+  const selectableOwners = withCurrentOwner(ownerOptions, value)
   return <Drawer open title={readOnly ? '查看模块' : value ? '编辑模块' : '新建模块'} width={520} onClose={onClose}
     extra={!disabled && <Button type="primary" aria-label="保存模块" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     {disabled && <Alert type="info" showIcon message="当前模块仅可查看" />}
@@ -100,7 +109,9 @@ function ModuleEditor({ productId, values, value, readOnly, onClose }: {
       </Space>
       <Form.Item label="模块说明" name="description"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
       <Space align="start" className="product-editor-row">
-        <Form.Item label="负责人 ID" name="ownerUserId"><InputNumber min={1} /></Form.Item>
+        <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+          loading={ownerOptionsLoading} style={{ width: 220 }}
+          notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={selectableOwners} /></Form.Item>
         <Form.Item label="排序" name="sortOrder"><InputNumber min={0} /></Form.Item>
       </Space>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || disabled}
@@ -109,8 +120,9 @@ function ModuleEditor({ productId, values, value, readOnly, onClose }: {
   </Drawer>
 }
 
-function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, onClose }: {
-  productId: number; modules: ProductModule[]; defaultModuleId?: number; value: ProductFeature | null | undefined; readOnly: boolean; onClose: () => void
+function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, ownerOptions, ownerOptionsLoading, onClose }: {
+  productId: number; modules: ProductModule[]; defaultModuleId?: number; value: ProductFeature | null | undefined; readOnly: boolean
+  ownerOptions: OwnerOption[]; ownerOptionsLoading: boolean; onClose: () => void
 }) {
   const [form] = Form.useForm()
   const client = useQueryClient()
@@ -134,6 +146,7 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
     onError: (error: Error) => message.error(error.message),
   })
   const disabled = readOnly || value?.status === 'DEPRECATED'
+  const selectableOwners = withCurrentOwner(ownerOptions, value)
   return <Drawer open title={readOnly ? '查看功能' : value ? '编辑功能' : '新建功能'} width={520} onClose={onClose}
     extra={!disabled && <Button type="primary" aria-label="保存功能" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     {disabled && <Alert type="info" showIcon message="当前功能仅可查看" />}
@@ -146,11 +159,22 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
         <Form.Item label="功能名称" name="name" rules={[{ required: true, message: '请输入功能名称' }]}><Input /></Form.Item>
       </Space>
       <Form.Item label="功能说明" name="description"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
-      <Form.Item label="负责人 ID" name="ownerUserId"><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+      <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+        loading={ownerOptionsLoading}
+        notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={selectableOwners} /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || disabled}
         options={(value ? nextStatuses[value.status] : ['PLANNING'] as StructureStatus[]).map(status => ({ value: status, label: statusLabels[status] }))} /></Form.Item>
     </Form>
   </Drawer>
+}
+
+type OwnerOption = { value: number; label: string }
+
+function withCurrentOwner(
+  options: OwnerOption[], current?: { ownerUserId?: number; ownerName?: string } | null,
+) {
+  if (!current?.ownerUserId || !current.ownerName || options.some(item => item.value === current.ownerUserId)) return options
+  return [...options, { value: current.ownerUserId, label: current.ownerName }]
 }
 
 export function validParentModules(values: ProductModule[], current?: ProductModule) {

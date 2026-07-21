@@ -169,23 +169,29 @@ it('创建模块并编辑功能时提交乐观锁版本并刷新覆盖度', asyn
 
   await user.click(await screen.findByRole('button', { name: '新建模块' }))
   let drawer = screen.getByRole('dialog', { name: '新建模块' })
+  expect(within(drawer).queryByLabelText('负责人 ID')).not.toBeInTheDocument()
   await user.type(within(drawer).getByLabelText('模块编码'), 'TAX')
   await user.type(within(drawer).getByLabelText('模块名称'), '税务管理')
+  await user.click(within(drawer).getByRole('combobox', { name: '负责人' }))
+  await user.click(await screen.findByRole('option', { name: '张产品' }))
   await user.click(within(drawer).getByRole('button', { name: '保存模块' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/modules', expect.objectContaining({
-    method: 'POST', body: expect.stringContaining('"version":0'),
+    method: 'POST', body: expect.stringMatching(/"ownerUserId":20.*"version":0|"version":0.*"ownerUserId":20/),
   })))
   await waitFor(() => expect(coverageGets).toBe(2))
 
   await user.click(screen.getByText('AR · 应收管理'))
   await user.click(await screen.findByRole('button', { name: '编辑应收对账' }))
   drawer = screen.getByRole('dialog', { name: '编辑功能' })
+  expect(within(drawer).queryByLabelText('负责人 ID')).not.toBeInTheDocument()
   const name = within(drawer).getByLabelText('功能名称')
   await user.clear(name)
   await user.type(name, '应收智能对账')
+  await user.click(within(drawer).getByRole('combobox', { name: '负责人' }))
+  await user.click(await screen.findByRole('option', { name: '张产品' }))
   await user.click(within(drawer).getByRole('button', { name: '保存功能' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/features/22', expect.objectContaining({
-    method: 'PUT', body: expect.stringMatching(/"moduleId":12.*"version":0|"version":0.*"moduleId":12/),
+    method: 'PUT', body: expect.stringMatching(/"ownerUserId":20.*"version":0|"version":0.*"ownerUserId":20/),
   })))
   await waitFor(() => expect(coverageGets).toBe(3))
 })
