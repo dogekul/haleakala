@@ -87,6 +87,19 @@ class AuthControllerTest {
     }
   }
 
+  @Test
+  void logoutReturnsNoContent() throws Exception {
+    MvcResult login = mvc.perform(post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"username\":\"admin\",\"password\":\"secret123\"}"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    mvc.perform(post("/api/v1/auth/logout")
+            .session((MockHttpSession) login.getRequest().getSession(false)))
+        .andExpect(status().isNoContent());
+  }
+
   private Long ensureRole(String code, String name) {
     Integer count = jdbc.queryForObject("select count(*) from role where code=?", Integer.class, code);
     if (count != null && count == 0) {
