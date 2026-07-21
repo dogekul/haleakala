@@ -68,6 +68,18 @@ class ProductCatalogIT {
         + "values (350,350,'admin','系统管理员','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (351,351,'outsider','其他用户','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (352,350,'product-manager','张产品','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (353,350,'ordinary','普通用户','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (354,350,'disabled-manager','停用产品经理','DISABLED')");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 352,id from role where code='PRODUCT_MANAGER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 354,id from role where code='PRODUCT_MANAGER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 351,id from role where code='PRODUCT_MANAGER'");
   }
 
   @Test
@@ -138,7 +150,40 @@ class ProductCatalogIT {
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"ownerUserId\":351,\"code\":\"CRM\",\"name\":\"智鹿 CRM\"}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+        .andExpect(jsonPath("$.message").value("请选择当前组织内启用的产品负责人"));
+
+    for (long ownerUserId : new long[] {353L, 354L}) {
+      mvc.perform(post("/api/v1/products")
+              .with(writer()).with(csrf())
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"ownerUserId\":" + ownerUserId + ",\"name\":\"无效负责人产品\"}"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("请选择当前组织内启用的产品负责人"));
+    }
+  }
+
+  @Test
+  void returnsOnlyEligibleOwnerOptionsAndProductOwnerName() throws Exception {
+    mvc.perform(get("/api/v1/products/owner-options").with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].id").value(352))
+        .andExpect(jsonPath("$[0].displayName").value("张产品"));
+
+    String response = mvc.perform(post("/api/v1/products")
+            .with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ownerUserId\":352,\"name\":\"负责人产品\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.ownerUserId").value(352))
+        .andExpect(jsonPath("$.ownerName").value("张产品"))
+        .andReturn().getResponse().getContentAsString();
+    long productId = new com.fasterxml.jackson.databind.ObjectMapper()
+        .readTree(response).get("id").asLong();
+
+    mvc.perform(get("/api/v1/products/{id}", productId).with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.ownerName").value("张产品"));
   }
 
   @Test

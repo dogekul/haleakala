@@ -33,28 +33,34 @@ public class ProductCatalogService {
       "PLANNING", "RELEASED", "RELEASED", "SUNSET", "SUNSET", "ARCHIVED");
 
   private final JdbcTemplate jdbc;
+  private final ProductOwnerService owners;
 
-  public ProductCatalogService(JdbcTemplate jdbc) {
+  public ProductCatalogService(JdbcTemplate jdbc, ProductOwnerService owners) {
     this.jdbc = jdbc;
+    this.owners = owners;
   }
 
   public List<Map<String, Object>> products(long organizationId, boolean bindable) {
-    String sql = "select p.id,p.organization_id,p.owner_user_id,p.code,p.name,p.category,p.description,p.status,"
+    String sql = "select p.id,p.organization_id,p.owner_user_id,owner.display_name owner_name,"
+        + "p.code,p.name,p.category,p.description,p.status,"
         + "p.updated_at,p.version,(select count(*) from product_module m where m.product_id=p.id) module_count,"
         + "(select count(*) from product_feature f where f.product_id=p.id) feature_count,"
         + "(select pv.version_name from product_version pv where pv.product_id=p.id order by pv.release_date desc,pv.id desc limit 1) latest_version_name "
-        + "from product p where p.organization_id=?" + (bindable ? " and p.status='ACTIVE'" : "")
-        + " order by name";
+        + "from product p left join app_user owner on owner.id=p.owner_user_id "
+        + "where p.organization_id=?" + (bindable ? " and p.status='ACTIVE'" : "")
+        + " order by p.name";
     return jdbc.query(sql, (row, index) -> productRow(row), organizationId);
   }
 
   public Map<String, Object> product(long organizationId, long id) {
     List<Map<String, Object>> values = jdbc.query(
-        "select p.id,p.organization_id,p.owner_user_id,p.code,p.name,p.category,p.description,p.status,"
+        "select p.id,p.organization_id,p.owner_user_id,owner.display_name owner_name,"
+            + "p.code,p.name,p.category,p.description,p.status,"
             + "p.updated_at,p.version,(select count(*) from product_module m where m.product_id=p.id) module_count,"
             + "(select count(*) from product_feature f where f.product_id=p.id) feature_count,"
             + "(select pv.version_name from product_version pv where pv.product_id=p.id order by pv.release_date desc,pv.id desc limit 1) latest_version_name "
-            + "from product p where p.id=? and p.organization_id=?",
+            + "from product p left join app_user owner on owner.id=p.owner_user_id "
+            + "where p.id=? and p.organization_id=?",
         (row, index) -> productRow(row), id, organizationId);
     if (values.isEmpty()) throw new NotFoundException("产品不存在");
     return values.get(0);
@@ -63,7 +69,7 @@ public class ProductCatalogService {
   @Transactional
   public Map<String, Object> createProduct(long organizationId, Long ownerUserId,
       String name, String category, String description) {
-    validateOwner(organizationId, ownerUserId);
+    owners.validate(organizationId, ownerUserId);
     try {
       Map<String, Object> values = new HashMap<String, Object>();
       values.put("organization_id", organizationId);
@@ -89,7 +95,7 @@ public class ProductCatalogService {
       String name, String category, String description, String status, long version) {
     Map<String, Object> current = product(organizationId, id);
     requireCurrentVersion(current, version);
-    validateOwner(organizationId, ownerUserId);
+    owners.validate(organizationId, ownerUserId);
     validateStatus(PRODUCT_STATUSES, status, "产品");
     validateTransition(String.valueOf(current.get("status")), status, PRODUCT_NEXT, "产品");
     int changed = jdbc.update("update product set owner_user_id=?,name=?,category=?,description=?,status=?,"
@@ -180,8 +186,10 @@ public class ProductCatalogService {
 
   private Map<String, Object> productForVersionWrite(long organizationId, long productId) {
     List<Map<String, Object>> values = jdbc.query(
-        "select id,organization_id,owner_user_id,code,name,category,description,status,version "
-            + "from product where id=? and organization_id=? for update",
+        "select p.id,p.organization_id,p.owner_user_id,owner.display_name owner_name,"
+            + "p.code,p.name,p.category,p.description,p.status,p.version "
+            + "from product p left join app_user owner on owner.id=p.owner_user_id "
+            + "where p.id=? and p.organization_id=? for update",
         (row, index) -> productRow(row), productId, organizationId);
     if (values.isEmpty()) throw new NotFoundException("产品不存在");
     return values.get(0);
@@ -190,16 +198,6 @@ public class ProductCatalogService {
   private void requireVersionWritesAllowed(Map<String, Object> product) {
     if ("ARCHIVED".equals(product.get("status"))) {
       throw new ConflictException("产品已归档，不能修改版本");
-    }
-  }
-
-  private void validateOwner(long organizationId, Long ownerUserId) {
-    if (ownerUserId == null) return;
-    Integer count = jdbc.queryForObject(
-        "select count(*) from app_user where id=? and organization_id=?",
-        Integer.class, ownerUserId, organizationId);
-    if (count == null || count == 0) {
-      throw new IllegalArgumentException("产品负责人不存在或不属于当前组织");
     }
   }
 
@@ -235,6 +233,7 @@ public class ProductCatalogService {
     value.put("id", row.getLong("id"));
     value.put("organizationId", row.getLong("organization_id"));
     value.put("ownerUserId", row.getObject("owner_user_id"));
+    value.put("ownerName", row.getString("owner_name"));
     value.put("code", row.getString("code"));
     value.put("name", row.getString("name"));
     value.put("category", row.getString("category"));

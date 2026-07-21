@@ -71,6 +71,16 @@ class ProductStructureIT {
         + "values (450,450,'product','产品经理','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (451,451,'outsider','其他用户','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (452,450,'ordinary','普通用户','ACTIVE')");
+    jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
+        + "values (453,450,'disabled-manager','停用产品经理','DISABLED')");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 450,id from role where code='PRODUCT_MANAGER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 451,id from role where code='PRODUCT_MANAGER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 453,id from role where code='PRODUCT_MANAGER'");
   }
 
   @Test
@@ -348,13 +358,48 @@ class ProductStructureIT {
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"ownerUserId\":451,\"code\":\"BAD\",\"name\":\"Bad\"}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("负责人不存在或不属于当前组织"));
+        .andExpect(jsonPath("$.message").value("请选择当前组织内启用的产品负责人"));
     mvc.perform(post("/api/v1/products/{productId}/features", productId)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"moduleId\":" + moduleId
                 + ",\"ownerUserId\":451,\"code\":\"BAD\",\"name\":\"Bad\"}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("负责人不存在或不属于当前组织"));
+        .andExpect(jsonPath("$.message").value("请选择当前组织内启用的产品负责人"));
+
+    for (long ownerUserId : new long[] {452L, 453L}) {
+      mvc.perform(post("/api/v1/products/{productId}/modules", productId)
+              .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+              .content("{\"ownerUserId\":" + ownerUserId
+                  + ",\"code\":\"BAD" + ownerUserId + "\",\"name\":\"Bad\"}"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("请选择当前组织内启用的产品负责人"));
+    }
+  }
+
+  @Test
+  void returnsOwnerNamesForModulesAndFeatures() throws Exception {
+    long productId = product(450L, "ERP", "ERP");
+    String moduleResponse = mvc.perform(post("/api/v1/products/{productId}/modules", productId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ownerUserId\":450,\"code\":\"FIN\",\"name\":\"Finance\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.ownerName").value("产品经理"))
+        .andReturn().getResponse().getContentAsString();
+    long moduleId = json.readTree(moduleResponse).get("id").asLong();
+
+    mvc.perform(post("/api/v1/products/{productId}/features", productId)
+            .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"moduleId\":" + moduleId
+                + ",\"ownerUserId\":450,\"code\":\"AR\",\"name\":\"Receivable\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.ownerName").value("产品经理"));
+
+    mvc.perform(get("/api/v1/products/{productId}/modules", productId).with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].ownerName").value("产品经理"));
+    mvc.perform(get("/api/v1/products/{productId}/features", productId).with(reader()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].ownerName").value("产品经理"));
   }
 
   @Test

@@ -25,21 +25,26 @@ public class ProductStructureService {
 
   private final JdbcTemplate jdbc;
   private final ProductCatalogService catalog;
+  private final ProductOwnerService owners;
   private final AuditService audit;
 
   public ProductStructureService(
-      JdbcTemplate jdbc, ProductCatalogService catalog, AuditService audit) {
+      JdbcTemplate jdbc, ProductCatalogService catalog, ProductOwnerService owners,
+      AuditService audit) {
     this.jdbc = jdbc;
     this.catalog = catalog;
+    this.owners = owners;
     this.audit = audit;
   }
 
   public List<Map<String, Object>> modules(long organizationId, long productId) {
     catalog.product(organizationId, productId);
-    return jdbc.query("select id,product_id,parent_id,owner_user_id,code,name,description,status,"
-            + "sort_order,created_at,updated_at,version from product_module where product_id=? "
-            + "order by case when parent_id is null then 0 else 1 end,"
-            + "coalesce(parent_id,0),sort_order,name,id",
+    return jdbc.query("select m.id,m.product_id,m.parent_id,m.owner_user_id,"
+            + "owner.display_name owner_name,m.code,m.name,m.description,m.status,"
+            + "m.sort_order,m.created_at,m.updated_at,m.version from product_module m "
+            + "left join app_user owner on owner.id=m.owner_user_id where m.product_id=? "
+            + "order by case when m.parent_id is null then 0 else 1 end,"
+            + "coalesce(m.parent_id,0),m.sort_order,m.name,m.id",
         (row, index) -> moduleRow(row), productId);
   }
 
@@ -50,7 +55,7 @@ public class ProductStructureService {
     requireWritableProduct(organizationId, productId);
     Map<String, Object> current = id == null ? null : module(productId, id);
     if (current != null) requireCurrentVersion(current, version, "模块");
-    validateOwner(organizationId, ownerUserId);
+    owners.validate(organizationId, ownerUserId);
     validateStatus(status, "模块");
     validateInitialStatus(current, status, "模块");
     if (current != null) validateTransition(String.valueOf(current.get("status")), status, "模块");
@@ -87,9 +92,11 @@ public class ProductStructureService {
   public List<Map<String, Object>> features(
       long organizationId, long productId, Long moduleId) {
     catalog.product(organizationId, productId);
-    String sql = "select id,product_id,module_id,owner_user_id,code,name,description,status,"
-        + "created_at,updated_at,version from product_feature where product_id=?"
-        + (moduleId == null ? "" : " and module_id=?") + " order by name,code,id";
+    String sql = "select f.id,f.product_id,f.module_id,f.owner_user_id,"
+        + "owner.display_name owner_name,f.code,f.name,f.description,f.status,"
+        + "f.created_at,f.updated_at,f.version from product_feature f "
+        + "left join app_user owner on owner.id=f.owner_user_id where f.product_id=?"
+        + (moduleId == null ? "" : " and f.module_id=?") + " order by f.name,f.code,f.id";
     return moduleId == null
         ? jdbc.query(sql, (row, index) -> featureRow(row), productId)
         : jdbc.query(sql, (row, index) -> featureRow(row), productId, moduleId);
@@ -103,7 +110,7 @@ public class ProductStructureService {
     Map<String, Object> current = id == null ? null : feature(productId, id);
     if (current != null) requireCurrentVersion(current, version, "功能");
     validateModule(productId, moduleId);
-    validateOwner(organizationId, ownerUserId);
+    owners.validate(organizationId, ownerUserId);
     validateStatus(status, "功能");
     validateInitialStatus(current, status, "功能");
     if (current != null) validateTransition(String.valueOf(current.get("status")), status, "功能");
@@ -144,8 +151,10 @@ public class ProductStructureService {
 
   private Map<String, Object> module(long productId, long id) {
     List<Map<String, Object>> values = jdbc.query(
-        "select id,product_id,parent_id,owner_user_id,code,name,description,status,sort_order,"
-            + "created_at,updated_at,version from product_module where id=? and product_id=?",
+        "select m.id,m.product_id,m.parent_id,m.owner_user_id,owner.display_name owner_name,"
+            + "m.code,m.name,m.description,m.status,m.sort_order,m.created_at,m.updated_at,m.version "
+            + "from product_module m left join app_user owner on owner.id=m.owner_user_id "
+            + "where m.id=? and m.product_id=?",
         (row, index) -> moduleRow(row), id, productId);
     if (values.isEmpty()) throw new NotFoundException("模块不存在");
     return values.get(0);
@@ -153,8 +162,10 @@ public class ProductStructureService {
 
   private Map<String, Object> feature(long productId, long id) {
     List<Map<String, Object>> values = jdbc.query(
-        "select id,product_id,module_id,owner_user_id,code,name,description,status,created_at,"
-            + "updated_at,version from product_feature where id=? and product_id=?",
+        "select f.id,f.product_id,f.module_id,f.owner_user_id,owner.display_name owner_name,"
+            + "f.code,f.name,f.description,f.status,f.created_at,f.updated_at,f.version "
+            + "from product_feature f left join app_user owner on owner.id=f.owner_user_id "
+            + "where f.id=? and f.product_id=?",
         (row, index) -> featureRow(row), id, productId);
     if (values.isEmpty()) throw new NotFoundException("功能不存在");
     return values.get(0);
@@ -211,16 +222,6 @@ public class ProductStructureService {
     }
   }
 
-  private void validateOwner(long organizationId, Long ownerUserId) {
-    if (ownerUserId == null) return;
-    Integer count = jdbc.queryForObject(
-        "select count(*) from app_user where id=? and organization_id=?",
-        Integer.class, ownerUserId, organizationId);
-    if (count == null || count == 0) {
-      throw new IllegalArgumentException("负责人不存在或不属于当前组织");
-    }
-  }
-
   private void validateStatus(String status, String label) {
     if (!STATUSES.contains(status)) {
       throw new IllegalArgumentException(label + "状态不受支持");
@@ -265,6 +266,7 @@ public class ProductStructureService {
     value.put("productId", row.getLong("product_id"));
     value.put("parentId", row.getObject("parent_id"));
     value.put("ownerUserId", row.getObject("owner_user_id"));
+    value.put("ownerName", row.getString("owner_name"));
     value.put("code", row.getString("code"));
     value.put("name", row.getString("name"));
     value.put("description", row.getString("description"));
@@ -282,6 +284,7 @@ public class ProductStructureService {
     value.put("productId", row.getLong("product_id"));
     value.put("moduleId", row.getLong("module_id"));
     value.put("ownerUserId", row.getObject("owner_user_id"));
+    value.put("ownerName", row.getString("owner_name"));
     value.put("code", row.getString("code"));
     value.put("name", row.getString("name"));
     value.put("description", row.getString("description"));
