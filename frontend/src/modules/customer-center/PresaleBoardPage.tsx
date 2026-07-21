@@ -1,12 +1,13 @@
 import { FileAddOutlined, FileTextOutlined, RightOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tabs, Tag, Typography, Upload, message } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { projectApi } from '../project/projectApi'
+import { buildProjectName } from '../project/projectName'
 import { crmApi, type OpportunityDocumentType } from './crmApi'
 import { opportunityStages, stageLabel } from './OpportunityOverviewPage'
 import type { Opportunity, OpportunityArtifact, OpportunityStage, UploadedFile } from './types'
@@ -255,9 +256,12 @@ function ArtifactDrawer({ opportunity, error, canWrite, onClose }: { opportunity
 
 function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; onClose: () => void }) {
   const [form] = Form.useForm()
+  const lastSuggestedName = useRef<string>()
+  const lastSelectionKey = useRef<string>()
   const client = useQueryClient()
   const mode = Form.useWatch('mode', form) ?? 'CREATE'
   const productId = Form.useWatch('productId', form)
+  const productVersionId = Form.useWatch('productVersionId', form)
   const projects = useQuery({ queryKey: ['projects'], queryFn: projectApi.list, enabled: Boolean(opportunity) && mode === 'LINK' })
   const products = useQuery({ queryKey: ['products', 'bindable'], queryFn: projectApi.bindableProducts, enabled: Boolean(opportunity) && mode === 'CREATE' })
   const versions = useQuery({ queryKey: ['product-versions', productId], queryFn: () => projectApi.bindableVersions(productId!), enabled: Boolean(opportunity) && mode === 'CREATE' && Boolean(productId) })
@@ -265,9 +269,21 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
   useEffect(() => {
     if (!opportunity) return
     form.resetFields()
-    form.setFieldsValue({ mode: 'CREATE', gateMode: 'BLOCK', productId: opportunity.productId,
+    form.setFieldsValue({ mode: 'CREATE', gateMode: 'BLOCK', customerName: opportunity.customerName, productId: opportunity.productId,
       productVersionId: opportunity.productVersionId, managerUserId: opportunity.projectManagerUserId })
   }, [form, opportunity])
+  useEffect(() => {
+    const selectionKey = JSON.stringify([opportunity?.customerId, opportunity?.customerName, productId, productVersionId])
+    const selectionChanged = selectionKey !== lastSelectionKey.current
+    const product = products.data?.find(item => item.id === productId)
+    const version = versions.data?.find(item => item.id === productVersionId)
+    const suggestedName = buildProjectName(opportunity?.customerName, product?.name, version?.versionName)
+    if (!suggestedName) return
+    lastSelectionKey.current = selectionKey
+    const currentName = form.getFieldValue('name')
+    if (selectionChanged || !currentName || currentName === lastSuggestedName.current) form.setFieldValue('name', suggestedName)
+    lastSuggestedName.current = suggestedName
+  }, [opportunity?.customerName, productId, productVersionId, products.data, versions.data, form])
   const save = useMutation({ mutationFn: (input: Record<string, unknown>) => crmApi.handoff(opportunity!.id,
     input.mode === 'LINK'
       ? { mode: 'LINK', version: opportunity!.version, projectId: input.projectId }
@@ -283,12 +299,13 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
       <Form.Item name="mode" label="交接方式"><Radio.Group options={[{ label: '创建项目', value: 'CREATE' }, { label: '关联项目', value: 'LINK' }]} /></Form.Item>
       {mode === 'LINK' ? <Form.Item name="projectId" label="同客户项目" rules={[{ required: true }]}><Select virtual={false}
         options={(projects.data ?? []).filter(item => item.customerId === opportunity?.customerId).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
-        : <><Form.Item name="name" label="项目名称" extra="项目编号由系统自动生成"
-          rules={[{ required: true }]}><Input /></Form.Item>
+        : <><Form.Item name="customerName" label="客户"><Input disabled /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={products.isLoading}
             onChange={() => form.setFieldValue('productVersionId', undefined)} options={(products.data ?? []).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
           <Col span={12}><Form.Item name="productVersionId" label="产品版本" rules={[{ required: true }]}><Select virtual={false} disabled={!productId} loading={versions.isLoading}
             options={(versions.data ?? []).map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
+          <Form.Item name="name" label="项目名称" extra="项目编号由系统自动生成"
+            rules={[{ required: true }]}><Input /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="managerUserId" label="项目经理" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={owners.isLoading}
             options={(owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))} /></Form.Item></Col><Col span={12}><Form.Item name="gateMode" label="门禁模式"><Select virtual={false} options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '提醒' }]} /></Form.Item></Col></Row>
           <Row gutter={12}><Col span={12}><Form.Item name="startDate" label="开始日期" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col><Col span={12}><Form.Item name="plannedEndDate" label="计划结束" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col></Row></>}
