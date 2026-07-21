@@ -137,7 +137,6 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(page.getByRole('heading', { name: '项目空间' })).toBeVisible()
   await page.getByRole('button', { name: /创建项目$/ }).click()
   const projectDrawer = page.getByRole('dialog', { name: '创建交付项目' })
-  await projectDrawer.getByLabel('项目名称').fill(projectName)
   await choose(page, projectDrawer, '客户', customerOption, true)
   const projectProductSelect = projectDrawer.getByRole('combobox', { name: '产品' })
   await projectProductSelect.click()
@@ -152,6 +151,10 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await expect(versionDropdown.getByText(releasedVersion, { exact: true })).toBeVisible()
   await expect(versionDropdown.getByText(planningVersion, { exact: true })).toHaveCount(0)
   await versionDropdown.getByText(releasedVersion, { exact: true }).click()
+  const projectNameInput = projectDrawer.getByLabel('项目名称')
+  await expect(projectNameInput).toHaveValue(`${customerName} - ${productName} ${releasedVersion} 实施项目`)
+  await projectNameInput.clear()
+  await projectNameInput.pressSequentially(projectName)
   const projectResponse = page.waitForResponse(response =>
     response.url().endsWith('/api/v1/projects') && response.request().method() === 'POST')
   await projectDrawer.getByRole('button', { name: '创建项目', exact: true }).click()
