@@ -61,8 +61,9 @@ class ProjectLifecycleTest {
 
   @Test
   void projectStartsWithSevenOrderedStages() {
-    ProjectView project = projects.create(command("PRJ-600"));
+    ProjectView project = projects.create(command());
 
+    assertEquals(String.valueOf(project.getId()), project.getCode());
     assertEquals(Arrays.asList("启动", "需求采集", "二开实施", "上线切换", "试运行与移交", "标准化评估", "项目收尾"),
         project.getStages().stream().map(StageView::getName).collect(Collectors.toList()));
     assertEquals("START", project.getCurrentStage());
@@ -75,8 +76,21 @@ class ProjectLifecycleTest {
   }
 
   @Test
+  void reportsConflictWhenGeneratedProjectCodeMatchesALegacyNumericCode() {
+    jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_id,"
+            + "customer_name,product_id,product_version_id,manager_user_id,created_by) "
+            + "values (900000,600,'900001','历史数字编码项目',600,'华东银行',600,600,600,600)");
+    jdbc.update("alter table delivery_project alter column id restart with 900001");
+
+    ConflictException conflict = assertThrows(
+        ConflictException.class, () -> projects.create(command()));
+
+    assertEquals("项目编号生成冲突", conflict.getMessage());
+  }
+
+  @Test
   void persistedGateModeControlsWhetherBlockingGateStopsAdvance() {
-    ProjectView project = projects.create(command("PRJ-601"));
+    ProjectView project = projects.create(command());
     projects.setGate(project.getId(), "START", "BLOCKING", "启动检查单未完成", manager());
 
     assertThrows(ConflictException.class, () -> projects.advanceStage(
@@ -96,7 +110,7 @@ class ProjectLifecycleTest {
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (601,600,'V5.3','PLANNING')");
     IllegalArgumentException planningVersion = assertThrows(
-        IllegalArgumentException.class, () -> projects.create(command("PRJ-602", 600, 601)));
+        IllegalArgumentException.class, () -> projects.create(command(600, 601)));
     assertEquals("产品或版本不可用于新项目", planningVersion.getMessage());
 
     jdbc.update("insert into product(id,organization_id,code,name,status) "
@@ -104,16 +118,16 @@ class ProjectLifecycleTest {
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
         + "values (602,601,'V1','RELEASED')");
     assertThrows(IllegalArgumentException.class,
-        () -> projects.create(command("PRJ-603", 601, 602)));
+        () -> projects.create(command(601, 602)));
 
     assertThrows(IllegalArgumentException.class,
-        () -> projects.create(new CreateProjectCommand(601, "PRJ-604", "跨组织项目", 600,
+        () -> projects.create(new CreateProjectCommand(601, "跨组织项目", 600,
             600, 600, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK")));
   }
 
   @Test
   void closedProjectCannotBeReopenedAndUnknownStatusIsRejected() {
-    ProjectView project = projects.create(command("PRJ-602"));
+    ProjectView project = projects.create(command());
 
     ProjectView closing = projects.updateSettings(project.getId(), project.getName(), "CLOSING",
         project.getRiskLevel(), project.getGateMode(), project.getPlannedEndDate(),
@@ -132,7 +146,7 @@ class ProjectLifecycleTest {
 
   @Test
   void closingAProjectFromAWonOpportunityCreatesExactlyOneOperation() {
-    ProjectView project = projects.create(command("PRJ-605"));
+    ProjectView project = projects.create(command());
     jdbc.update("insert into sales_opportunity(organization_id,customer_id,customer_name_snapshot,"
             + "title,amount,stage,status,project_id,operation_owner_user_id,created_by) "
             + "values (600,600,'华东银行','核心系统升级',100,'CONTRACT','WON',?,600,600)",
@@ -156,7 +170,7 @@ class ProjectLifecycleTest {
 
   @Test
   void closingAProjectWithoutAnOpportunityDoesNotCreateAnOperation() {
-    ProjectView project = projects.create(command("PRJ-606"));
+    ProjectView project = projects.create(command());
     for (DeliveryStage stage : DeliveryStage.values()) {
       if (stage != DeliveryStage.START) {
         project = projects.advanceStage(project.getId(), stage, manager());
@@ -168,12 +182,12 @@ class ProjectLifecycleTest {
         Integer.class, project.getId()));
   }
 
-  private CreateProjectCommand command(String code) {
-    return command(code, 600, 600);
+  private CreateProjectCommand command() {
+    return command(600, 600);
   }
 
-  private CreateProjectCommand command(String code, long productId, long versionId) {
-    return new CreateProjectCommand(600, code, "华东银行核心系统交付", 600,
+  private CreateProjectCommand command(long productId, long versionId) {
+    return new CreateProjectCommand(600, "华东银行核心系统交付", 600,
         productId, versionId, 600, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 12, 31), "BLOCK");
   }
 

@@ -317,7 +317,7 @@ public class OpportunityService {
       if ("CREATE".equals(input.mode)) {
         if (input.project == null) throw new IllegalArgumentException("请填写新项目资料");
         project = projects.create(new CreateProjectCommand(organizationId,
-            input.project.code, input.project.name,
+            input.project.name,
             ((Number) opportunity.get("customerId")).longValue(), input.project.productId,
             input.project.productVersionId, input.project.managerUserId, actorId,
             input.project.startDate, input.project.plannedEndDate, input.project.gateMode));
@@ -673,7 +673,6 @@ public class OpportunityService {
   }
 
   public static final class ProjectInput {
-    @NotBlank @Size(max = 64) public String code;
     @NotBlank @Size(max = 180) public String name;
     @NotNull public Long productId;
     @NotNull public Long productVersionId;

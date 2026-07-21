@@ -75,7 +75,7 @@ it('筛选产品并在列表和卡片视图间切换', async () => {
   expect(await screen.findByText('产品详情')).toBeVisible()
 })
 
-it('新建和编辑都提交乐观锁版本且编辑时锁定编码', async () => {
+it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'POST') return json({ ...products[1], id: 11 }, 201)
     if (init?.method === 'PUT') return json({ ...products[0], name: '智鹿 ERP 企业版', version: 3 })
@@ -87,16 +87,19 @@ it('新建和编辑都提交乐观锁版本且编辑时锁定编码', async () =
 
   await user.click(await screen.findByRole('button', { name: '新建产品' }))
   let drawer = screen.getByRole('dialog', { name: '新建产品' })
-  await user.type(within(drawer).getByLabelText('产品编码'), 'OA')
+  expect(within(drawer).queryByLabelText('产品编码')).not.toBeInTheDocument()
   await user.type(within(drawer).getByLabelText('产品名称'), '协同办公')
   await user.click(within(drawer).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products', expect.objectContaining({
     method: 'POST', body: expect.stringContaining('"version":0'),
   })))
+  const createBody = JSON.parse(String(fetch.mock.calls.find(([url, init]) =>
+    url === '/api/v1/products' && init?.method === 'POST')?.[1]?.body))
+  expect(createBody).not.toHaveProperty('code')
 
   await user.click(await screen.findByRole('button', { name: '编辑智鹿 ERP' }))
   drawer = screen.getByRole('dialog', { name: '编辑产品' })
-  expect(within(drawer).getByLabelText('产品编码')).toBeDisabled()
+  expect(within(drawer).queryByLabelText('产品编码')).not.toBeInTheDocument()
   const name = within(drawer).getByLabelText('产品名称')
   await user.clear(name)
   await user.type(name, '智鹿 ERP 企业版')

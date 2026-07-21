@@ -93,10 +93,11 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
 
   await user.click(version)
   await user.click(await screen.findByText('V3 已发布'))
-  await user.type(within(drawer).getByRole('textbox', { name: '项目编号' }), 'PRJ-NEW')
+  expect(within(drawer).queryByRole('textbox', { name: '项目编号' })).not.toBeInTheDocument()
   await user.type(within(drawer).getByRole('textbox', { name: '项目名称' }), '新项目')
   await user.click(within(drawer).getByRole('checkbox', { name: '创建后执行项目初始化 Skill' }))
   await user.click(within(drawer).getByRole('button', { name: '创建项目' }))
   await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81 })))
   expect(projectBody).not.toHaveProperty('customerName')
+  expect(projectBody).not.toHaveProperty('code')
 })

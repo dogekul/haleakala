@@ -84,7 +84,7 @@ class OpportunityHandoffIT {
 
     mvc.perform(post("/api/v1/opportunities/{id}/handoff", id)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(createRequest("PRJ-CRM-001", 0)))
+            .content(createRequest(0)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("WON"))
         .andExpect(jsonPath("$.stage").value("CONTRACT"))
@@ -92,11 +92,15 @@ class OpportunityHandoffIT {
         .andExpect(jsonPath("$.projectName").value("财务中台实施"));
 
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
-        "select count(*) from delivery_project where organization_id=600 and code='PRJ-CRM-001' "
+        "select count(*) from delivery_project where organization_id=600 "
             + "and customer_id=600 and current_stage='START'", Integer.class));
+    Long projectId = jdbc.queryForObject(
+        "select project_id from sales_opportunity where id=?", Long.class, id);
+    assertEquals(String.valueOf(projectId), jdbc.queryForObject(
+        "select code from delivery_project where id=?", String.class, projectId));
     assertEquals(Integer.valueOf(7), jdbc.queryForObject(
         "select count(*) from stage_instance s join delivery_project p on p.id=s.project_id "
-            + "where p.code='PRJ-CRM-001'", Integer.class));
+            + "where p.id=?", Integer.class, projectId));
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from audit_log where resource_type='OPPORTUNITY' and action='HANDOFF'",
         Integer.class));
@@ -140,28 +144,28 @@ class OpportunityHandoffIT {
 
   @Test
   void rollsBackFailedCreationAndPreventsRepeatedHandoff() throws Exception {
-    project("PRJ-DUPLICATE", 600, 600, 600);
-    long duplicate = contractOpportunity("项目创建失败", 600);
-    mvc.perform(post("/api/v1/opportunities/{id}/handoff", duplicate)
+    long failed = contractOpportunity("项目创建失败", 600);
+    mvc.perform(post("/api/v1/opportunities/{id}/handoff", failed)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(createRequest("PRJ-DUPLICATE", 0)))
-        .andExpect(status().isConflict());
+            .content(createRequest(0).replace("\"productVersionId\":600",
+                "\"productVersionId\":999")))
+        .andExpect(status().isBadRequest());
     assertEquals("OPEN", jdbc.queryForObject(
-        "select status from sales_opportunity where id=?", String.class, duplicate));
-    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select status from sales_opportunity where id=?", String.class, failed));
+    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
         "select count(*) from delivery_project where organization_id=600", Integer.class));
 
     long success = contractOpportunity("防止重复转交", 600);
     mvc.perform(post("/api/v1/opportunities/{id}/handoff", success)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(createRequest("PRJ-ONCE", 0)))
+            .content(createRequest(0)))
         .andExpect(status().isOk());
     mvc.perform(post("/api/v1/opportunities/{id}/handoff", success)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(createRequest("PRJ-TWICE", 1)))
+            .content(createRequest(1)))
         .andExpect(status().isConflict());
-    assertEquals(Integer.valueOf(0), jdbc.queryForObject(
-        "select count(*) from delivery_project where code='PRJ-TWICE'", Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from delivery_project where organization_id=600", Integer.class));
   }
 
   @Test
@@ -169,11 +173,11 @@ class OpportunityHandoffIT {
     long id = opportunity("合同材料缺失", 600, "CONTRACT");
     mvc.perform(post("/api/v1/opportunities/{id}/handoff", id)
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(createRequest("PRJ-MISSING", 0)))
+            .content(createRequest(0)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("缺少必需产出物")));
     assertEquals(Integer.valueOf(0), jdbc.queryForObject(
-        "select count(*) from delivery_project where code='PRJ-MISSING'", Integer.class));
+        "select count(*) from delivery_project where organization_id=600", Integer.class));
   }
 
   @Test
@@ -247,15 +251,15 @@ class OpportunityHandoffIT {
     return jdbc.queryForObject("select id from sales_opportunity where title=?", Long.class, title);
   }
 
-  private ProjectView project(String code, long organizationId, long customerId, long productId) {
-    return projects.create(new CreateProjectCommand(organizationId, code, code, customerId,
+  private ProjectView project(String name, long organizationId, long customerId, long productId) {
+    return projects.create(new CreateProjectCommand(organizationId, name, customerId,
         productId, productId, organizationId, organizationId, LocalDate.of(2026, 7, 16),
         LocalDate.of(2026, 10, 31), "BLOCK"));
   }
 
-  private String createRequest(String code, long version) {
+  private String createRequest(long version) {
     return "{\"mode\":\"CREATE\",\"version\":" + version + ",\"project\":{"
-        + "\"code\":\"" + code + "\",\"name\":\"财务中台实施\","
+        + "\"name\":\"财务中台实施\","
         + "\"productId\":600,\"productVersionId\":600,\"managerUserId\":600,"
         + "\"startDate\":\"2026-07-16\",\"plannedEndDate\":\"2026-10-31\","
         + "\"gateMode\":\"BLOCK\"}}";

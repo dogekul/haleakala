@@ -112,8 +112,8 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
     <Form form={form} layout="vertical" onFinish={values => create.mutate({ ...values,
       startDate: values.startDate?.format('YYYY-MM-DD'), plannedEndDate: values.plannedEndDate?.format('YYYY-MM-DD') })}
       initialValues={{ gateMode: 'BLOCK', startDate: dayjs() }}>
-      <Row gutter={12}><Col span={10}><Form.Item label="项目编号" name="code" rules={[{ required: true }]}><Input placeholder="PRJ-2026-001" /></Form.Item></Col>
-        <Col span={14}><Form.Item label="项目名称" name="name" rules={[{ required: true }]}><Input /></Form.Item></Col></Row>
+      <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
+        rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>
         <Select showSearch optionFilterProp="label" loading={customers.isLoading} placeholder="选择启用客户"
           notFoundContent={customers.isError ? '客户加载失败，请重试' : <div className="customer-select-empty">

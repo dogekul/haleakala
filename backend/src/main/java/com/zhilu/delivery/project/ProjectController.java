@@ -53,7 +53,7 @@ public class ProjectController {
       @Valid @RequestBody CreateRequest request, @AuthenticationPrincipal CurrentUser user) {
     long managerId = request.managerUserId == null ? user.getId() : request.managerUserId;
     return projects.create(new CreateProjectCommand(
-        user.getOrganizationId(), request.code, request.name, request.customerId,
+        user.getOrganizationId(), request.name, request.customerId,
         request.productId, request.productVersionId, managerId, user.getId(), request.startDate,
         request.plannedEndDate, request.gateMode));
   }
@@ -172,7 +172,6 @@ public class ProjectController {
   }
 
   public static final class CreateRequest {
-    @NotBlank public String code;
     @NotBlank public String name;
     @NotNull public Long customerId;
     @NotNull public Long productId;

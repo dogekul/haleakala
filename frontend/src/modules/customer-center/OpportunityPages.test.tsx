@@ -246,6 +246,9 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
     projectManagerUserId: 30, title: '待交接合同' }
   const fetch = vi.fn((path: RequestInfo | URL, init?: RequestInit) => {
     const value = String(path)
+    if (value.endsWith('/handoff') && init?.method === 'POST') {
+      return json({ ...contract, status: 'WON', projectId: 99, projectName: '财务中台实施' })
+    }
     if (value.includes('/api/v1/files') && init?.method === 'POST') {
       return json({ id: 77, originalName: '合同材料.pdf', fileVersion: 1, sizeBytes: 1024 })
     }
@@ -284,6 +287,17 @@ it('文件产出物直接上传且交接使用产品版本和负责人选择器'
   expect(within(handoff).getByRole('combobox', { name: /^产品版本$/ })).toBeEnabled()
   expect(within(handoff).getByLabelText('项目经理')).toBeVisible()
   expect(within(handoff).queryByLabelText('产品 ID')).not.toBeInTheDocument()
+  expect(within(handoff).queryByLabelText('项目编码')).not.toBeInTheDocument()
+  await user.type(within(handoff).getByLabelText('项目名称'), '财务中台实施')
+  await user.type(within(handoff).getByLabelText('开始日期'), '2026-07-21')
+  await user.type(within(handoff).getByLabelText('计划结束'), '2026-10-31')
+  await user.click(within(handoff).getByRole('button', { name: '确认转交' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    expect.stringMatching(/\/handoff$/), expect.objectContaining({ method: 'POST' }),
+  ))
+  const handoffBody = JSON.parse(String(fetch.mock.calls.find(([url, init]) =>
+    String(url).endsWith('/handoff') && init?.method === 'POST')?.[1]?.body))
+  expect(handoffBody.project).not.toHaveProperty('code')
 })
 
 it('CRM只读用户不能补产出物或转交', async () => {

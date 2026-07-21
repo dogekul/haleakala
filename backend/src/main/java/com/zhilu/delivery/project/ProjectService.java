@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Service;
@@ -54,7 +56,7 @@ public class ProjectService {
     assertOrganizationUser(command.getOrganizationId(), command.getManagerUserId());
     Map<String, Object> values = new HashMap<String, Object>();
     values.put("organization_id", command.getOrganizationId());
-    values.put("code", command.getCode().trim());
+    values.put("code", "PENDING-" + UUID.randomUUID().toString());
     values.put("name", command.getName().trim());
     values.put("customer_id", command.getCustomerId());
     values.put("customer_name", customer.get("name"));
@@ -69,6 +71,12 @@ public class ProjectService {
     values.put("planned_end_date", date(command.getPlannedEndDate()));
     values.put("created_by", command.getCreatedByUserId());
     long projectId = insert("delivery_project", values);
+    try {
+      jdbc.update("update delivery_project set code=? where id=?",
+          String.valueOf(projectId), projectId);
+    } catch (DuplicateKeyException duplicate) {
+      throw new ConflictException("项目编号生成冲突");
+    }
 
     DeliveryStage[] stages = DeliveryStage.values();
     for (int index = 0; index < stages.length; index++) {

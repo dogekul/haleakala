@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -71,8 +72,8 @@ class ProductCatalogIT {
 
   @Test
   void createsProductsAndKeepsVersionsScopedToTheirProduct() throws Exception {
-    long firstProduct = createProduct("ERP", "智鹿 ERP");
-    long secondProduct = createProduct("CRM", "智鹿 CRM");
+    long firstProduct = createProduct("智鹿 ERP");
+    long secondProduct = createProduct("智鹿 CRM");
 
     String versionJson = mvc.perform(post("/api/v1/products/{id}/versions", firstProduct)
             .with(writer()).with(csrf())
@@ -97,7 +98,7 @@ class ProductCatalogIT {
 
   @Test
   void returnsProductSummaryCountsOnListAndDetail() throws Exception {
-    long productId = createProduct("ERP", "智鹿 ERP");
+    long productId = createProduct("智鹿 ERP");
     jdbc.update("insert into product_module(product_id,code,name,status,sort_order) "
         + "values (?,'CORE','核心模块','ACTIVE',0)", productId);
     Long moduleId = jdbc.queryForObject(
@@ -123,7 +124,7 @@ class ProductCatalogIT {
 
   @Test
   void rejectsUnsupportedProductStatusAndCrossOrganizationOwner() throws Exception {
-    long productId = createProduct("ERP", "智鹿 ERP");
+    long productId = createProduct("智鹿 ERP");
 
     mvc.perform(put("/api/v1/products/{id}", productId)
             .with(writer()).with(csrf())
@@ -141,15 +142,10 @@ class ProductCatalogIT {
   }
 
   @Test
-  void reportsDuplicateProductAndVersionAsConflicts() throws Exception {
-    long productId = createProduct("ERP", "智鹿 ERP");
-
-    mvc.perform(post("/api/v1/products")
-            .with(writer()).with(csrf())
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"code\":\"ERP\",\"name\":\"重复产品\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("CONFLICT"));
+  void generatesUniqueProductCodesAndReportsDuplicateVersionsAsConflicts() throws Exception {
+    long productId = createProduct("智鹿 ERP");
+    long secondProductId = createProduct("重复产品");
+    assertNotEquals(productId, secondProductId);
 
     String version = "{\"versionName\":\"V5.2\",\"releaseDate\":\"2026-07-01\"}";
     mvc.perform(post("/api/v1/products/{id}/versions", productId)
@@ -162,8 +158,23 @@ class ProductCatalogIT {
   }
 
   @Test
+  void reportsConflictWhenGeneratedProductCodeMatchesALegacyNumericCode() throws Exception {
+    jdbc.update("insert into product(id,organization_id,code,name,status) "
+        + "values (900000,350,'900001','历史数字编码产品','PLANNING')");
+    jdbc.update("alter table product alter column id restart with 900001");
+
+    mvc.perform(post("/api/v1/products")
+            .with(writer()).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"新产品\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CONFLICT"))
+        .andExpect(jsonPath("$.message").value("产品编号生成冲突"));
+  }
+
+  @Test
   void scopesProductsAndReturnsOnlyBindableCatalog() throws Exception {
-    long active = createProduct("ERP", "ERP");
+    long active = createProduct("ERP");
     mvc.perform(put("/api/v1/products/{id}", active).with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"code\":\"ERP\",\"name\":\"ERP\",\"status\":\"ACTIVE\",\"version\":0}"))
@@ -182,7 +193,7 @@ class ProductCatalogIT {
 
   @Test
   void enforcesProductLifecycleAndOptimisticLocking() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
 
     mvc.perform(put("/api/v1/products/{id}", productId).with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
@@ -207,7 +218,7 @@ class ProductCatalogIT {
 
   @Test
   void returnsConflictBeforeValidatingAStaleProductTransition() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     updateProductStatus(productId, "ACTIVE", 0).andExpect(status().isOk());
 
     updateProductStatus(productId, "PLANNING", 0)
@@ -217,7 +228,7 @@ class ProductCatalogIT {
 
   @Test
   void returnsConflictBeforeValidatingAStaleVersionTransition() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     long versionId = createVersion(productId, "V1");
     addIncludedFeature(productId, versionId);
     mvc.perform(put("/api/v1/products/{productId}/versions/{versionId}", productId, versionId)
@@ -235,7 +246,7 @@ class ProductCatalogIT {
 
   @Test
   void rejectsVersionCreationForArchivedProduct() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     updateProductStatus(productId, "ARCHIVED", 0).andExpect(status().isOk());
 
     mvc.perform(post("/api/v1/products/{id}/versions", productId)
@@ -247,7 +258,7 @@ class ProductCatalogIT {
 
   @Test
   void rejectsVersionUpdateForArchivedProduct() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     long versionId = createVersion(productId, "V1");
     updateProductStatus(productId, "ARCHIVED", 0).andExpect(status().isOk());
 
@@ -260,7 +271,7 @@ class ProductCatalogIT {
 
   @Test
   void rejectsVersionCreationThatWaitsBehindConcurrentArchive() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     TransactionTemplate transaction = new TransactionTemplate(transactionManager);
     CountDownLatch archived = new CountDownLatch(1);
     CountDownLatch allowArchiveCommit = new CountDownLatch(1);
@@ -298,7 +309,7 @@ class ProductCatalogIT {
 
   @Test
   void releasesVersionsOnlyWithDatesAndReturnsOnlyBindableVersions() throws Exception {
-    long productId = createProduct("ERP", "ERP");
+    long productId = createProduct("ERP");
     long released = createVersion(productId, "V1");
     addIncludedFeature(productId, released);
 
@@ -322,15 +333,18 @@ class ProductCatalogIT {
         .andExpect(jsonPath("$.length()").value(1));
   }
 
-  private long createProduct(String code, String name) throws Exception {
+  private long createProduct(String name) throws Exception {
     String json = mvc.perform(post("/api/v1/products")
             .with(writer()).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"code\":\"" + code + "\",\"name\":\"" + name
-                + "\",\"category\":\"企业应用\"}"))
+            .content("{\"name\":\"" + name + "\",\"category\":\"企业应用\"}"))
         .andExpect(status().isCreated())
         .andReturn().getResponse().getContentAsString();
-    return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).get("id").asLong();
+    com.fasterxml.jackson.databind.JsonNode product =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+    long id = product.get("id").asLong();
+    assertEquals(String.valueOf(id), product.get("code").asText());
+    return id;
   }
 
   private long createVersion(long productId, String versionName) throws Exception {

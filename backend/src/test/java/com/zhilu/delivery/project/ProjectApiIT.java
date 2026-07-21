@@ -51,18 +51,19 @@ class ProjectApiIT {
         + "values (610,610,'V3.0','RELEASED')");
     jdbc.update("insert into customer(id,organization_id,name,status) "
         + "values (610,610,'北方银行','ACTIVE')");
-    projects.create(new CreateProjectCommand(610, "PRJ-610", "北方银行 CRM", 610,
+    projects.create(new CreateProjectCommand(610, "北方银行 CRM", 610,
         610, 610, 610, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 11, 30), "BLOCK"));
   }
 
   @Test
   void listAndDetailExposeProjectWorkspaceData() throws Exception {
+    Long id = jdbc.queryForObject(
+        "select id from delivery_project where name='北方银行 CRM'", Long.class);
     mvc.perform(get("/api/v1/projects"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].code").value("PRJ-610"))
+        .andExpect(jsonPath("$[0].code").value(String.valueOf(id)))
         .andExpect(jsonPath("$[0].currentStage").value("START"));
 
-    Long id = jdbc.queryForObject("select id from delivery_project where code='PRJ-610'", Long.class);
     mvc.perform(get("/api/v1/projects/{id}", id))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.stages.length()").value(7))

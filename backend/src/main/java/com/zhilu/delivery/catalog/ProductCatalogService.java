@@ -14,8 +14,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,19 +62,26 @@ public class ProductCatalogService {
 
   @Transactional
   public Map<String, Object> createProduct(long organizationId, Long ownerUserId,
-      String code, String name, String category, String description) {
+      String name, String category, String description) {
     validateOwner(organizationId, ownerUserId);
     try {
-      jdbc.update("insert into product(organization_id,owner_user_id,code,name,category,description,status) "
-              + "values (?,?,?,?,?,?,'PLANNING')",
-          organizationId, ownerUserId, code.trim(), name.trim(), category, description);
+      Map<String, Object> values = new HashMap<String, Object>();
+      values.put("organization_id", organizationId);
+      values.put("owner_user_id", ownerUserId);
+      values.put("code", "PENDING-" + UUID.randomUUID().toString());
+      values.put("name", name.trim());
+      values.put("category", category);
+      values.put("description", description);
+      values.put("status", "PLANNING");
+      String[] columns = values.keySet().toArray(new String[values.size()]);
+      long id = new SimpleJdbcInsert(jdbc).withTableName("product")
+          .usingColumns(columns).usingGeneratedKeyColumns("id")
+          .executeAndReturnKey(values).longValue();
+      jdbc.update("update product set code=? where id=?", String.valueOf(id), id);
+      return product(organizationId, id);
     } catch (DuplicateKeyException duplicate) {
-      throw new ConflictException("产品编码已存在");
+      throw new ConflictException("产品编号生成冲突");
     }
-    Long id = jdbc.queryForObject(
-        "select id from product where organization_id=? and code=?",
-        Long.class, organizationId, code.trim());
-    return product(organizationId, id);
   }
 
   @Transactional
