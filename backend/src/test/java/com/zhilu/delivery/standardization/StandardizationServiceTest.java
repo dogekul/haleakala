@@ -48,12 +48,14 @@ class StandardizationServiceTest {
         "standardization_debt_requirement","flywheel_metric","cost_attribution",
         "standardization_debt","maturity_assessment","product_baseline","custom_dev_task",
         "classification_decision","requirement_item","project_member","delivery_project","product_feature",
-        "product_module","product_version","product","app_user","organization"}) {
+        "product_module","product_version","product","user_role","app_user","organization"}) {
       jdbc.update("delete from " + table);
     }
     jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
     jdbc.update("insert into organization(id,name,code) values (1000,'智鹿','ZHILU-STD')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values (1000,1000,'product','产品经理','ACTIVE')");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 1000,id from role where code='PRODUCT_MANAGER'");
     jdbc.update("insert into product(id,organization_id,code,name,status) values (1000,1000,'ERP','ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) values (1000,1000,'V5','RELEASED')");
     for (int i=0;i<5;i++) {

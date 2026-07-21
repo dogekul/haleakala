@@ -24,13 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/products")
 public class ProductCatalogController {
   private final ProductCatalogService catalog;
-  private final ProductOwnerService owners;
   private final AuditService audit;
 
-  public ProductCatalogController(
-      ProductCatalogService catalog, ProductOwnerService owners, AuditService audit) {
+  public ProductCatalogController(ProductCatalogService catalog, AuditService audit) {
     this.catalog = catalog;
-    this.owners = owners;
     this.audit = audit;
   }
 
@@ -44,7 +41,7 @@ public class ProductCatalogController {
   @GetMapping("/owner-options")
   public List<Map<String, Object>> ownerOptions(
       @AuthenticationPrincipal CurrentUser user) {
-    return owners.options(user.getOrganizationId());
+    return catalog.ownerOptions(user.getOrganizationId());
   }
 
   @GetMapping("/{id}")

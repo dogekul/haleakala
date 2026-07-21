@@ -52,6 +52,10 @@ public class ProductCatalogService {
     return jdbc.query(sql, (row, index) -> productRow(row), organizationId);
   }
 
+  public List<Map<String, Object>> ownerOptions(long organizationId) {
+    return owners.options(organizationId);
+  }
+
   public Map<String, Object> product(long organizationId, long id) {
     List<Map<String, Object>> values = jdbc.query(
         "select p.id,p.organization_id,p.owner_user_id,owner.display_name owner_name,"
