@@ -8,11 +8,12 @@ import {
   Select, Space, Table, Tag, Typography, message,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { customerApi } from '../customer/customerApi'
 import { projectApi } from './projectApi'
+import { buildProjectName } from './projectName'
 import { stageNames, type Project } from './types'
 
 const riskMeta = {
@@ -95,12 +96,21 @@ function ProjectCard({ project }: { project: Project }) {
 
 function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
+  const customerId = Form.useWatch<number>('customerId', form)
   const productId = Form.useWatch<number>('productId', form)
+  const productVersionId = Form.useWatch<number>('productVersionId', form)
   const client = useQueryClient()
   const customers = useQuery({ queryKey: ['active-customers'], queryFn: () => customerApi.list({ status: 'ACTIVE' }), enabled: open })
   const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
   const versions = useQuery({ queryKey: ['bindable-product-versions', productId],
     queryFn: () => projectApi.bindableVersions(productId!), enabled: !!productId && open })
+  useEffect(() => {
+    const customer = customers.data?.find(item => item.id === customerId)
+    const product = products.data?.find(item => item.id === productId)
+    const version = versions.data?.find(item => item.id === productVersionId)
+    const suggestedName = buildProjectName(customer?.name, product?.name, version?.versionName)
+    if (suggestedName) form.setFieldValue('name', suggestedName)
+  }, [customerId, productId, productVersionId, customers.data, products.data, versions.data, form])
   const create = useMutation({ mutationFn: projectApi.create, onSuccess: async () => {
     await client.invalidateQueries({ queryKey: ['projects'] })
     message.success('项目创建成功，七阶段已初始化')
@@ -112,8 +122,6 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
     <Form form={form} layout="vertical" onFinish={values => create.mutate({ ...values,
       startDate: values.startDate?.format('YYYY-MM-DD'), plannedEndDate: values.plannedEndDate?.format('YYYY-MM-DD') })}
       initialValues={{ gateMode: 'BLOCK', startDate: dayjs() }}>
-      <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
-        rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>
         <Select showSearch optionFilterProp="label" loading={customers.isLoading} placeholder="选择启用客户"
           notFoundContent={customers.isError ? '客户加载失败，请重试' : <div className="customer-select-empty">
@@ -126,6 +134,8 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
           options={products.data?.map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
         <Col span={12}><Form.Item label="标品版本" name="productVersionId" rules={[{ required: true }]}>
           <Select disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
+      <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
+        rules={[{ required: true }]}><Input /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="开始日期" name="startDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col>
         <Col span={12}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item label="阶段门禁模式" name="gateMode"><Radio.Group options={[{ value: 'BLOCK', label: '阻断模式' }, { value: 'WARNING', label: '警告模式' }]} /></Form.Item>

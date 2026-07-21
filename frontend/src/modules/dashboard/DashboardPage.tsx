@@ -7,12 +7,13 @@ import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Drawer, Form, Input, Progress,
   Row, Segmented, Select, Space, Statistic, Table, Tag, Typography, message,
 } from 'antd'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { api } from '../../services/api'
 import { customerApi } from '../customer/customerApi'
 import { projectApi } from '../project/projectApi'
+import { buildProjectName } from '../project/projectName'
 import type { Project } from '../project/types'
 import { stageNames } from '../project/types'
 import { dashboardApi, type DashboardFilters } from './dashboardApi'
@@ -102,11 +103,20 @@ function ProductMatrix({ values }: { values: MatrixRow[] }) {
 
 function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm()
-  const productId = Form.useWatch('productId', form)
+  const customerId = Form.useWatch<number>('customerId', form)
+  const productId = Form.useWatch<number>('productId', form)
+  const productVersionId = Form.useWatch<number>('productVersionId', form)
   const client = useQueryClient()
   const customers = useQuery({ queryKey: ['active-customers'], queryFn: () => customerApi.list({ status: 'ACTIVE' }), enabled: open })
   const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
   const versions = useQuery({ queryKey: ['bindable-product-versions', productId], queryFn: () => projectApi.bindableVersions(productId), enabled: open && Boolean(productId) })
+  useEffect(() => {
+    const customer = customers.data?.find(item => item.id === customerId)
+    const product = products.data?.find(item => item.id === productId)
+    const version = versions.data?.find(item => item.id === productVersionId)
+    const suggestedName = buildProjectName(customer?.name, product?.name, version?.versionName)
+    if (suggestedName) form.setFieldValue('name', suggestedName)
+  }, [customerId, productId, productVersionId, customers.data, products.data, versions.data, form])
   const create = useMutation({ mutationFn: async (values: Record<string, unknown>) => {
     const initialize = Boolean(values.initializeAgent)
     const project = await projectApi.create({ ...values, initializeAgent: undefined, startDate: formatDate(values.startDate), plannedEndDate: formatDate(values.plannedEndDate), gateMode: 'BLOCK' })
@@ -116,8 +126,6 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
   return <Drawer title="快速创建交付项目" width={520} open={open} onClose={onClose} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
     <Alert className="drawer-hint" type="info" showIcon message="创建后自动初始化七阶段，可选立即执行 deliver-init。" />
     <Form form={form} layout="vertical" initialValues={{ initializeAgent: true }} onFinish={values => create.mutate(values)}>
-      <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
-        rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>
         <Select showSearch optionFilterProp="label" loading={customers.isLoading} placeholder="选择启用客户"
           notFoundContent={customers.isError ? '客户加载失败，请重试' : <div className="customer-select-empty">
@@ -127,6 +135,8 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
       </Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="产品" name="productId" rules={[{ required: true }]}><Select loading={products.isLoading}
         onChange={(value) => form.setFieldsValue({ productId: value, productVersionId: undefined })} options={products.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item></Col><Col span={12}><Form.Item label="版本" name="productVersionId" rules={[{ required: true }]}><Select disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
+      <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
+        rules={[{ required: true }]}><Input /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="计划开始" name="startDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item name="initializeAgent" valuePropName="checked"><Checkbox>创建后执行项目初始化 Skill</Checkbox></Form.Item>
     </Form>
