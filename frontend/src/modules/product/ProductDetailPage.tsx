@@ -53,7 +53,7 @@ function ProductOverview({ productId, product }: { productId: number; product: A
     </Row>
     <Card className="product-overview-card" title="产品概览">
       <dl><div><dt>产品分类</dt><dd>{product.category || '未分类'}</dd></div>
-        <div><dt>负责人</dt><dd>{product.ownerUserId ? `#${product.ownerUserId}` : '未指定'}</dd></div>
+        <div><dt>负责人</dt><dd>{product.ownerName || '未指定'}</dd></div>
         <div><dt>最近更新</dt><dd>{product.updatedAt ? new Date(product.updatedAt).toLocaleString('zh-CN') : '—'}</dd></div></dl>
     </Card>
   </PageState>

@@ -10,7 +10,7 @@ import { buildModuleTree, validParentModules } from './ProductStructureTab'
 import type { ProductModule } from './types'
 
 const product = {
-  id: 8, organizationId: 1, ownerUserId: 20, code: 'ERP', name: '智鹿 ERP', category: '企业应用',
+  id: 8, organizationId: 1, ownerUserId: 20, ownerName: '张产品', code: 'ERP', name: '智鹿 ERP', category: '企业应用',
   description: '覆盖核心经营流程', status: 'ACTIVE', moduleCount: 3, featureCount: 2,
   latestVersionName: 'V5.2', updatedAt: '2026-07-12T08:00:00Z', version: 2,
 }
@@ -53,6 +53,7 @@ const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON
 }))
 
 function responseFor(path: string) {
+  if (path === '/api/v1/products/owner-options') return json([{ id: 20, displayName: '张产品' }])
   if (path === '/api/v1/products/8') return json(product)
   if (path === '/api/v1/products/8/modules') return json(modules)
   if (path === '/api/v1/products/8/document-nodes/102/content') return json(featureSpec)
@@ -107,6 +108,8 @@ it('按标签懒加载数据并渲染三级模块树和模块功能', async () =
   const fetch = show()
   const user = userEvent.setup()
   expect(await screen.findByRole('tab', { name: '模块与功能' })).toBeVisible()
+  expect(screen.getByText('张产品')).toBeVisible()
+  expect(screen.queryByText('#20')).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: /返回产品中心/ })).toHaveClass('detail-back-link')
   expect(fetch).not.toHaveBeenCalledWith('/api/v1/products/8/modules', expect.anything())
 

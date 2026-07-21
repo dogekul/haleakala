@@ -9,7 +9,7 @@ import { AuthContext, type AuthState } from '../../app/AuthProvider'
 
 const products = [
   {
-    id: 8, organizationId: 1, ownerUserId: 20, code: 'ERP', name: '智鹿 ERP', category: '企业应用',
+    id: 8, organizationId: 1, ownerUserId: 20, ownerName: '张产品', code: 'ERP', name: '智鹿 ERP', category: '企业应用',
     description: '覆盖核心经营流程', status: 'ACTIVE', moduleCount: 3, featureCount: 12,
     latestVersionName: 'V2.1', updatedAt: '2026-07-12T08:00:00Z', version: 2,
   },
@@ -28,6 +28,9 @@ const products = [
 const json = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json' },
 }))
+
+const responseFor = (input: RequestInfo | URL) => String(input) === '/api/v1/products/owner-options'
+  ? json([{ id: 20, displayName: '张产品' }]) : json(products)
 
 const auth: AuthState = {
   loading: false,
@@ -57,7 +60,7 @@ function show(permissions = ['product:read', 'product:write']) {
 afterEach(() => vi.unstubAllGlobals())
 
 it('筛选产品并在列表和卡片视图间切换', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
   const user = userEvent.setup()
   show()
 
@@ -79,7 +82,7 @@ it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'POST') return json({ ...products[1], id: 11 }, 201)
     if (init?.method === 'PUT') return json({ ...products[0], name: '智鹿 ERP 企业版', version: 3 })
-    return json(products)
+    return responseFor(input)
   })
   vi.stubGlobal('fetch', fetch)
   const user = userEvent.setup()
@@ -88,7 +91,10 @@ it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
   await user.click(await screen.findByRole('button', { name: '新建产品' }))
   let drawer = screen.getByRole('dialog', { name: '新建产品' })
   expect(within(drawer).queryByLabelText('产品编码')).not.toBeInTheDocument()
+  expect(within(drawer).queryByLabelText('负责人 ID')).not.toBeInTheDocument()
   await user.type(within(drawer).getByLabelText('产品名称'), '协同办公')
+  await user.click(within(drawer).getByRole('combobox', { name: '负责人' }))
+  await user.click(await screen.findByRole('option', { name: '张产品' }))
   await user.click(within(drawer).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products', expect.objectContaining({
     method: 'POST', body: expect.stringContaining('"version":0'),
@@ -96,6 +102,7 @@ it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
   const createBody = JSON.parse(String(fetch.mock.calls.find(([url, init]) =>
     url === '/api/v1/products' && init?.method === 'POST')?.[1]?.body))
   expect(createBody).not.toHaveProperty('code')
+  expect(createBody).toMatchObject({ ownerUserId: 20 })
 
   await user.click(await screen.findByRole('button', { name: '编辑智鹿 ERP' }))
   drawer = screen.getByRole('dialog', { name: '编辑产品' })
@@ -110,7 +117,7 @@ it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
 })
 
 it('归档产品只能查看不能编辑', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
   const user = userEvent.setup()
   show()
 
@@ -122,7 +129,7 @@ it('归档产品只能查看不能编辑', async () => {
 })
 
 it('只读角色不能创建或修改任何产品', async () => {
-  const fetch = vi.fn(() => json(products))
+  const fetch = vi.fn((input: RequestInfo | URL) => responseFor(input))
   vi.stubGlobal('fetch', fetch)
   const user = userEvent.setup()
   show(['product:read'])
@@ -138,7 +145,7 @@ it('只读角色不能创建或修改任何产品', async () => {
 })
 
 it('编辑状态只提供后端允许的下一状态', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
   const user = userEvent.setup()
   show()
 
@@ -152,11 +159,13 @@ it('编辑状态只提供后端允许的下一状态', async () => {
 })
 
 it('分类、状态和负责人筛选会共同约束产品结果', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => json(products)))
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
   const user = userEvent.setup()
   show()
 
   expect(await screen.findByRole('link', { name: '智鹿 ERP' })).toBeVisible()
+  expect(screen.getByText('张产品')).toBeVisible()
+  expect(screen.queryByText('#20')).not.toBeInTheDocument()
   await user.click(screen.getByRole('combobox', { name: '分类筛选' }))
   await user.click(await screen.findByRole('option', { name: '客户经营' }))
   expect(screen.getByRole('link', { name: '客户关系云' })).toBeVisible()
@@ -171,7 +180,7 @@ it('分类、状态和负责人筛选会共同约束产品结果', async () => {
   await user.click(screen.getByRole('combobox', { name: '状态筛选' }))
   await user.click(await screen.findByRole('option', { name: '已启用' }))
   await user.click(screen.getByRole('combobox', { name: '负责人筛选' }))
-  await user.click(await screen.findByRole('option', { name: '负责人 #20' }))
+  await user.click(await screen.findByRole('option', { name: '张产品' }))
   expect(screen.getByRole('link', { name: '智鹿 ERP' })).toBeVisible()
   expect(screen.queryByRole('link', { name: products[2].name })).not.toBeInTheDocument()
 })

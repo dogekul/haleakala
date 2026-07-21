@@ -7,6 +7,7 @@ export interface Product {
   id: number
   organizationId: number
   ownerUserId?: number
+  ownerName?: string
   code: string
   name: string
   category?: string
@@ -33,6 +34,7 @@ export interface ProductModule {
   productId: number
   parentId?: number
   ownerUserId?: number
+  ownerName?: string
   code: string
   name: string
   description?: string
@@ -46,11 +48,17 @@ export interface ProductFeature {
   productId: number
   moduleId: number
   ownerUserId?: number
+  ownerName?: string
   code: string
   name: string
   description?: string
   status: StructureStatus
   version: number
+}
+
+export interface ProductOwnerOption {
+  id: number
+  displayName: string
 }
 
 export interface ManifestEntry { featureId: number; availability: Availability }

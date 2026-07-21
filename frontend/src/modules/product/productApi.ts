@@ -1,7 +1,7 @@
 import { api } from '../../services/api'
 import type {
   Product, ProductCoverage, ProductDocumentNode, ProductFeature,
-  ProductModule, ProductVersion, VersionManifest,
+  ProductModule, ProductOwnerOption, ProductVersion, VersionManifest,
 } from './types'
 import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
 import { apiPath } from '../../services/apiPath'
@@ -10,6 +10,7 @@ type Input = Record<string, unknown>
 
 export const productApi = {
   products: () => api<Product[]>('/api/v1/products'),
+  ownerOptions: () => api<ProductOwnerOption[]>('/api/v1/products/owner-options'),
   product: (id: number) => api<Product>(`/api/v1/products/${id}`),
   saveProduct: (id: number | undefined, input: Input) => api<Product>(`/api/v1/products${id ? `/${id}` : ''}`, {
     method: id ? 'PUT' : 'POST', body: JSON.stringify(input),

@@ -1,7 +1,7 @@
 import { EditOutlined, EyeOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert, Button, Card, Col, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Space,
+  Alert, Button, Card, Col, Drawer, Form, Input, Row, Segmented, Select, Space,
   Table, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
@@ -36,7 +36,9 @@ export function ProductListPage() {
   const [editing, setEditing] = useState<Product | null | undefined>()
   const query = useQuery({ queryKey: ['products'], queryFn: productApi.products })
   const categories = [...new Set((query.data ?? []).map(item => item.category).filter(Boolean))] as string[]
-  const owners = [...new Set((query.data ?? []).map(item => item.ownerUserId).filter(Boolean))] as number[]
+  const owners = [...new Map((query.data ?? []).filter(item => item.ownerUserId && item.ownerName)
+    .map(item => [item.ownerUserId!, item.ownerName!] as const))]
+    .map(([value, label]) => ({ value, label }))
   const data = useMemo(() => (query.data ?? []).filter(item => {
     const term = keyword.trim().toLowerCase()
     return (!term || `${item.name}${item.code}`.toLowerCase().includes(term))
@@ -51,7 +53,7 @@ export function ProductListPage() {
     </div> },
     { title: '模块 / 功能', key: 'structure', width: 150, render: (_: unknown, item: Product) => `${item.moduleCount} / ${item.featureCount}` },
     { title: '最新版本', dataIndex: 'latestVersionName', width: 130, render: (value?: string) => value || '尚未创建' },
-    { title: '负责人', dataIndex: 'ownerUserId', width: 110, render: (value?: number) => value ? `#${value}` : '未指定' },
+    { title: '负责人', dataIndex: 'ownerName', width: 110, render: (value?: string) => value || '未指定' },
     { title: '状态', dataIndex: 'status', width: 110, render: (value: ProductStatus) => <ProductStatusTag status={value} /> },
     { title: '最近更新', dataIndex: 'updatedAt', width: 130, render: formatDate },
     { title: '', key: 'action', width: 80, render: (_: unknown, item: Product) => {
@@ -79,7 +81,7 @@ export function ProductListPage() {
           <Select aria-label="状态筛选" virtual={false} allowClear placeholder="全部状态" value={status} onChange={setStatus} style={{ width: 130 }}
             options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} />
           <Select aria-label="负责人筛选" virtual={false} allowClear placeholder="全部负责人" value={ownerUserId} onChange={setOwnerUserId} style={{ width: 140 }}
-            options={owners.map(value => ({ value, label: `负责人 #${value}` }))} />
+            options={owners} />
           <span className="result-count">共 {data.length} 个产品</span>
         </Space>
         <Segmented value={view} onChange={value => setView(value as 'list' | 'card')} options={[
@@ -120,6 +122,10 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
   const [form] = Form.useForm()
   const client = useQueryClient()
   const readOnly = !canWrite || value?.status === 'ARCHIVED'
+  const owners = useQuery({
+    queryKey: ['product-owner-options'], queryFn: productApi.ownerOptions,
+    enabled: value !== undefined && !readOnly,
+  })
   useEffect(() => {
     if (value !== undefined) {
       form.resetFields()
@@ -143,6 +149,10 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
   })
   const title = readOnly ? '查看产品' : value ? '编辑产品' : '新建产品'
   const statusOptions: ProductStatus[] = value ? allowedStatuses[value.status] : ['PLANNING']
+  const ownerOptions = (owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))
+  if (value?.ownerUserId && value.ownerName && !ownerOptions.some(item => item.value === value.ownerUserId)) {
+    ownerOptions.push({ value: value.ownerUserId, label: value.ownerName })
+  }
   return <Drawer title={title} open={value !== undefined} width={520} onClose={onClose}
     extra={!readOnly && <Button type="primary" aria-label="保存" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     {readOnly && <Alert type="info" showIcon message={value?.status === 'ARCHIVED' ? '归档产品仅可查看' : '当前账号仅可查看产品'} />}
@@ -150,7 +160,9 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
       <Form.Item label="产品名称" name="name" extra="产品编号由系统自动生成"
         rules={[{ required: true, message: '请输入产品名称' }]}><Input /></Form.Item>
       <Form.Item label="分类" name="category"><Input placeholder="例如：企业应用" /></Form.Item>
-      <Form.Item label="负责人 ID" name="ownerUserId"><InputNumber min={1} style={{ width: '100%' }} placeholder="选填" /></Form.Item>
+      <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+        loading={owners.isLoading} placeholder="选填"
+        notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={ownerOptions} /></Form.Item>
       <Form.Item label="产品说明" name="description"><Input.TextArea rows={4} maxLength={500} showCount /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || readOnly}
         options={statusOptions.map(status => ({ value: status, label: statusMeta[status].label }))} /></Form.Item>
