@@ -17,7 +17,7 @@ public class ProductOwnerService {
   public List<Map<String, Object>> options(long organizationId) {
     return jdbc.query("select distinct u.id,u.display_name from app_user u "
             + "join user_role ur on ur.user_id=u.id join role r on r.id=ur.role_id "
-            + "where u.organization_id=? and u.status='ACTIVE' and r.code='PRODUCT_MANAGER' "
+            + "where u.organization_id=? and u.status='ACTIVE' and r.code='PRODUCT_OWNER' "
             + "order by u.display_name,u.id",
         (row, index) -> {
           Map<String, Object> value = new LinkedHashMap<String, Object>();
@@ -32,7 +32,7 @@ public class ProductOwnerService {
     Integer count = jdbc.queryForObject("select count(*) from app_user u "
             + "join user_role ur on ur.user_id=u.id join role r on r.id=ur.role_id "
             + "where u.id=? and u.organization_id=? and u.status='ACTIVE' "
-            + "and r.code='PRODUCT_MANAGER'",
+            + "and r.code='PRODUCT_OWNER'",
         Integer.class, ownerUserId, organizationId);
     if (count == null || count == 0) {
       throw new IllegalArgumentException("请选择当前组织内启用的产品负责人");

@@ -62,6 +62,8 @@ class ProductCatalogIT {
     jdbc.update("delete from user_role");
     jdbc.update("delete from app_user");
     jdbc.update("delete from organization");
+    jdbc.update("merge into role(id,code,name,description,built_in,version) key(id) "
+        + "values (9,'PRODUCT_OWNER','产品负责人','产品负责人',false,0)");
     jdbc.update("insert into organization(id,name,code) values (350,'智鹿科技','ZHILU-CATALOG')");
     jdbc.update("insert into organization(id,name,code) values (351,'其他组织','OTHER-CATALOG')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
@@ -69,17 +71,19 @@ class ProductCatalogIT {
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (351,351,'outsider','其他用户','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (352,350,'product-manager','张产品','ACTIVE')");
+        + "values (352,350,'product-owner','张负责人','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (353,350,'ordinary','普通用户','ACTIVE')");
+        + "values (353,350,'product-manager','产品经理','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (354,350,'disabled-manager','停用产品经理','DISABLED')");
+        + "values (354,350,'disabled-owner','停用产品负责人','DISABLED')");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 352,id from role where code='PRODUCT_MANAGER'");
+        + "select 352,id from role where code='PRODUCT_OWNER'");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 354,id from role where code='PRODUCT_MANAGER'");
+        + "select 354,id from role where code='PRODUCT_OWNER'");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 351,id from role where code='PRODUCT_MANAGER'");
+        + "select 351,id from role where code='PRODUCT_OWNER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 353,id from role where code='PRODUCT_MANAGER'");
   }
 
   @Test
@@ -168,7 +172,7 @@ class ProductCatalogIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].id").value(352))
-        .andExpect(jsonPath("$[0].displayName").value("张产品"));
+        .andExpect(jsonPath("$[0].displayName").value("张负责人"));
 
     String response = mvc.perform(post("/api/v1/products")
             .with(writer()).with(csrf())
@@ -176,14 +180,14 @@ class ProductCatalogIT {
             .content("{\"ownerUserId\":352,\"name\":\"负责人产品\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.ownerUserId").value(352))
-        .andExpect(jsonPath("$.ownerName").value("张产品"))
+        .andExpect(jsonPath("$.ownerName").value("张负责人"))
         .andReturn().getResponse().getContentAsString();
     long productId = new com.fasterxml.jackson.databind.ObjectMapper()
         .readTree(response).get("id").asLong();
 
     mvc.perform(get("/api/v1/products/{id}", productId).with(reader()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.ownerName").value("张产品"));
+        .andExpect(jsonPath("$.ownerName").value("张负责人"));
   }
 
   @Test

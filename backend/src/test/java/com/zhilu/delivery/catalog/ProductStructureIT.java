@@ -65,22 +65,26 @@ class ProductStructureIT {
     jdbc.update("delete from user_role");
     jdbc.update("delete from app_user");
     jdbc.update("delete from organization");
+    jdbc.update("merge into role(id,code,name,description,built_in,version) key(id) "
+        + "values (9,'PRODUCT_OWNER','产品负责人','产品负责人',false,0)");
     jdbc.update("insert into organization(id,name,code) values (450,'智鹿科技','ZHILU-STRUCTURE')");
     jdbc.update("insert into organization(id,name,code) values (451,'其他组织','OTHER-STRUCTURE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (450,450,'product','产品经理','ACTIVE')");
+        + "values (450,450,'product-owner','产品负责人','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
         + "values (451,451,'outsider','其他用户','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (452,450,'ordinary','普通用户','ACTIVE')");
+        + "values (452,450,'product-manager','产品经理','ACTIVE')");
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) "
-        + "values (453,450,'disabled-manager','停用产品经理','DISABLED')");
+        + "values (453,450,'disabled-owner','停用产品负责人','DISABLED')");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 450,id from role where code='PRODUCT_MANAGER'");
+        + "select 450,id from role where code='PRODUCT_OWNER'");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 451,id from role where code='PRODUCT_MANAGER'");
+        + "select 451,id from role where code='PRODUCT_OWNER'");
     jdbc.update("insert into user_role(user_id,role_id) "
-        + "select 453,id from role where code='PRODUCT_MANAGER'");
+        + "select 453,id from role where code='PRODUCT_OWNER'");
+    jdbc.update("insert into user_role(user_id,role_id) "
+        + "select 452,id from role where code='PRODUCT_MANAGER'");
   }
 
   @Test
@@ -383,7 +387,7 @@ class ProductStructureIT {
             .with(writer()).with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"ownerUserId\":450,\"code\":\"FIN\",\"name\":\"Finance\"}"))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.ownerName").value("产品经理"))
+        .andExpect(jsonPath("$.ownerName").value("产品负责人"))
         .andReturn().getResponse().getContentAsString();
     long moduleId = json.readTree(moduleResponse).get("id").asLong();
 
@@ -392,14 +396,14 @@ class ProductStructureIT {
             .content("{\"moduleId\":" + moduleId
                 + ",\"ownerUserId\":450,\"code\":\"AR\",\"name\":\"Receivable\"}"))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.ownerName").value("产品经理"));
+        .andExpect(jsonPath("$.ownerName").value("产品负责人"));
 
     mvc.perform(get("/api/v1/products/{productId}/modules", productId).with(reader()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].ownerName").value("产品经理"));
+        .andExpect(jsonPath("$[0].ownerName").value("产品负责人"));
     mvc.perform(get("/api/v1/products/{productId}/features", productId).with(reader()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].ownerName").value("产品经理"));
+        .andExpect(jsonPath("$[0].ownerName").value("产品负责人"));
   }
 
   @Test
