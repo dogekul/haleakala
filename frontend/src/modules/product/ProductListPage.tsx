@@ -162,7 +162,7 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
       <Form.Item label="分类" name="category"><Input placeholder="例如：企业应用" /></Form.Item>
       <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
         loading={owners.isLoading} placeholder="选填"
-        notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={ownerOptions} /></Form.Item>
+        notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={ownerOptions} /></Form.Item>
       <Form.Item label="产品说明" name="description"><Input.TextArea rows={4} maxLength={500} showCount /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || readOnly}
         options={statusOptions.map(status => ({ value: status, label: statusMeta[status].label }))} /></Form.Item>

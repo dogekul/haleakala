@@ -111,7 +111,7 @@ function ModuleEditor({ productId, values, value, readOnly, ownerOptions, ownerO
       <Space align="start" className="product-editor-row">
         <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
           loading={ownerOptionsLoading} style={{ width: 220 }}
-          notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={selectableOwners} /></Form.Item>
+          notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={selectableOwners} /></Form.Item>
         <Form.Item label="排序" name="sortOrder"><InputNumber min={0} /></Form.Item>
       </Space>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || disabled}
@@ -161,7 +161,7 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
       <Form.Item label="功能说明" name="description"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
       <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
         loading={ownerOptionsLoading}
-        notFoundContent="暂无产品负责人，请先在系统管理中配置产品经理角色" options={selectableOwners} /></Form.Item>
+        notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={selectableOwners} /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || disabled}
         options={(value ? nextStatuses[value.status] : ['PLANNING'] as StructureStatus[]).map(status => ({ value: status, label: statusLabels[status] }))} /></Form.Item>
     </Form>

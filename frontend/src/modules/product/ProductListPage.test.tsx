@@ -116,6 +116,17 @@ it('新建和编辑都提交乐观锁版本且不填写编码', async () => {
   })))
 })
 
+it('没有候选人时提示配置产品负责人角色', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) =>
+    String(input) === '/api/v1/products/owner-options' ? json([]) : json(products)))
+  const user = userEvent.setup()
+  show()
+
+  await user.click(await screen.findByRole('button', { name: '新建产品' }))
+  await user.click(within(screen.getByRole('dialog', { name: '新建产品' })).getByRole('combobox', { name: '负责人' }))
+  expect(await screen.findByText('暂无产品负责人，请先在系统管理中配置产品负责人角色')).toBeInTheDocument()
+})
+
 it('归档产品只能查看不能编辑', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
   const user = userEvent.setup()
