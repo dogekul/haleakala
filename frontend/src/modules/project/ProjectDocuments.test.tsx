@@ -7,6 +7,7 @@ import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { ProjectDetail } from './ProjectDetail'
 import { ProjectDocuments } from './ProjectDocuments'
 import type { Project } from './types'
+import '../../styles/global.css'
 
 afterEach(() => {
   Modal.destroyAll()
@@ -202,6 +203,32 @@ it('项目文档初始化失败时展示原因并支持重试', async () => {
   ))
 })
 
+it('标识未触发的条件门禁并支持同步最新门禁模版', async () => {
+  const conditional = {
+    id: 14, stageCode: 'CUSTOM_DEV', title: '二开设计文档', requirement: 'REQUIRED',
+    conditionCode: 'HAS_CUSTOM_DEV', gateRequired: false, status: 'TODO', revision: 1,
+    sourceTemplateId: 104, sourceTemplateRevision: 1,
+  }
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/v1/projects/9/documents') return json([...documents, conditional])
+    if (path === '/api/v1/projects/9/documents/sync' && init?.method === 'POST') {
+      return json({ ...project, documentSpaceStatus: 'PENDING' })
+    }
+    throw new Error(`unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  show(<ProjectDocuments project={project} />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /二开实施/ }))
+  expect(screen.getByText('条件文档（未触发）')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: /同步门禁模版/ }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/projects/9/documents/sync',
+    expect.objectContaining({ method: 'POST' }),
+  ))
+})
+
 it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', async () => {
   const blockingProject = { ...project, currentStage: 'START' }
   let advanceBody: Record<string, unknown> | undefined
@@ -231,6 +258,49 @@ it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', a
   expect(within(dialog).getByText('项目章程')).toBeInTheDocument()
   expect(within(dialog).queryByText('记录警告并推进')).not.toBeInTheDocument()
   expect(advanceBody).toEqual({ targetStage: 'REQUIREMENT' })
+})
+
+it('项目阶段推进按钮使用可见的白色文字', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/v1/projects/9') return json({ ...project, currentStage: 'START' })
+    throw new Error(`unexpected request: ${String(input)}`)
+  }))
+  show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
+    managerAuth, '/projects/9')
+
+  const advance = await screen.findByRole('button', { name: /推进至需求采集/ })
+  expect(getComputedStyle(advance.querySelector('span')!).color).toBe('rgb(255, 255, 255)')
+})
+
+it('项目收尾阶段通过专用动作完成最终关闭门禁', async () => {
+  const closingProject: Project = {
+    ...project,
+    status: 'CLOSING',
+    currentStage: 'CLOSE',
+    stages: stages.map(stage => ({
+      ...stage,
+      status: stage.code === 'CLOSE' ? 'ACTIVE' : 'COMPLETED',
+    })),
+  }
+  const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/v1/projects/9') return json(closingProject)
+    if (path === '/api/v1/projects/9/close' && init?.method === 'POST') {
+      return json({ ...closingProject, status: 'CLOSED' })
+    }
+    throw new Error(`unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
+    managerAuth, '/projects/9')
+
+  await userEvent.click(await screen.findByRole('button', { name: '完成并关闭项目' }))
+  const dialog = await screen.findByRole('dialog', { name: '确认关闭项目' })
+  await userEvent.click(within(dialog).getByRole('button', { name: '确认关闭' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/v1/projects/9/close',
+    expect.objectContaining({ method: 'POST' }),
+  ))
 })
 
 it('WARNING 项目先确认已知缺失项再由后端记录警告推进', async () => {

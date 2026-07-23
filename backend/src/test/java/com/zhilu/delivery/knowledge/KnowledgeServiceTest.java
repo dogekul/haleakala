@@ -161,6 +161,22 @@ class KnowledgeServiceTest {
         snapshot.get("published_markdown_snapshot"));
   }
 
+  @Test void projectTemplatePersistsItsGateCondition() {
+    Map<String,Object> template=knowledge.create(user,"TEMPLATE","二开设计文档",
+        "仅存在二开时阻断","# 二开设计文档\n\n请填写方案","二开,模版",
+        null,null,"ORGANIZATION",null,null,null,null,null,
+        "CUSTOM_DEV","REQUIRED",true,"HAS_CUSTOM_DEV");
+
+    assertEquals("HAS_CUSTOM_DEV",template.get("conditionCode"));
+    assertEquals("HAS_CUSTOM_DEV",jdbc.queryForObject(
+        "select condition_code from document_template_config where knowledge_item_id=?",
+        String.class,((Number)template.get("id")).longValue()));
+    assertThrows(IllegalArgumentException.class, () -> knowledge.create(user,"TEMPLATE",
+        "条件商机文档","业务场景不支持条件门禁","# 文档","模版",
+        null,null,"ORGANIZATION",null,null,null,null,null,
+        "OPPORTUNITY_DECISION","REQUIRED",true,"HAS_CUSTOM_DEV"));
+  }
+
   @Test void opportunityResearchTemplateUsesDedicatedScene() {
     Map<String,Object> template=knowledge.create(user,"TEMPLATE","需求调研报告",
         "商机调研","# {{客户名称}}需求调研报告","商机",

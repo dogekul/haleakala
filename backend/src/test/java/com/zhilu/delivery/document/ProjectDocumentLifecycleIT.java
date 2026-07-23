@@ -73,7 +73,8 @@ class ProjectDocumentLifecycleIT {
   void seed() {
     jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
     for (String table : new String[] {
-        "audit_log", "document_job", "project_document", "document_template_config", "knowledge_item",
+        "audit_log", "document_job", "custom_dev_task", "requirement_item", "project_document",
+        "document_template_config", "knowledge_item",
         "outline_document_link", "project_activity", "stage_instance", "project_member",
         "delivery_project", "customer", "product_version", "product", "app_user", "organization"
     }) {
@@ -236,6 +237,110 @@ class ProjectDocumentLifecycleIT {
         .andExpect(jsonPath("$.message", Matchers.containsString("项目启动检查单")))
         .andExpect(jsonPath("$.message", Matchers.containsString("项目启动方案")))
         .andExpect(jsonPath("$.message", Matchers.not(Matchers.containsString("参考资料"))));
+  }
+
+  @Test
+  void customDevelopmentDocumentsOnlyJoinTheGateWhenTheProjectHasCustomWork() {
+    jdbc.update("update project_document set condition_code='HAS_CUSTOM_DEV' where id=?",
+        requiredDocumentId);
+
+    List<Map<String, Object>> withoutCustomDevelopment =
+        projectDocuments.incompleteRequired(
+            projectId, com.zhilu.delivery.project.DeliveryStage.START);
+    assertTrue(withoutCustomDevelopment.stream().noneMatch(
+        item -> ((Number) item.get("id")).longValue() == requiredDocumentId));
+    assertEquals(Boolean.FALSE, projectDocuments.list(projectId, member).stream()
+        .filter(item -> ((Number) item.get("id")).longValue() == requiredDocumentId)
+        .findFirst().get().get("gateRequired"));
+
+    jdbc.update("insert into requirement_item(id,organization_id,project_id,requirement_code,"
+            + "title,description,created_by) values (7340,7300,7300,'REQ-7340',"
+            + "'二开需求','需要二次开发',7300)");
+    jdbc.update("insert into custom_dev_task(id,requirement_id,project_id,title) "
+        + "values (7340,7340,7300,'二开任务')");
+
+    List<Map<String, Object>> withCustomDevelopment =
+        projectDocuments.incompleteRequired(
+            projectId, com.zhilu.delivery.project.DeliveryStage.START);
+    assertTrue(withCustomDevelopment.stream().anyMatch(
+        item -> ((Number) item.get("id")).longValue() == requiredDocumentId));
+    assertEquals(Boolean.TRUE, projectDocuments.list(projectId, member).stream()
+        .filter(item -> ((Number) item.get("id")).longValue() == requiredDocumentId)
+        .findFirst().get().get("gateRequired"));
+  }
+
+  @Test
+  void synchronizesNewPublishedTemplatesWithoutOverwritingExistingProjectDocuments()
+      throws Exception {
+    jdbc.update("update delivery_project set document_snapshot_at=current_timestamp where id=?",
+        projectId);
+    String originalStatus = jdbc.queryForObject(
+        "select status from project_document where id=?", String.class, requiredDocumentId);
+    Long originalLinkId = jdbc.queryForObject(
+        "select outline_link_id from project_document where id=?", Long.class, requiredDocumentId);
+    jdbc.update("insert into knowledge_item(id,organization_id,type,title,summary,content_text,"
+            + "visibility,status,owner_user_id) values "
+            + "(17340,7300,'TEMPLATE','项目验收报告','收尾门禁','# 项目验收报告',"
+            + "'ORGANIZATION','PUBLISHED',7300)");
+    jdbc.update("insert into document_template_config(knowledge_item_id,stage_code,requirement,"
+            + "enabled,condition_code,published_revision,published_title_snapshot,"
+            + "published_markdown_snapshot) values "
+            + "(17340,'CLOSE','REQUIRED',true,'ALWAYS',1,'项目验收报告',"
+            + "'# 项目验收报告\\n\\n请填写验收结论')");
+
+    mvc.perform(post("/api/v1/projects/{id}/documents/sync", projectId)
+            .with(actor(manager, "project:write")).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(projectId));
+
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from project_document where project_id=? and source_template_id=17340 "
+            + "and stage_code='CLOSE' and condition_code='ALWAYS'",
+        Integer.class, projectId));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from document_job where organization_id=7300 "
+            + "and job_type='PROJECT_TEMPLATE_SYNC' and business_id=? and status='PENDING'",
+        Integer.class, projectId));
+    assertEquals(originalStatus, jdbc.queryForObject(
+        "select status from project_document where id=?", String.class, requiredDocumentId));
+    assertEquals(originalLinkId, jdbc.queryForObject(
+        "select outline_link_id from project_document where id=?", Long.class, requiredDocumentId));
+  }
+
+  @Test
+  void enteringCloseStartsClosingAndFinalCloseEnforcesTheLastDocumentGate()
+      throws Exception {
+    jdbc.update("update stage_instance set status='COMPLETED' where project_id=?", projectId);
+    jdbc.update("update stage_instance set status='ACTIVE',completed_at=null "
+        + "where project_id=? and stage_code='STANDARDIZATION'", projectId);
+    jdbc.update("update stage_instance set status='PENDING',completed_at=null "
+        + "where project_id=? and stage_code='CLOSE'", projectId);
+    jdbc.update("update delivery_project set current_stage='STANDARDIZATION',status='ACTIVE' "
+        + "where id=?", projectId);
+    jdbc.update("update project_document set stage_code='CLOSE' where id=?", requiredDocumentId);
+
+    mvc.perform(post("/api/v1/projects/{id}/advance", projectId)
+            .with(actor(manager, "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"targetStage\":\"CLOSE\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.currentStage").value("CLOSE"))
+        .andExpect(jsonPath("$.status").value("CLOSING"));
+
+    mvc.perform(post("/api/v1/projects/{id}/close", projectId)
+            .with(actor(manager, "project:write")).with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message", Matchers.containsString("项目启动方案")));
+
+    projectDocuments.confirm(projectId, requiredDocumentId, manager);
+    mvc.perform(post("/api/v1/projects/{id}/close", projectId)
+            .with(actor(manager, "project:write")).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CLOSED"));
+
+    assertEquals("COMPLETED", jdbc.queryForObject(
+        "select status from stage_instance where project_id=? and stage_code='CLOSE'",
+        String.class, projectId));
   }
 
   @Test

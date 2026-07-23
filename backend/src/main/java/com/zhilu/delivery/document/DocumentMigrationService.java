@@ -135,6 +135,7 @@ public class DocumentMigrationService {
       throw new ConflictException("当前任务状态不能重试");
     }
     if (PROJECT_MIGRATION.equals(job.get("job_type"))
+        || DocumentJobService.PROJECT_TEMPLATE_SYNC.equals(job.get("job_type"))
         || DocumentJobService.PROJECT_INIT.equals(job.get("job_type"))) {
       jdbc.update("update delivery_project set document_space_status='PENDING',"
               + "document_space_error=null,updated_at=current_timestamp "

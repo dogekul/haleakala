@@ -92,6 +92,25 @@ function Lifecycle({ project }: { project: Project }) {
       }
     },
   })
+  const close = useMutation({
+    mutationFn: () => projectApi.close(project.id),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['project', project.id] })
+      message.success('项目已完成收尾并关闭')
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        Modal.error({
+          title: '项目关闭门禁未通过',
+          content: <List
+            size="small"
+            dataSource={gateMessages(error.message)}
+            renderItem={item => <List.Item>{item}</List.Item>}
+          />,
+        })
+      }
+    },
+  })
   const requestAdvance = () => {
     if (project.gateMode !== 'WARNING') {
       advance.mutate()
@@ -104,7 +123,8 @@ function Lifecycle({ project }: { project: Project }) {
         : []),
       ...(documents.data ?? [])
         .filter(item => item.stageCode === project.currentStage
-          && item.requirement === 'REQUIRED' && item.status !== 'COMPLETED')
+          && (item.gateRequired ?? item.requirement === 'REQUIRED')
+          && item.status !== 'COMPLETED')
         .map(item => `未完成必需文档：${item.title}`),
     ]
     if (!warnings.length) {
@@ -123,6 +143,17 @@ function Lifecycle({ project }: { project: Project }) {
       onOk: () => advance.mutate(),
     })
   }
+  const requestClose = () => {
+    Modal.confirm({
+      title: '确认关闭项目',
+      content: project.gateMode === 'WARNING'
+        ? '系统将记录当前未完成项并完成项目关闭，请确认已接受相关风险。'
+        : '系统会检查项目收尾阶段的全部必需文档，通过后项目将不可再推进。',
+      okText: '确认关闭',
+      cancelText: '继续完善',
+      onOk: () => close.mutate(),
+    })
+  }
   return <div>
     <Card className="lifecycle-card">
       <Steps current={currentIndex} items={project.stages.map(stage => ({
@@ -137,7 +168,15 @@ function Lifecycle({ project }: { project: Project }) {
           type="primary"
           loading={advance.isPending || documents.isLoading}
           onClick={requestAdvance}
-        >推进至 {next.name}</Button> : <Tag color="green">全部阶段已完成</Tag>}</div>
+        >推进至 {next.name}</Button> : project.status === 'CLOSED'
+          ? <Tag color="green">项目已关闭</Tag>
+          : <Button
+              aria-label="完成并关闭项目"
+              type="primary"
+              danger
+              loading={close.isPending}
+              onClick={requestClose}
+            >完成并关闭项目</Button>}</div>
     </Card>
     <Row gutter={16} className="detail-grid"><Col span={16}><Card title="最近活动">
       <Timeline items={project.activities.slice(0, 8).map(activity => ({ children: <div><strong>{String(activity.summary)}</strong><p>{String(activity.actorName ?? '系统')} · {String(activity.createdAt ?? '')}</p></div> }))} />
@@ -233,11 +272,21 @@ function Settings({ project }: { project: Project }) {
   return <Row gutter={16}><Col span={16}><Card title="项目信息与设置">
     <Form form={form} layout="vertical" initialValues={initial} onFinish={values => save.mutate(values)}>
       <Form.Item label="项目名称" name="name" rules={[{ required: true }]}><Input /></Form.Item>
-      <Row gutter={12}><Col span={8}><Form.Item label="状态" name="status"><Select options={['ACTIVE', 'SUSPENDED', 'CLOSING', 'CLOSED'].map(value => ({ value, label: value }))} /></Form.Item></Col>
+      <Row gutter={12}><Col span={8}><Form.Item label="状态" name="status"><Select
+        disabled={['CLOSING', 'CLOSED'].includes(project.status)}
+        options={(project.status === 'ACTIVE' ? ['ACTIVE', 'SUSPENDED']
+          : project.status === 'SUSPENDED' ? ['SUSPENDED', 'ACTIVE']
+            : [project.status]).map(value => ({ value, label: value }))}
+      /></Form.Item></Col>
         <Col span={8}><Form.Item label="健康度" name="riskLevel"><Select options={['GREEN', 'YELLOW', 'RED'].map(value => ({ value, label: value }))} /></Form.Item></Col>
         <Col span={8}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item label="阶段门禁模式" name="gateMode"><Radio.Group options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '仅警告' }]} /></Form.Item>
-      <Button type="primary" htmlType="submit" loading={save.isPending}>保存设置</Button>
+      <Button
+        type="primary"
+        htmlType="submit"
+        loading={save.isPending}
+        disabled={['CLOSING', 'CLOSED'].includes(project.status)}
+      >保存设置</Button>
     </Form></Card></Col>
     <Col span={8}><Alert type="warning" showIcon icon={<ExclamationCircleFilled />} message="项目级权限"
       description="只有项目成员或具备跨项目权限的角色可访问本项目；写操作还需要 project:write 权限。" /></Col></Row>

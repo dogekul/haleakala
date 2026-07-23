@@ -74,6 +74,15 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void flywayStoresProjectDocumentGateConditionsInTemplatesAndSnapshots() {
+    assertEquals(Integer.valueOf(2), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and column_name='condition_code' "
+            + "and table_name in ('document_template_config','project_document')",
+        Integer.class));
+  }
+
+  @Test
   void flywayCreatesIndependentProductDocumentNodes() {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.tables where table_schema='public' "

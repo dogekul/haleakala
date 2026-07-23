@@ -172,6 +172,17 @@ public class ProjectService {
   }
 
   @Transactional
+  public ProjectView syncDocumentTemplates(long projectId, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    int added = projectDocuments.syncPublishedTemplates(
+        projectId, project.getOrganizationId());
+    documentJobs.enqueueProjectTemplateSync(project.getOrganizationId(), projectId);
+    activity(projectId, user.getId(), "PROJECT_TEMPLATES_SYNCED", "同步项目门禁模版",
+        "新增 " + added + " 份文档");
+    return get(projectId);
+  }
+
+  @Transactional
   public ProjectView advanceStage(
       long projectId, DeliveryStage target, CurrentUser user) {
     ProjectView project = get(projectId, user);
@@ -182,24 +193,7 @@ public class ProjectService {
     if (target.ordinal() != current.ordinal() + 1) {
       throw new ConflictException("只能推进到下一个交付阶段");
     }
-    Map<String, Object> gate = jdbc.queryForMap(
-        "select gate_status,gate_message from stage_instance where project_id=? and stage_code=?",
-        projectId, current.name());
-    boolean blocked = "BLOCKING".equals(gate.get("gate_status"));
-    List<String> warnings = new ArrayList<String>();
-    if (blocked) {
-      Object gateMessage = gate.get("gate_message");
-      warnings.add(gateMessage == null ? "阶段门禁未通过" : String.valueOf(gateMessage));
-    }
-    List<Map<String, Object>> incompleteDocuments =
-        projectDocuments.incompleteRequired(projectId, current);
-    if (!incompleteDocuments.isEmpty()) {
-      List<String> titles = new ArrayList<String>();
-      for (Map<String, Object> document : incompleteDocuments) {
-        titles.add(String.valueOf(document.get("title")));
-      }
-      warnings.add("未完成必需文档：" + String.join("、", titles));
-    }
+    List<String> warnings = stageWarnings(projectId, current);
     if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
       throw new ConflictException(String.join("；", warnings));
     }
@@ -209,8 +203,9 @@ public class ProjectService {
     jdbc.update("update stage_instance set status='ACTIVE',started_at=current_timestamp,"
             + "updated_at=current_timestamp,version=version+1 where project_id=? and stage_code=?",
         projectId, target.name());
-    jdbc.update("update delivery_project set current_stage=?,updated_at=current_timestamp,"
-            + "version=version+1 where id=?", target.name(), projectId);
+    jdbc.update("update delivery_project set current_stage=?,status=?,updated_at=current_timestamp,"
+            + "version=version+1 where id=?", target.name(),
+        target == DeliveryStage.CLOSE ? "CLOSING" : project.getStatus(), projectId);
     boolean warned = !warnings.isEmpty();
     activity(projectId, user.getId(),
         warned ? "STAGE_ADVANCED_WITH_WARNING" : "STAGE_ADVANCED",
@@ -219,6 +214,31 @@ public class ProjectService {
     if (target == DeliveryStage.CLOSE) {
       operations.ensureForClosedProject(user.getOrganizationId(), projectId, user.getId());
     }
+    return get(projectId);
+  }
+
+  @Transactional
+  public ProjectView completeProject(long projectId, CurrentUser user) {
+    ProjectView project = get(projectId, user);
+    if (!DeliveryStage.CLOSE.name().equals(project.getCurrentStage())
+        || !("CLOSING".equals(project.getStatus()) || "ACTIVE".equals(project.getStatus()))) {
+      throw new ConflictException("只有已进入项目收尾阶段的项目可以关闭");
+    }
+    List<String> warnings = stageWarnings(projectId, DeliveryStage.CLOSE);
+    if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
+      throw new ConflictException(String.join("；", warnings));
+    }
+    jdbc.update("update stage_instance set status='COMPLETED',completed_at=current_timestamp,"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where project_id=? and stage_code='CLOSE'",
+        projectId);
+    jdbc.update("update delivery_project set status='CLOSED',updated_at=current_timestamp,"
+            + "version=version+1 where id=?",
+        projectId);
+    boolean warned = !warnings.isEmpty();
+    activity(projectId, user.getId(),
+        warned ? "PROJECT_CLOSED_WITH_WARNING" : "PROJECT_CLOSED",
+        "完成项目收尾并关闭项目", warned ? String.join("；", warnings) : null);
     return get(projectId);
   }
 
@@ -450,13 +470,34 @@ public class ProjectService {
     if (!PROJECT_STATUSES.contains(target)) {
       throw new IllegalArgumentException("项目状态不受支持");
     }
+    if ("CLOSING".equals(target) || "CLOSED".equals(target)) {
+      throw new ConflictException("请通过项目收尾流程关闭项目");
+    }
     if (current.equals(target)) return;
-    boolean legal = "ACTIVE".equals(current)
-        && ("SUSPENDED".equals(target) || "CLOSING".equals(target));
-    legal = legal || "SUSPENDED".equals(current)
-        && ("ACTIVE".equals(target) || "CLOSING".equals(target));
-    legal = legal || "CLOSING".equals(current) && "CLOSED".equals(target);
+    boolean legal = "ACTIVE".equals(current) && "SUSPENDED".equals(target);
+    legal = legal || "SUSPENDED".equals(current) && "ACTIVE".equals(target);
     if (!legal) throw new ConflictException("非法的项目状态转换");
+  }
+
+  private List<String> stageWarnings(long projectId, DeliveryStage stage) {
+    Map<String, Object> gate = jdbc.queryForMap(
+        "select gate_status,gate_message from stage_instance where project_id=? and stage_code=?",
+        projectId, stage.name());
+    List<String> warnings = new ArrayList<String>();
+    if ("BLOCKING".equals(gate.get("gate_status"))) {
+      Object gateMessage = gate.get("gate_message");
+      warnings.add(gateMessage == null ? "阶段门禁未通过" : String.valueOf(gateMessage));
+    }
+    List<Map<String, Object>> incompleteDocuments =
+        projectDocuments.incompleteRequired(projectId, stage);
+    if (!incompleteDocuments.isEmpty()) {
+      List<String> titles = new ArrayList<String>();
+      for (Map<String, Object> document : incompleteDocuments) {
+        titles.add(String.valueOf(document.get("title")));
+      }
+      warnings.add("未完成必需文档：" + String.join("、", titles));
+    }
+    return warnings;
   }
 
   private void refreshProjectRisk(long projectId) {

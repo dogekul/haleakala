@@ -275,6 +275,7 @@ function KnowledgeDetail({
             <Tag color={value.requirement === 'REQUIRED' ? 'red' : 'default'}>
               {value.requirement === 'REQUIRED' ? '项目必需' : '项目可选'}
             </Tag>
+            {value.conditionCode === 'HAS_CUSTOM_DEV' && <Tag color="orange">有二开时适用</Tag>}
           </>}
         </Space>
         <Typography.Paragraph>{value.summary}</Typography.Paragraph>
@@ -324,6 +325,7 @@ function KnowledgeEditor({
   const [attachment, setAttachment] = useState<UploadedFile>()
   const client = useQueryClient()
   const selectedType = Form.useWatch('type', form)
+  const selectedStage = Form.useWatch('stageCode', form)
   const productId = Form.useWatch('productId', form)
   const products = useQuery({
     queryKey: ['products-knowledge'],
@@ -339,12 +341,12 @@ function KnowledgeEditor({
   useEffect(() => {
     if (value === undefined) return
     form.resetFields()
-    form.setFieldsValue(value ?? {
+    form.setFieldsValue({ conditionCode: 'ALWAYS', ...(value ?? {
       type: 'CASE',
       visibility: 'ORGANIZATION',
       requirement: 'REQUIRED',
       enabled: true,
-    })
+    }) })
     setAttachment(value?.fileObjectId ? {
       id: value.fileObjectId,
       originalName: value.fileOriginalName ?? `文件 #${value.fileObjectId}`,
@@ -429,7 +431,15 @@ function KnowledgeEditor({
           label="适用交付阶段"
           name="stageCode"
           rules={[{ required: true }]}
-        ><Select virtual={false} options={stages} /></Form.Item></Col>
+        ><Select
+          virtual={false}
+          options={stages}
+          onChange={stage => {
+            if (!Object.prototype.hasOwnProperty.call(stageNames, stage)) {
+              form.setFieldValue('conditionCode', 'ALWAYS')
+            }
+          }}
+        /></Form.Item></Col>
         <Col span={12}><Form.Item
           label="项目必需性"
           name="requirement"
@@ -438,7 +448,19 @@ function KnowledgeEditor({
           { value: 'REQUIRED', label: '必需' },
           { value: 'OPTIONAL', label: '可选' },
         ]} /></Form.Item></Col>
-        <Col span={24}><Form.Item
+        <Col span={12}><Form.Item
+          label="适用条件"
+          name="conditionCode"
+          rules={[{ required: true }]}
+        ><Select
+          disabled={Boolean(selectedStage)
+            && !Object.prototype.hasOwnProperty.call(stageNames, selectedStage)}
+          options={[
+            { value: 'ALWAYS', label: '始终适用' },
+            { value: 'HAS_CUSTOM_DEV', label: '项目存在二开时适用' },
+          ]}
+        /></Form.Item></Col>
+        <Col span={12}><Form.Item
           label="新项目自动应用"
           name="enabled"
           valuePropName="checked"

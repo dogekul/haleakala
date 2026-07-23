@@ -49,6 +49,17 @@ export function ProjectDocuments({ project }: { project: Project }) {
       message.success('文档空间已重新进入初始化队列')
     },
   })
+  const sync = useMutation({
+    mutationFn: () => projectApi.syncDocuments(project.id),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['project', project.id] }),
+        client.invalidateQueries({ queryKey: ['project-documents', project.id] }),
+      ])
+      message.success('最新门禁模版已进入同步队列')
+    },
+    onError: (error: Error) => message.error(error.message),
+  })
   const confirm = useMutation({
     mutationFn: (documentId: number) => projectApi.confirmDocument(project.id, documentId),
     onSuccess: async value => {
@@ -125,8 +136,13 @@ export function ProjectDocuments({ project }: { project: Project }) {
             </Typography.Text>
           </div>
           <Space>
-            <Tag color="blue">{visible.filter(item => item.requirement === 'REQUIRED').length} 份必需</Tag>
+            <Tag color="blue">{visible.filter(isGateRequired).length} 份门禁必需</Tag>
             <Tag>{visible.length} 份文档</Tag>
+            {canEdit && <Button
+              icon={<ReloadOutlined />}
+              loading={sync.isPending}
+              onClick={() => sync.mutate()}
+            >同步门禁模版</Button>}
           </Space>
         </header>
         {query.isLoading ? <div className="project-document-loading"><Spin /></div>
@@ -160,8 +176,8 @@ export function ProjectDocuments({ project }: { project: Project }) {
       {selected && <>
         <div className="project-document-drawer-meta">
           <Space wrap>
-            <Tag color={selected.requirement === 'REQUIRED' ? 'red' : 'default'}>
-              {selected.requirement === 'REQUIRED' ? '必需文档' : '可选文档'}
+            <Tag color={requirementMeta(selected).color}>
+              {requirementMeta(selected).detailLabel}
             </Tag>
             <Tag color={statusMeta[selected.status].color}>{statusMeta[selected.status].label}</Tag>
             <Typography.Text type="secondary">
@@ -198,6 +214,7 @@ function DocumentCard({
   onOpen(): void
 }) {
   const meta = statusMeta[document.status]
+  const requirement = requirementMeta(document)
   const enabled = !['PENDING', 'FAILED'].includes(document.status)
   return <Card
     className={`project-document-card is-${document.status.toLowerCase()}`}
@@ -205,8 +222,8 @@ function DocumentCard({
     onClick={onOpen}
   >
     <div className="project-document-card-head">
-      <Tag color={document.requirement === 'REQUIRED' ? 'red' : 'default'}>
-        {document.requirement === 'REQUIRED' ? '必需' : '可选'}
+      <Tag color={requirement.color}>
+        {requirement.label}
       </Tag>
       <Tag color={meta.color}>{meta.icon} {meta.label}</Tag>
     </div>
@@ -224,4 +241,19 @@ function DocumentCard({
         : '尚未同步'}</span>
     </footer>
   </Card>
+}
+
+function isGateRequired(document: ProjectDocument) {
+  return document.gateRequired ?? document.requirement === 'REQUIRED'
+}
+
+function requirementMeta(document: ProjectDocument) {
+  if (document.conditionCode === 'HAS_CUSTOM_DEV') {
+    return isGateRequired(document)
+      ? { color: 'orange', label: '条件必需（已触发）', detailLabel: '条件必需文档（已有二开）' }
+      : { color: 'default', label: '条件文档（未触发）', detailLabel: '条件文档（当前无二开）' }
+  }
+  return document.requirement === 'REQUIRED'
+    ? { color: 'red', label: '必需', detailLabel: '必需文档' }
+    : { color: 'default', label: '可选', detailLabel: '可选文档' }
 }

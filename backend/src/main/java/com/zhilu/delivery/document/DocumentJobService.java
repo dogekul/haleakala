@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class DocumentJobService {
   public static final String PROJECT_INIT = "PROJECT_INIT";
+  public static final String PROJECT_TEMPLATE_SYNC = "PROJECT_TEMPLATE_SYNC";
 
   private final JdbcTemplate jdbc;
   private final ProjectDocumentService projectDocuments;
@@ -64,6 +65,40 @@ public class DocumentJobService {
     } catch (DuplicateKeyException concurrentEnqueue) {
       // The unique business key makes concurrent project creation callbacks idempotent.
     }
+  }
+
+  public void enqueueProjectTemplateSync(long organizationId, long projectId) {
+    int changed = jdbc.update(
+        "update document_job set status='PENDING',attempt_count=0,next_attempt_at=current_timestamp,"
+            + "last_error=null,started_at=null,completed_at=null,lease_token=null,"
+            + "lease_expires_at=null,updated_at=current_timestamp,version=version+1 "
+            + "where organization_id=? and job_type=? and business_id=? and status<>'RUNNING'",
+        organizationId, PROJECT_TEMPLATE_SYNC, projectId);
+    if (changed == 0) {
+      Integer running = jdbc.queryForObject(
+          "select count(*) from document_job where organization_id=? and job_type=? "
+              + "and business_id=?",
+          Integer.class, organizationId, PROJECT_TEMPLATE_SYNC, projectId);
+      if (running == null || running.intValue() == 0) {
+        Map<String, Object> values = new LinkedHashMap<String, Object>();
+        values.put("organization_id", organizationId);
+        values.put("job_type", PROJECT_TEMPLATE_SYNC);
+        values.put("business_key", "PROJECT:" + projectId);
+        values.put("business_id", projectId);
+        values.put("status", "PENDING");
+        try {
+          new SimpleJdbcInsert(jdbc).withTableName("document_job")
+              .usingColumns(values.keySet().toArray(new String[values.size()]))
+              .execute(values);
+        } catch (DuplicateKeyException concurrentEnqueue) {
+          // Another request already scheduled the same idempotent sync.
+        }
+      }
+    }
+    jdbc.update("update delivery_project set document_space_status='PENDING',"
+            + "document_space_error=null,updated_at=current_timestamp where id=? "
+            + "and organization_id=?",
+        projectId, organizationId);
   }
 
   @Scheduled(
@@ -125,7 +160,7 @@ public class DocumentJobService {
     ScheduledFuture<?> heartbeat = startHeartbeat(jobId, leaseToken);
     try {
       String jobType = String.valueOf(job.get("job_type"));
-      if (PROJECT_INIT.equals(jobType)
+      if (PROJECT_INIT.equals(jobType) || PROJECT_TEMPLATE_SYNC.equals(jobType)
           || DocumentMigrationService.PROJECT_MIGRATION.equals(jobType)) {
         projectDocuments.initialize(businessId);
       } else if (DocumentMigrationService.KNOWLEDGE_MIGRATION.equals(jobType)) {
@@ -154,6 +189,7 @@ public class DocumentJobService {
               + "version=version+1 where id=? and status='RUNNING' and lease_token=?",
           status, nextAttempt(attempts), truncate(failure.getMessage()), jobId, leaseToken);
       if (failed > 0 && (PROJECT_INIT.equals(job.get("job_type"))
+          || PROJECT_TEMPLATE_SYNC.equals(job.get("job_type"))
           || DocumentMigrationService.PROJECT_MIGRATION.equals(job.get("job_type")))) {
         projectDocuments.markFailure(businessId, failure);
       }
@@ -194,6 +230,7 @@ public class DocumentJobService {
 
   private String auditAction(String jobType) {
     if (PROJECT_INIT.equals(jobType)) return "INITIALIZE";
+    if (PROJECT_TEMPLATE_SYNC.equals(jobType)) return "SYNC";
     return "MIGRATE";
   }
 

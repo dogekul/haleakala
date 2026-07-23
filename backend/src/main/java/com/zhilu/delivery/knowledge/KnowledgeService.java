@@ -65,7 +65,7 @@ public class KnowledgeService {
             + "d.id outline_link_id,coalesce(d.title_cache,k.title) display_title,"
             + "d.sync_status document_sync_status,d.revision document_revision,"
             + "d.last_error document_error,d.outline_url_id,tc.stage_code,tc.requirement,"
-            + "tc.enabled,tc.published_revision "
+            + "tc.enabled,tc.condition_code,tc.published_revision "
             + "from knowledge_item k left join product p on p.id=k.product_id "
             + "left join product_version v on v.id=k.product_version_id "
             + "join app_user u on u.id=k.owner_user_id "
@@ -105,7 +105,7 @@ public class KnowledgeService {
             + "d.id outline_link_id,coalesce(d.title_cache,k.title) display_title,"
             + "d.sync_status document_sync_status,d.revision document_revision,"
             + "d.last_error document_error,d.outline_url_id,tc.stage_code,tc.requirement,"
-            + "tc.enabled,tc.published_revision "
+            + "tc.enabled,tc.condition_code,tc.published_revision "
             + "from knowledge_item k left join product p on p.id=k.product_id "
             + "left join product_version v on v.id=k.product_version_id join app_user u on u.id=k.owner_user_id "
             + "left join code_snippet c on c.knowledge_item_id=k.id "
@@ -134,7 +134,7 @@ public class KnowledgeService {
     return create(
         user, type, title, summary, content, tags, productId, productVersionId, visibility,
         language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId,
-        null, null, null);
+        null, null, null, null);
   }
 
   @Transactional
@@ -143,9 +143,22 @@ public class KnowledgeService {
       String tags, Long productId, Long productVersionId, String visibility,
       String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes,
       Long fileObjectId, String stageCode, String requirement, Boolean enabled) {
+    return create(
+        user, type, title, summary, content, tags, productId, productVersionId, visibility,
+        language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId,
+        stageCode, requirement, enabled, "ALWAYS");
+  }
+
+  @Transactional
+  public Map<String, Object> create(
+      CurrentUser user, String type, String title, String summary, String content,
+      String tags, Long productId, Long productVersionId, String visibility,
+      String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes,
+      Long fileObjectId, String stageCode, String requirement, Boolean enabled,
+      String conditionCode) {
     validate(type, title, summary, content);
     validateReferences(user.getOrganizationId(), type, productId, productVersionId, fileObjectId);
-    validateTemplate(type, stageCode, requirement);
+    validateTemplate(type, stageCode, requirement, conditionCode);
     Map<String, Object> values = new LinkedHashMap<String, Object>();
     values.put("organization_id", user.getOrganizationId()); values.put("type", type);
     values.put("title", title); values.put("summary", summary); values.put("content_text", content);
@@ -155,7 +168,7 @@ public class KnowledgeService {
     values.put("owner_user_id", user.getId());
     long id = insert.executeAndReturnKey(values).longValue();
     saveDetail(id, type, language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId);
-    saveTemplate(id, type, stageCode, requirement, enabled);
+    saveTemplate(id, type, stageCode, requirement, enabled, conditionCode);
     initializeDocument(user.getOrganizationId(), id, type, title, content);
     return get(id, user);
   }
@@ -171,7 +184,8 @@ public class KnowledgeService {
         id, user, type, title, summary, content, tags, productId, productVersionId, visibility,
         language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId, version,
         number(current.get("documentRevision")), string(current.get("stageCode")),
-        string(current.get("requirement")), booleanValue(current.get("enabled")));
+        string(current.get("requirement")), booleanValue(current.get("enabled")),
+        string(current.get("conditionCode")));
   }
 
   @Transactional
@@ -181,6 +195,19 @@ public class KnowledgeService {
       String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes,
       Long fileObjectId, long version, Long documentRevision, String stageCode,
       String requirement, Boolean enabled) {
+    return update(
+        id, user, type, title, summary, content, tags, productId, productVersionId, visibility,
+        language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId, version,
+        documentRevision, stageCode, requirement, enabled, "ALWAYS");
+  }
+
+  @Transactional
+  public Map<String, Object> update(
+      long id, CurrentUser user, String type, String title, String summary, String content,
+      String tags, Long productId, Long productVersionId, String visibility,
+      String language, String codeText, String audienceOrUsageNotes, Integer durationMinutes,
+      Long fileObjectId, long version, Long documentRevision, String stageCode,
+      String requirement, Boolean enabled, String conditionCode) {
     Map<String, Object> current = get(id, user);
     if (((Number) current.get("ownerUserId")).longValue() != user.getId()
         && !user.getPermissions().contains("system:manage")) throw new ConflictException("只能维护自己的知识条目");
@@ -189,7 +216,7 @@ public class KnowledgeService {
       throw new IllegalArgumentException("正文不能为空");
     }
     validateReferences(user.getOrganizationId(), type, productId, productVersionId, fileObjectId);
-    validateTemplate(type, stageCode, requirement);
+    validateTemplate(type, stageCode, requirement, conditionCode);
     int changed = content == null
         ? jdbc.update("update knowledge_item set type=?,title=?,summary=?,tags_text=?,product_id=?,"
                 + "product_version_id=?,visibility=?,status='DRAFT',published_at=null,"
@@ -206,7 +233,7 @@ public class KnowledgeService {
     jdbc.update("delete from training_material where knowledge_item_id=?", id);
     jdbc.update("delete from document_template_config where knowledge_item_id=?", id);
     saveDetail(id, type, language, codeText, audienceOrUsageNotes, durationMinutes, fileObjectId);
-    saveTemplate(id, type, stageCode, requirement, enabled);
+    saveTemplate(id, type, stageCode, requirement, enabled, conditionCode);
     if (current.get("outlineLinkId") == null) {
       initializeDocument(
           user.getOrganizationId(), id, type, title,
@@ -310,11 +337,13 @@ public class KnowledgeService {
   }
 
   private void saveTemplate(
-      long id, String type, String stageCode, String requirement, Boolean enabled) {
+      long id, String type, String stageCode, String requirement, Boolean enabled,
+      String conditionCode) {
     if (!"TEMPLATE".equals(type)) return;
     jdbc.update("insert into document_template_config(knowledge_item_id,stage_code,requirement,"
-            + "enabled) values (?,?,?,?)",
-        id, stageCode, requirement, enabled == null || enabled.booleanValue());
+            + "enabled,condition_code) values (?,?,?,?,?)",
+        id, stageCode, requirement, enabled == null || enabled.booleanValue(),
+        normalizeCondition(conditionCode));
   }
 
   private void validate(String type, String title, String summary, String content) {
@@ -352,7 +381,8 @@ public class KnowledgeService {
     }
   }
 
-  private void validateTemplate(String type, String stageCode, String requirement) {
+  private void validateTemplate(
+      String type, String stageCode, String requirement, String conditionCode) {
     if (!"TEMPLATE".equals(type)) return;
     if (!BUSINESS_TEMPLATE_SCENES.contains(stageCode)) {
       try {
@@ -366,6 +396,14 @@ public class KnowledgeService {
     }
     if (BUSINESS_TEMPLATE_SCENES.contains(stageCode) && !"REQUIRED".equals(requirement)) {
       throw new IllegalArgumentException("业务文档模版必须设为必需");
+    }
+    if (!"ALWAYS".equals(normalizeCondition(conditionCode))
+        && !"HAS_CUSTOM_DEV".equals(normalizeCondition(conditionCode))) {
+      throw new IllegalArgumentException("文档模版适用条件不受支持");
+    }
+    if (BUSINESS_TEMPLATE_SCENES.contains(stageCode)
+        && !"ALWAYS".equals(normalizeCondition(conditionCode))) {
+      throw new IllegalArgumentException("业务文档模版只支持始终适用");
     }
   }
 
@@ -394,6 +432,7 @@ public class KnowledgeService {
     value.put("stageCode", row.getString("stage_code"));
     value.put("requirement", row.getString("requirement"));
     value.put("enabled", row.getObject("enabled"));
+    value.put("conditionCode", row.getString("condition_code"));
     value.put("publishedRevision", nullableLong(row, "published_revision"));
     return value;
   }
@@ -427,6 +466,9 @@ public class KnowledgeService {
   }
   private Boolean booleanValue(Object value) {
     return value == null ? null : Boolean.valueOf(String.valueOf(value));
+  }
+  private String normalizeCondition(String value) {
+    return blank(value) ? "ALWAYS" : value.trim();
   }
   private boolean blank(String value) { return value == null || value.trim().isEmpty() || "null".equals(value); }
 }

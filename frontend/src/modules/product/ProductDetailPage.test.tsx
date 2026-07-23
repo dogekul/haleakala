@@ -452,7 +452,8 @@ it('初始清单 GET 被取消且版本 PUT 失败时会自动恢复清单', asy
     if (init?.method === 'PUT' && path.endsWith('/versions/31')) return json({ code: 'CONFLICT', message: '版本保存冲突' }, 409)
     return responseFor(path)
   })
-  show(fetch)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  show(fetch, ['product:read', 'product:write'], client)
   const user = userEvent.setup()
   await user.click(await screen.findByRole('tab', { name: '版本' }))
   await waitFor(() => expect(manifestGets).toBe(1))
@@ -468,6 +469,10 @@ it('初始清单 GET 被取消且版本 PUT 失败时会自动恢复清单', asy
   expect(await screen.findByLabelText('总账处理可用性')).toHaveValue('INCLUDED')
   expect(screen.getByRole('button', { name: '保存功能清单' })).toBeEnabled()
   void json({ versionId: 31, version: 3, entries: [] }).then(resolveInitialManifest)
+  await waitFor(() => expect(client.isFetching({
+    queryKey: ['product-manifest', 8, 31],
+    exact: true,
+  })).toBe(0))
 })
 
 it('编辑非当前版本时按该版本清单执行发布门禁', async () => {

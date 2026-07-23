@@ -16,6 +16,12 @@ export const projectApi = {
   retryDocuments: (id: number) => api<Project>(`/api/v1/projects/${id}/documents/retry`, {
     method: 'POST',
   }),
+  syncDocuments: (id: number) => api<Project>(`/api/v1/projects/${id}/documents/sync`, {
+    method: 'POST',
+  }),
+  close: (id: number) => api<Project>(`/api/v1/projects/${id}/close`, {
+    method: 'POST',
+  }),
   loadDocument: (projectId: number, documentId: number) =>
     api<DocumentContent>(`/api/v1/projects/${projectId}/documents/${documentId}`),
   saveDocument: (projectId: number, documentId: number, input: SaveDocumentInput) =>

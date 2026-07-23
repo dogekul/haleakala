@@ -128,13 +128,17 @@ class ProjectLifecycleTest {
   @Test
   void closedProjectCannotBeReopenedAndUnknownStatusIsRejected() {
     ProjectView project = projects.create(command());
-
-    ProjectView closing = projects.updateSettings(project.getId(), project.getName(), "CLOSING",
-        project.getRiskLevel(), project.getGateMode(), project.getPlannedEndDate(),
-        project.getVersion(), manager());
-    ProjectView closed = projects.updateSettings(project.getId(), closing.getName(), "CLOSED",
-        closing.getRiskLevel(), closing.getGateMode(), closing.getPlannedEndDate(),
-        closing.getVersion(), manager());
+    ProjectView editable = project;
+    assertThrows(ConflictException.class, () -> projects.updateSettings(
+        editable.getId(), editable.getName(), "CLOSING", editable.getRiskLevel(),
+        editable.getGateMode(), editable.getPlannedEndDate(), editable.getVersion(), manager()));
+    for (DeliveryStage stage : DeliveryStage.values()) {
+      if (stage != DeliveryStage.START) {
+        project = projects.advanceStage(project.getId(), stage, manager());
+      }
+    }
+    assertEquals("CLOSING", project.getStatus());
+    ProjectView closed = projects.completeProject(project.getId(), manager());
 
     assertThrows(ConflictException.class, () -> projects.updateSettings(closed.getId(),
         closed.getName(), "ACTIVE", closed.getRiskLevel(), closed.getGateMode(),

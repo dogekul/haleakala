@@ -44,6 +44,8 @@ export interface ProjectDocument {
   stageCode: string
   title: string
   requirement: 'REQUIRED' | 'OPTIONAL'
+  conditionCode: 'ALWAYS' | 'HAS_CUSTOM_DEV'
+  gateRequired: boolean
   status: 'PENDING' | 'TODO' | 'PENDING_CONFIRMATION' | 'COMPLETED' | 'FAILED'
   revision?: number
   confirmedRevision?: number

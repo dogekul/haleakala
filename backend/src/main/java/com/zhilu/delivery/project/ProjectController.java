@@ -67,11 +67,29 @@ public class ProjectController {
         user);
   }
 
+  @PostMapping("/{id}/close")
+  public ProjectView close(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    ProjectView value = projects.completeProject(id, user);
+    audit.record(user.getOrganizationId(), user.getId(), "CLOSE", "PROJECT",
+        String.valueOf(id), value.getCode());
+    return value;
+  }
+
   @PostMapping("/{id}/documents/retry")
   public ProjectView retryDocuments(
       @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
     ProjectView value = projects.retryDocumentInitialization(id, user);
     audit.record(user.getOrganizationId(), user.getId(), "RETRY", "PROJECT_DOCUMENT_SPACE",
+        String.valueOf(id), value.getCode());
+    return value;
+  }
+
+  @PostMapping("/{id}/documents/sync")
+  public ProjectView syncDocuments(
+      @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {
+    ProjectView value = projects.syncDocumentTemplates(id, user);
+    audit.record(user.getOrganizationId(), user.getId(), "SYNC", "PROJECT_DOCUMENT_SPACE",
         String.valueOf(id), value.getCode());
     return value;
   }

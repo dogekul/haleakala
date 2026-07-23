@@ -31,6 +31,7 @@ export interface KnowledgeItem {
   stageCode?: string
   requirement?: 'REQUIRED' | 'OPTIONAL'
   enabled?: boolean
+  conditionCode?: 'ALWAYS' | 'HAS_CUSTOM_DEV'
   publishedRevision?: number
 }
 

@@ -43,12 +43,36 @@ public class ProjectDocumentService {
           String.valueOf(template.get("stage_code")),
           ((Number) template.get("published_revision")).longValue(),
           String.valueOf(template.get("requirement")),
+          condition(template.get("condition_code")),
           snapshot.title, snapshot.markdown);
     }
     jdbc.update("update delivery_project set document_snapshot_at=current_timestamp,"
             + "updated_at=current_timestamp where id=? and organization_id=? "
             + "and document_snapshot_at is null",
         projectId, organizationId);
+  }
+
+  public int syncPublishedTemplates(long projectId, long organizationId) {
+    List<Map<String, Object>> projects = jdbc.queryForList(
+        "select id from delivery_project where id=? and organization_id=?",
+        projectId, organizationId);
+    if (projects.isEmpty()) throw new NotFoundException("项目不存在");
+    int added = 0;
+    for (Map<String, Object> template : templates(organizationId)) {
+      long templateId = ((Number) template.get("id")).longValue();
+      Integer existing = jdbc.queryForObject(
+          "select count(*) from project_document where project_id=? and source_template_id=?",
+          Integer.class, projectId, templateId);
+      if (existing != null && existing.intValue() > 0) continue;
+      Snapshot snapshot = publishedSnapshot(template, organizationId);
+      ensureProjectDocument(
+          projectId, templateId, String.valueOf(template.get("stage_code")),
+          ((Number) template.get("published_revision")).longValue(),
+          String.valueOf(template.get("requirement")),
+          condition(template.get("condition_code")), snapshot.title, snapshot.markdown);
+      added++;
+    }
+    return added;
   }
 
   public void initialize(long projectId) {
@@ -93,12 +117,17 @@ public class ProjectDocumentService {
   public List<Map<String, Object>> list(long projectId, CurrentUser user) {
     assertProjectAccess(projectId, user);
     long organizationId = ((Number) project(projectId).get("organization_id")).longValue();
+    boolean hasCustomDevelopment = hasCustomDevelopment(projectId);
     List<Long> ids = jdbc.queryForList(
         "select id from project_document where project_id=? "
             + "order by stage_code,id",
         Long.class, projectId);
     List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
-    for (Long id : ids) result.add(refresh(id.longValue(), projectId, organizationId));
+    for (Long id : ids) {
+      Map<String, Object> item = refresh(id.longValue(), projectId, organizationId);
+      item.put("gateRequired", gateRequired(item, hasCustomDevelopment));
+      result.add(item);
+    }
     return result;
   }
 
@@ -130,6 +159,7 @@ public class ProjectDocumentService {
       long projectId, DeliveryStage stage) {
     Map<String, Object> project = project(projectId);
     long organizationId = ((Number) project.get("organization_id")).longValue();
+    boolean hasCustomDevelopment = hasCustomDevelopment(projectId);
     List<Long> ids = jdbc.queryForList(
         "select id from project_document where project_id=? and stage_code=? "
             + "and requirement='REQUIRED' order by id",
@@ -137,7 +167,9 @@ public class ProjectDocumentService {
     List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
     for (Long id : ids) {
       Map<String, Object> item = refresh(id.longValue(), projectId, organizationId);
-      if (!"COMPLETED".equals(item.get("status"))) result.add(item);
+      boolean gateRequired = gateRequired(item, hasCustomDevelopment);
+      item.put("gateRequired", gateRequired);
+      if (gateRequired && !"COMPLETED".equals(item.get("status"))) result.add(item);
     }
     return result;
   }
@@ -152,6 +184,7 @@ public class ProjectDocumentService {
       throw new ConflictException("文档模版阶段不存在：" + stageCode);
     }
     long projectDocumentId = ((Number) template.get("project_document_id")).longValue();
+    if (template.get("project_outline_document_id") != null) return;
     Snapshot snapshot = projectSnapshot(template, organizationId, projectDocumentId);
     String businessKey = "PROJECT:" + projectId + ":DOC:" + templateId;
     try {
@@ -173,7 +206,7 @@ public class ProjectDocumentService {
 
   private long ensureProjectDocument(
       long projectId, long templateId, String stageCode, long revision, String requirement,
-      String titleSnapshot, String markdownSnapshot) {
+      String conditionCode, String titleSnapshot, String markdownSnapshot) {
     List<Long> existing = jdbc.queryForList(
         "select id from project_document where project_id=? and source_template_id=?",
         Long.class, projectId, templateId);
@@ -186,6 +219,7 @@ public class ProjectDocumentService {
     values.put("source_title_snapshot", titleSnapshot);
     values.put("source_markdown_snapshot", markdownSnapshot);
     values.put("requirement", requirement);
+    values.put("condition_code", condition(conditionCode));
     values.put("status", "PENDING");
     try {
       return new SimpleJdbcInsert(jdbc).withTableName("project_document")
@@ -209,7 +243,7 @@ public class ProjectDocumentService {
 
   private List<Map<String, Object>> templates(long organizationId) {
     return jdbc.queryForList(
-        "select k.id,c.stage_code,c.requirement,c.published_revision,"
+        "select k.id,c.stage_code,c.requirement,c.condition_code,c.published_revision,"
             + "c.published_title_snapshot,c.published_markdown_snapshot,"
             + "k.outline_link_id,k.title "
             + "from knowledge_item k join document_template_config c on c.knowledge_item_id=k.id "
@@ -224,6 +258,7 @@ public class ProjectDocumentService {
     return jdbc.queryForList(
         "select pd.id project_document_id,pd.source_template_id id,"
             + "pd.source_template_revision published_revision,pd.stage_code,pd.requirement,"
+            + "pd.condition_code,"
             + "pd.source_title_snapshot,pd.source_markdown_snapshot,pd.outline_link_id,"
             + "project_link.outline_document_id project_outline_document_id,"
             + "k.outline_link_id source_outline_link_id,k.title "
@@ -403,6 +438,7 @@ public class ProjectDocumentService {
     result.put("title", document == null
         ? value(row.get("title_cache"), row.get("template_title")) : document.getTitle());
     result.put("requirement", row.get("requirement"));
+    result.put("conditionCode", condition(row.get("condition_code")));
     result.put("status", status);
     result.put("revision", document == null ? row.get("cached_revision") : document.getRevision());
     result.put("confirmedRevision", row.get("confirmed_revision"));
@@ -443,6 +479,22 @@ public class ProjectDocumentService {
     return lower.contains("请补充") || lower.contains("待补充")
         || lower.contains("请填写") || lower.contains("待填写")
         || lower.contains("在此填写") || lower.contains("todo") || lower.contains("tbd");
+  }
+
+  private boolean hasCustomDevelopment(long projectId) {
+    Integer count = jdbc.queryForObject(
+        "select count(*) from custom_dev_task where project_id=?", Integer.class, projectId);
+    return count != null && count.intValue() > 0;
+  }
+
+  private boolean gateRequired(Map<String, Object> item, boolean hasCustomDevelopment) {
+    if (!"REQUIRED".equals(item.get("requirement"))) return false;
+    return !"HAS_CUSTOM_DEV".equals(condition(item.get("conditionCode")))
+        || hasCustomDevelopment;
+  }
+
+  private String condition(Object value) {
+    return "HAS_CUSTOM_DEV".equals(String.valueOf(value)) ? "HAS_CUSTOM_DEV" : "ALWAYS";
   }
 
   private void assertProjectAccess(long projectId, CurrentUser user) {
