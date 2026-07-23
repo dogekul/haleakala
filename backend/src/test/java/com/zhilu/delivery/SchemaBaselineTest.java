@@ -53,6 +53,19 @@ class SchemaBaselineTest {
   }
 
   @Test
+  void flywayCreatesProjectTaskTables() {
+    assertEquals(Integer.valueOf(3), jdbc.queryForObject(
+        "select count(*) from information_schema.tables where table_schema='public' "
+            + "and table_name in ('project_task','project_task_check_item',"
+            + "'project_task_reminder')",
+        Integer.class));
+    assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+        "select count(*) from information_schema.columns where table_schema='public' "
+            + "and table_name='project_task' and column_name='due_at' and is_nullable='YES'",
+        Integer.class));
+  }
+
+  @Test
   void flywayStoresCompleteRequirementClassificationDetails() {
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from information_schema.columns where table_schema='public' "
@@ -612,7 +625,7 @@ class SchemaBaselineTest {
 
     Flyway.configure().dataSource(dataSource).load().migrate();
 
-    assertEquals("22", legacy.queryForObject(
+    assertEquals("24", legacy.queryForObject(
         "select version from flyway_schema_history where success=true "
             + "order by installed_rank desc limit 1",
         String.class));

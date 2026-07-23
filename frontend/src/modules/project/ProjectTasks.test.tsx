@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AuthContext, type AuthState } from '../../app/AuthProvider'
+import { ProjectDetail } from './ProjectDetail'
 import { ProjectTasks } from './ProjectTasks'
 import type { Project } from './types'
 
@@ -196,4 +198,31 @@ it('详情可保存并通过中文确认框软删除', async () => {
   expect(await screen.findAllByText('确认删除该任务？')).not.toHaveLength(0)
   await user.click(screen.getAllByRole('button', { name: '确认删除' })[0])
   await waitFor(() => expect(deleted).toBe(true))
+})
+
+it('可从项目详情地址直接打开指定任务', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/v1/projects/9') return Response.json(project)
+    if (url.includes('/api/v1/projects/9/tasks?filter=')) return Response.json([existingTask])
+    if (url === '/api/v1/projects/9/tasks/41') return Response.json(existingTask)
+    return Response.json({})
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+  render(
+    <QueryClientProvider client={client}>
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter
+          initialEntries={['/projects/9?tab=tasks&taskId=41']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </QueryClientProvider>,
+  )
+
+  expect(await screen.findByRole('tab', { name: /项目任务/ })).toHaveAttribute('aria-selected', 'true')
+  expect(await screen.findByDisplayValue('确认上线窗口')).toBeVisible()
 })

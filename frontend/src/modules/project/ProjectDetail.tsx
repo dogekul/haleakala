@@ -1,5 +1,5 @@
 import {
-  ArrowLeftOutlined, CheckCircleFilled, ClockCircleOutlined, ExclamationCircleFilled,
+  ArrowLeftOutlined, CheckCircleFilled, CheckSquareOutlined, ClockCircleOutlined, ExclamationCircleFilled,
   FileTextOutlined, PlusOutlined, RobotOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,11 +10,12 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
 import { ApiError } from '../../services/api'
 import { ProjectDocuments } from './ProjectDocuments'
+import { ProjectTasks } from './ProjectTasks'
 import { projectApi } from './projectApi'
 import { stageNames, type Project } from './types'
 
@@ -27,7 +28,20 @@ export function ProjectDetail() {
 }
 
 function ProjectDetailContent({ project }: { project: Project }) {
-  const [tab, setTab] = useState('lifecycle')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') === 'tasks' ? 'tasks' : 'lifecycle')
+  const taskId = Number(searchParams.get('taskId'))
+  const selectedTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : undefined
+  const changeTab = (nextTab: string) => {
+    setTab(nextTab)
+    const next = new URLSearchParams(searchParams)
+    if (nextTab === 'tasks') next.set('tab', 'tasks')
+    else {
+      next.delete('tab')
+      next.delete('taskId')
+    }
+    setSearchParams(next, { replace: true })
+  }
   return <div className="project-detail">
     <div className="detail-back"><Link className="detail-back-link" to="/projects"><ArrowLeftOutlined /> 返回项目列表</Link></div>
     <div className="project-hero">
@@ -37,8 +51,9 @@ function ProjectDetailContent({ project }: { project: Project }) {
         <Space split={<span className="dot-divider">·</span>}><span>{project.customerName}</span><span>{project.productName} {project.productVersionName}</span><span>负责人 {project.managerName}</span></Space></div>
       <div className="hero-stage"><span>当前阶段</span><strong>{stageNames[project.currentStage]}</strong></div>
     </div>
-    <Tabs activeKey={tab} onChange={setTab} items={[
+    <Tabs activeKey={tab} onChange={changeTab} items={[
       { key: 'lifecycle', label: '七阶段看板', children: <Lifecycle project={project} /> },
+      { key: 'tasks', label: <span><CheckSquareOutlined /> 项目任务</span>, children: <ProjectTasks project={project} selectedTaskId={selectedTaskId} /> },
       { key: 'documents', label: <span><FileTextOutlined /> 项目文档</span>, children: <ProjectDocuments project={project} /> },
       { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
       { key: 'templates', label: '模板中心', children: <Templates /> },
