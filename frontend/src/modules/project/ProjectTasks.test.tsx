@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { ProjectDetail } from './ProjectDetail'
 import { ProjectTasks } from './ProjectTasks'
@@ -223,6 +223,37 @@ it('可从项目详情地址直接打开指定任务', async () => {
     </QueryClientProvider>,
   )
 
+  expect(await screen.findByRole('tab', { name: /项目任务/ })).toHaveAttribute('aria-selected', 'true')
+  expect(await screen.findByDisplayValue('确认上线窗口')).toBeVisible()
+})
+
+it('同一项目内点击提醒链接时会切换到任务标签', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url === '/api/v1/projects/9') return Response.json(project)
+    if (url.includes('/api/v1/projects/9/tasks?filter=')) return Response.json([existingTask])
+    if (url === '/api/v1/projects/9/tasks/41') return Response.json(existingTask)
+    return Response.json({})
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const user = userEvent.setup()
+
+  render(
+    <QueryClientProvider client={client}>
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter
+          initialEntries={['/projects/9']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Link to="/projects/9?tab=tasks&taskId=41">打开任务提醒</Link>
+          <Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </QueryClientProvider>,
+  )
+
+  expect(await screen.findByRole('tab', { name: '七阶段看板' })).toHaveAttribute('aria-selected', 'true')
+  await user.click(screen.getByRole('link', { name: '打开任务提醒' }))
   expect(await screen.findByRole('tab', { name: /项目任务/ })).toHaveAttribute('aria-selected', 'true')
   expect(await screen.findByDisplayValue('确认上线窗口')).toBeVisible()
 })

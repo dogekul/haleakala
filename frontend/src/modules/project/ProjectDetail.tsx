@@ -9,7 +9,7 @@ import {
   Typography, message,
 } from 'antd'
 import dayjs from 'dayjs'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
@@ -32,6 +32,9 @@ function ProjectDetailContent({ project }: { project: Project }) {
   const [tab, setTab] = useState(searchParams.get('tab') === 'tasks' ? 'tasks' : 'lifecycle')
   const taskId = Number(searchParams.get('taskId'))
   const selectedTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : undefined
+  useEffect(() => {
+    if (searchParams.get('tab') === 'tasks') setTab('tasks')
+  }, [searchParams])
   const changeTab = (nextTab: string) => {
     setTab(nextTab)
     const next = new URLSearchParams(searchParams)
