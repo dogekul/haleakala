@@ -2,6 +2,14 @@ package com.zhilu.delivery.task;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.iam.service.CurrentUser;
@@ -17,8 +25,14 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:project-task;MODE=MySQL;"
@@ -28,10 +42,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
     "spring.jpa.hibernate.ddl-auto=none",
     "spring.session.store-type=none"
 })
+@AutoConfigureMockMvc
 class ProjectTaskApiIT {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ProjectService projects;
   @Autowired private ProjectTaskService tasks;
+  @Autowired private MockMvc mvc;
 
   private long projectId;
   private CurrentUser manager;
@@ -55,7 +71,8 @@ class ProjectTaskApiIT {
     jdbc.update("insert into app_user(id,organization_id,username,display_name,status) values "
         + "(720,720,'manager','项目经理','ACTIVE'),"
         + "(721,720,'member','项目成员','ACTIVE'),"
-        + "(722,720,'other','其他成员','ACTIVE')");
+        + "(722,720,'other','其他成员','ACTIVE'),"
+        + "(723,720,'outsider','非项目成员','ACTIVE')");
     jdbc.update("insert into product(id,organization_id,code,name,status) "
         + "values (720,720,'TASK-PRODUCT','任务产品','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
@@ -142,6 +159,107 @@ class ProjectTaskApiIT {
     assertThatThrownBy(() -> tasks.update(projectId, taskId, update, member))
         .isInstanceOf(ConflictException.class)
         .hasMessageContaining("任务已被其他成员更新");
+  }
+
+  @Test
+  void taskApiSupportsQuickCreateListUpdateCompleteAndDelete() throws Exception {
+    String created = mvc.perform(post("/api/v1/projects/{id}/tasks", projectId)
+            .with(actor(member)).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"title\":\"确认验收环境\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.assigneeUserId").value(721))
+        .andExpect(jsonPath("$.dueAt").doesNotExist())
+        .andReturn().getResponse().getContentAsString();
+    long taskId = jsonLong(created, "id");
+    long version = jsonLong(created, "version");
+
+    mvc.perform(get("/api/v1/projects/{id}/tasks?filter=mine", projectId)
+            .with(actor(member)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].title").value("确认验收环境"));
+
+    mvc.perform(put("/api/v1/projects/{id}/tasks/{taskId}", projectId, taskId)
+            .with(actor(member)).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"title\":\"确认验收环境和账号\",\"description\":\"逐项确认\","
+                + "\"priority\":\"HIGH\",\"assigneeUserId\":721,"
+                + "\"dueAt\":\"2026-07-28T19:47:00\",\"reminderEnabled\":false,"
+                + "\"version\":" + version + ",\"checklist\":["
+                + "{\"content\":\"验证管理员账号\",\"completed\":true,\"sortOrder\":1}]}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("确认验收环境和账号"))
+        .andExpect(jsonPath("$.dueAt").value("2026-07-28T19:00:00"))
+        .andExpect(jsonPath("$.checklistTotal").value(1));
+
+    mvc.perform(post("/api/v1/projects/{id}/tasks/{taskId}/complete", projectId, taskId)
+            .with(actor(member)).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("DONE"));
+    mvc.perform(post("/api/v1/projects/{id}/tasks/{taskId}/reopen", projectId, taskId)
+            .with(actor(manager)).with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("TODO"));
+    mvc.perform(delete("/api/v1/projects/{id}/tasks/{taskId}", projectId, taskId)
+            .with(actor(manager)).with(csrf()))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  void unrelatedMemberCannotEditOrDeleteAndNonMemberCannotRead() throws Exception {
+    Map<String, Object> created = tasks.create(projectId,
+        new ProjectTaskService.CreateCommand("受权限保护的任务", null, null), member);
+    long taskId = ((Number) created.get("id")).longValue();
+
+    mvc.perform(put("/api/v1/projects/{id}/tasks/{taskId}", projectId, taskId)
+            .with(actor(user(722, "DELIVERY_ENGINEER", "project:write"))).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"title\":\"越权修改\",\"priority\":\"NORMAL\","
+                + "\"assigneeUserId\":721,\"reminderEnabled\":false,"
+                + "\"version\":0,\"checklist\":[]}"))
+        .andExpect(status().isForbidden());
+    mvc.perform(delete("/api/v1/projects/{id}/tasks/{taskId}", projectId, taskId)
+            .with(actor(user(722, "DELIVERY_ENGINEER", "project:write"))).with(csrf()))
+        .andExpect(status().isForbidden());
+    mvc.perform(get("/api/v1/projects/{id}/tasks", projectId)
+            .with(actor(user(723, "DELIVERY_ENGINEER", "project:read"))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void reminderApiOnlyReturnsAndMarksCurrentUsersReminder() throws Exception {
+    Map<String, Object> created = tasks.create(projectId,
+        new ProjectTaskService.CreateCommand("立即提醒的任务", null,
+            LocalDateTime.now().minusHours(1)), member);
+    long reminderId = ((Number) created.get("reminderId")).longValue();
+
+    mvc.perform(get("/api/v1/task-reminders/unread").with(actor(member)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].taskTitle").value("立即提醒的任务"));
+    mvc.perform(get("/api/v1/task-reminders/unread").with(actor(manager)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+    mvc.perform(post("/api/v1/task-reminders/{id}/read", reminderId)
+            .with(actor(manager)).with(csrf()))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/v1/task-reminders/{id}/read", reminderId)
+            .with(actor(member)).with(csrf()))
+        .andExpect(status().isNoContent());
+  }
+
+  private long jsonLong(String value, String name) throws Exception {
+    return new com.fasterxml.jackson.databind.ObjectMapper().readTree(value).get(name).asLong();
+  }
+
+  private RequestPostProcessor actor(CurrentUser user) {
+    List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<SimpleGrantedAuthority>();
+    for (String permission : user.getPermissions()) {
+      authorities.add(new SimpleGrantedAuthority(permission));
+      if ("project:write".equals(permission)) {
+        authorities.add(new SimpleGrantedAuthority("project:read"));
+      }
+    }
+    return authentication(new UsernamePasswordAuthenticationToken(user, null, authorities));
   }
 
   private CurrentUser user(long id, String role, String permission) {
