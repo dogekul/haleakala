@@ -18,6 +18,7 @@ import { useMemo, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../app/AuthProvider'
 import { adminApi } from '../modules/admin/adminApi'
+import { TaskReminderBell } from './TaskReminderBell'
 
 interface ModuleNav {
   path: string
@@ -76,6 +77,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
             <strong>{active?.label ?? '工作台'}</strong>
           </div>
           <div className="topbar-actions">
+            <TaskReminderBell />
             <span className="env-pill">{environmentLabel}</span>
             <Dropdown menu={{ items: [
               { key: 'profile', label: me?.username, disabled: true },
