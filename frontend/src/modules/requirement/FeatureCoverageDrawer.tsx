@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Drawer, Form, Select, Space, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
+import { SearchSelect } from '../../components/SearchSelect'
 import { ApiError } from '../../services/api'
 import { productApi } from '../product/productApi'
 import { requirementApi } from './requirementApi'
@@ -107,7 +108,7 @@ export function FeatureCoverageDrawer({ requirement, onClose }: { requirement?: 
               { validator: (_, value) => value && form.getFieldValue('entries')?.filter((item: CoverageRow) => item?.featureId === value).length > 1
                 ? Promise.reject(new Error('不能重复选择产品功能')) : Promise.resolve() },
             ]}>
-              <Select virtual={false} showSearch optionFilterProp="label" loading={features.isLoading} options={options} />
+              <SearchSelect loading={features.isLoading} options={options} />
             </Form.Item>
             <Form.Item label="覆盖方式" name={[field.name, 'coverageType']}
               rules={[{ required: true, message: '请选择覆盖方式' }]}>

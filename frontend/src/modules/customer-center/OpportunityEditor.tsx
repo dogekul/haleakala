@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Col, Drawer, Form, Input, InputNumber, Row, Select, message } from 'antd'
+import { Button, Col, Drawer, Form, Input, InputNumber, Row, message } from 'antd'
 import { useEffect } from 'react'
+import { SearchSelect } from '../../components/SearchSelect'
 import { customerApi } from '../customer/customerApi'
 import { projectApi } from '../project/projectApi'
 import { crmApi } from './crmApi'
@@ -40,7 +41,7 @@ export function OpportunityEditor({ value, open, onClose }: {
     extra={<Button type="primary" aria-label="保存商机" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     <Form form={form} layout="vertical" onFinish={save.mutate}>
       <Form.Item name="customerId" label="客户" rules={[{ required: true, message: '请选择客户' }]}>
-        <Select showSearch optionFilterProp="label" virtual={false} loading={customers.isLoading} disabled={Boolean(value)}
+        <SearchSelect loading={customers.isLoading} disabled={Boolean(value)}
           options={(customers.data ?? []).map(item => ({ value: item.id, label: item.name }))} />
       </Form.Item>
       <Form.Item name="title" label="商机名称" rules={[{ required: true, message: '请输入商机名称' }]}>
@@ -49,19 +50,19 @@ export function OpportunityEditor({ value, open, onClose }: {
       <Row gutter={12}><Col span={12}><Form.Item name="amount" label="预计金额" rules={[{ required: true }]}>
         <InputNumber min={0} precision={2} style={{ width: '100%' }} />
       </Form.Item></Col><Col span={12}><Form.Item name="commercialOwnerUserId" label="商务负责人">
-        <Select allowClear virtual={false} options={ownerOptions} />
+        <SearchSelect options={ownerOptions} />
       </Form.Item></Col></Row>
       <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品">
-        <Select allowClear virtual={false} loading={products.isLoading}
+        <SearchSelect loading={products.isLoading}
           onChange={() => form.setFieldValue('productVersionId', undefined)}
           options={(products.data ?? []).map(item => ({ value: item.id, label: item.name }))} />
       </Form.Item></Col><Col span={12}><Form.Item name="productVersionId" label="产品版本">
-        <Select allowClear virtual={false} loading={versions.isLoading}
+        <SearchSelect loading={versions.isLoading}
           options={(versions.data ?? []).map(item => ({ value: item.id, label: item.versionName }))} />
       </Form.Item></Col></Row>
-      <Row gutter={12}><Col span={8}><Form.Item name="solutionOwnerUserId" label="方案负责人"><Select allowClear virtual={false} options={ownerOptions} /></Form.Item></Col>
-        <Col span={8}><Form.Item name="projectManagerUserId" label="项目经理"><Select allowClear virtual={false} options={ownerOptions} /></Form.Item></Col>
-        <Col span={8}><Form.Item name="operationOwnerUserId" label="运营负责人"><Select allowClear virtual={false} options={ownerOptions} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={8}><Form.Item name="solutionOwnerUserId" label="方案负责人"><SearchSelect options={ownerOptions} /></Form.Item></Col>
+        <Col span={8}><Form.Item name="projectManagerUserId" label="项目经理"><SearchSelect options={ownerOptions} /></Form.Item></Col>
+        <Col span={8}><Form.Item name="operationOwnerUserId" label="运营负责人"><SearchSelect options={ownerOptions} /></Form.Item></Col></Row>
       <Form.Item name="note" label="备注"><Input.TextArea rows={4} maxLength={1000} showCount /></Form.Item>
     </Form>
   </Drawer>

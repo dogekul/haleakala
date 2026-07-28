@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Drawer, Form, Input, InputNumber, Select, message } from 'antd'
+import { Alert, Button, Drawer, Form, Input, InputNumber, message } from 'antd'
 import { useEffect } from 'react'
 import { useAuth } from '../../app/AuthProvider'
+import { SearchSelect } from '../../components/SearchSelect'
 import { productApi } from '../product/productApi'
 import { standardizationApi } from './standardizationApi'
 import type { StandardizationDebt } from './types'
@@ -78,16 +79,16 @@ export function ConvertToFeatureDrawer({ debt, defaultProductId, onClose }: {
       description="需要标准化写权限以及产品读写权限才能创建功能。" />}
     <Form form={form} layout="vertical" disabled={!canWrite} onFinish={convert.mutate}>
       <Form.Item label="目标产品" name="productId" rules={[{ required: true, message: '请选择目标产品' }]}>
-        <Select virtual={false} showSearch optionFilterProp="label" loading={products.isLoading}
+        <SearchSelect loading={products.isLoading}
           options={products.data?.map(item => ({ value: item.id, label: item.name }))}
           onChange={() => form.setFieldsValue({ moduleId: undefined, productVersionId: undefined })} />
       </Form.Item>
       <Form.Item label="目标模块" name="moduleId" rules={[{ required: true, message: '请选择目标模块' }]}>
-        <Select virtual={false} showSearch optionFilterProp="label" loading={modules.isLoading} disabled={!canWrite || !productId}
+        <SearchSelect loading={modules.isLoading} disabled={!canWrite || !productId}
           options={modules.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} />
       </Form.Item>
       <Form.Item label="加入规划版本" name="productVersionId" extra="可选；只显示规划中版本">
-        <Select virtual={false} allowClear loading={versions.isLoading} disabled={!canWrite || !productId}
+        <SearchSelect loading={versions.isLoading} disabled={!canWrite || !productId}
           options={versions.data?.filter(item => item.status === 'PLANNING').map(item => ({ value: item.id, label: item.versionName }))} />
       </Form.Item>
       <Form.Item label="功能编码" name="code" rules={[{ required: true, whitespace: true, message: '请输入功能编码' }]}>

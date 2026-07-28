@@ -2,6 +2,7 @@ import { DeleteOutlined, PlusOutlined, TeamOutlined, UserOutlined } from '@ant-d
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
+import { SearchSelect } from '../../components/SearchSelect'
 import { adminApi } from './adminApi'
 import { AdminQueryAlert } from './AdminQueryAlert'
 import type { AdminUser, Team } from './types'
@@ -82,8 +83,8 @@ function UserEditor({ value, teams, roles, onClose }: { value: AdminUser | null 
     <Form form={form} layout="vertical" preserve={false} onFinish={save.mutate}>
       {!value && <><Form.Item label="用户名" name="username" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="初始密码" name="password" rules={[{ required: true, min: 8 }]}><Input.Password /></Form.Item></>}
       <Row gutter={12}><Col span={12}><Form.Item label="显示名称" name="displayName" rules={[{ required: true }]}><Input /></Form.Item></Col><Col span={12}><Form.Item label="邮箱" name="email" rules={[{ type: 'email' }]}><Input /></Form.Item></Col></Row>
-      <Form.Item label="所属团队" name="primaryTeamId"><Select allowClear options={teams.filter(item => item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
-      <Form.Item label="角色" name="roleCodes" rules={[{ required: true, message: '至少选择一个角色' }]}><Select mode="multiple" options={roles.map(item => ({ value: item.code, label: item.name }))} /></Form.Item>
+      <Form.Item label="所属团队" name="primaryTeamId"><SearchSelect options={teams.filter(item => item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
+      <Form.Item label="角色" name="roleCodes" rules={[{ required: true, message: '至少选择一个角色' }]}><SearchSelect mode="multiple" options={roles.map(item => ({ value: item.code, label: item.name }))} /></Form.Item>
       {value && <Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={[{ value: 'ACTIVE', label: '启用' }, { value: 'DISABLED', label: '停用' }]} /></Form.Item>}
     </Form>
   </Modal>
@@ -97,7 +98,7 @@ function TeamEditor({ value, teams, onClose }: { value: Team | null | undefined;
   return <Modal title={value ? '编辑团队' : '新建团队'} open={value !== undefined} onCancel={onClose} okText="保存" cancelText="取消" confirmLoading={save.isPending} onOk={() => form.submit()} destroyOnHidden>
     <Form form={form} layout="vertical" preserve={false} onFinish={save.mutate}>
       <Form.Item label="团队名称" name="name" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="团队编码" name="code" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item label="上级团队" name="parentId"><Select allowClear options={teams.filter(item => item.id !== value?.id && item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
+      <Form.Item label="上级团队" name="parentId"><SearchSelect options={teams.filter(item => item.id !== value?.id && item.enabled).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
       {value && <Form.Item label="状态" name="enabled"><Select options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>}
     </Form>
   </Modal>

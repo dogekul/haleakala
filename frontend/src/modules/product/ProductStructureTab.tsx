@@ -4,6 +4,7 @@ import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, T
 import type { DataNode } from 'antd/es/tree'
 import { useEffect, useMemo, useState } from 'react'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { productApi } from './productApi'
 import type { ProductFeature, ProductModule, StructureStatus } from './types'
 
@@ -102,14 +103,14 @@ function ModuleEditor({ productId, values, value, readOnly, ownerOptions, ownerO
     extra={!disabled && <Button type="primary" aria-label="保存模块" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     {disabled && <Alert type="info" showIcon message="当前模块仅可查看" />}
     <Form form={form} layout="vertical" disabled={disabled} onFinish={save.mutate}>
-      <Form.Item label="父模块" name="parentId"><Select allowClear virtual={false} options={parentOptions} /></Form.Item>
+      <Form.Item label="父模块" name="parentId"><SearchSelect options={parentOptions} /></Form.Item>
       <Space align="start" className="product-editor-row">
         <Form.Item label="模块编码" name="code" rules={[{ required: true, message: '请输入模块编码' }]}><Input /></Form.Item>
         <Form.Item label="模块名称" name="name" rules={[{ required: true, message: '请输入模块名称' }]}><Input /></Form.Item>
       </Space>
       <Form.Item label="模块说明" name="description"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
       <Space align="start" className="product-editor-row">
-        <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+        <Form.Item label="负责人" name="ownerUserId"><SearchSelect
           loading={ownerOptionsLoading} style={{ width: 220 }}
           notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={selectableOwners} /></Form.Item>
         <Form.Item label="排序" name="sortOrder"><InputNumber min={0} /></Form.Item>
@@ -152,14 +153,14 @@ function FeatureEditor({ productId, modules, defaultModuleId, value, readOnly, o
     {disabled && <Alert type="info" showIcon message="当前功能仅可查看" />}
     <Form form={form} layout="vertical" disabled={disabled} onFinish={save.mutate}>
       <Form.Item label="所属模块" name="moduleId" rules={[{ required: true, message: '请选择所属模块' }]}>
-        <Select virtual={false} options={modules.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} />
+        <SearchSelect options={modules.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} />
       </Form.Item>
       <Space align="start" className="product-editor-row">
         <Form.Item label="功能编码" name="code" rules={[{ required: true, message: '请输入功能编码' }]}><Input /></Form.Item>
         <Form.Item label="功能名称" name="name" rules={[{ required: true, message: '请输入功能名称' }]}><Input /></Form.Item>
       </Space>
       <Form.Item label="功能说明" name="description"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
-      <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+      <Form.Item label="负责人" name="ownerUserId"><SearchSelect
         loading={ownerOptionsLoading}
         notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={selectableOwners} /></Form.Item>
       <Form.Item label="状态" name="status"><Select virtual={false} disabled={!value || disabled}

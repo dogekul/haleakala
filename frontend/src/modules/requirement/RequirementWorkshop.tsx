@@ -10,6 +10,7 @@ import {
 } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { SearchSelect } from '../../components/SearchSelect'
 import { ApiError } from '../../services/api'
 import { projectApi } from '../project/projectApi'
 import { requirementApi } from './requirementApi'
@@ -177,7 +178,7 @@ function CollectionDrawer({ open, requirement, onClose }: { open: boolean; requi
     : <Button type="primary" loading={save.isPending} onClick={() => form.submit()}>完成采集并生成文档</Button>
   return <Drawer title={requirement ? '编辑需求' : '需求采集单'} open={open} onClose={onClose} width={600} extra={extra}>
     <Form form={form} layout="vertical" initialValues={{ priority: 'P2', source: '客户访谈' }} onFinish={values => save.mutate(values)}>
-      <Form.Item label="所属项目" name="projectId" rules={[{ required: true }]}><Select disabled={Boolean(requirement)} showSearch optionFilterProp="label" loading={projects.isLoading} options={projects.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
+      <Form.Item label="所属项目" name="projectId" rules={[{ required: true }]}><SearchSelect disabled={Boolean(requirement)} loading={projects.isLoading} options={projects.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
       <Form.Item label="需求标题" name="title" rules={[{ required: true }]}><Input placeholder="用一句话描述业务目标" /></Form.Item>
       <Form.Item label="业务描述与验收条件" name="description" rules={[{ required: true }]}><Input.TextArea rows={7} placeholder="业务场景、当前问题、期望结果、验收条件……" showCount maxLength={3000} /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="来源" name="source"><Select options={['客户访谈', '需求调研', '会议纪要', '工单反馈', '合同范围'].map(value => ({ value, label: value }))} /></Form.Item></Col><Col span={12}><Form.Item label="优先级" name="priority"><Radio.Group options={['P0', 'P1', 'P2', 'P3']} optionType="button" /></Form.Item></Col></Row>

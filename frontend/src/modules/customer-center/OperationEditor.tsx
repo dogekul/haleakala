@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Drawer, Form, Input, Select, message } from 'antd'
+import { Button, Drawer, Form, Input, message } from 'antd'
 import { useEffect } from 'react'
+import { SearchSelect } from '../../components/SearchSelect'
 import { customerApi } from '../customer/customerApi'
 import { projectApi } from '../project/projectApi'
 import { crmApi } from './crmApi'
@@ -22,15 +23,15 @@ export function OperationEditor({ value, open, onClose }: { value?: CustomerOper
   return <Drawer title={value ? '编辑客户运营' : '新建客户运营'} open={open} width={600} onClose={onClose}
     extra={<Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存</Button>}>
     <Form form={form} layout="vertical" onFinish={save.mutate}>
-      {!value && <Form.Item name="customerId" label="客户" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false}
+      {!value && <Form.Item name="customerId" label="客户" rules={[{ required: true }]}><SearchSelect
         options={(customers.data ?? []).map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
       }
       <Form.Item name="title" label="运营主题" rules={[{ required: true }]}><Input maxLength={180} /></Form.Item>
-      <Form.Item name="ownerUserId" label="运营负责人"><Select allowClear virtual={false}
+      <Form.Item name="ownerUserId" label="运营负责人"><SearchSelect
         options={(owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))} /></Form.Item>
-      {!value && <><Form.Item name="opportunityId" label="来源商机"><Select allowClear virtual={false}
+      {!value && <><Form.Item name="opportunityId" label="来源商机"><SearchSelect
         options={(opportunities.data ?? []).filter(item => !customerId || item.customerId === customerId).map(item => ({ value: item.id, label: item.title }))} /></Form.Item>
-      <Form.Item name="projectId" label="来源项目"><Select allowClear virtual={false}
+      <Form.Item name="projectId" label="来源项目"><SearchSelect
         options={(projects.data ?? []).filter(item => !customerId || item.customerId === customerId).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
       </>}
     </Form>

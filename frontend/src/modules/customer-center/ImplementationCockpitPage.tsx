@@ -3,6 +3,7 @@ import { Card, Col, Row, Select, Space, Statistic, Table, Tag, Typography } from
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { crmApi } from './crmApi'
 import { projectStages } from './ImplementationPage'
 import type { Health, ImplementationItem } from './types'
@@ -41,8 +42,8 @@ export function ImplementationCockpitPage() {
       options={[{ value: 'GREEN', label: '绿色' }, { value: 'YELLOW', label: '黄色' }, { value: 'RED', label: '红色' }]} />
     <Select aria-label="阶段筛选" allowClear placeholder="全部阶段" virtual={false} value={stage} onChange={setStage}
       options={Object.entries(projectStages).map(([value, label]) => ({ value, label }))} />
-    <Select aria-label="负责人筛选" allowClear placeholder="全部负责人" virtual={false} value={manager} onChange={setManager} options={options.managers} />
-    <Select aria-label="客户筛选" allowClear placeholder="全部客户" virtual={false} value={customer} onChange={setCustomer} options={options.customers} />
+    <SearchSelect aria-label="负责人筛选" placeholder="全部负责人" value={manager} onChange={setManager} options={options.managers} />
+    <SearchSelect aria-label="客户筛选" placeholder="全部客户" value={customer} onChange={setCustomer} options={options.customers} />
   </Space><span>当前筛选 {items.length} 个项目</span></div></Card>
   <Card className="crm-surface"><PageState loading={query.isLoading} error={query.error} empty={!query.isLoading && items.length === 0} onRetry={() => void query.refetch()}>
     <Table rowKey="projectId" columns={columns} dataSource={items} pagination={{ pageSize: 12 }} />

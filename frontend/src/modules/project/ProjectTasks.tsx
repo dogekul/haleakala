@@ -26,6 +26,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import { SearchSelect } from '../../components/SearchSelect'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
@@ -233,7 +234,7 @@ export function ProjectTasks({
               onChange={event => setQuickTitle(event.target.value)}
               onPressEnter={submitQuick}
             />
-            <Select
+            <SearchSelect
               aria-label="负责人"
               value={quickAssignee}
               options={members}
@@ -305,7 +306,7 @@ export function ProjectTasks({
             </Form.Item>
             <div className="project-task-detail-grid">
               <Form.Item name="assigneeUserId" label="负责人" rules={[{ required: true }]}>
-                <Select options={members} disabled={!detail.data.canEdit} />
+                <SearchSelect options={members} disabled={!detail.data.canEdit} />
               </Form.Item>
               <Form.Item name="priority" label="优先级">
                 <Select
@@ -327,14 +328,14 @@ export function ProjectTasks({
             </Form.Item>
             <div className="project-task-detail-grid">
               <Form.Item name="stageCode" label="关联阶段">
-                <Select
+                <SearchSelect
                   allowClear
                   disabled={!detail.data.canEdit}
                   options={project.stages.map(stage => ({ value: stage.code, label: stage.name }))}
                 />
               </Form.Item>
               <Form.Item name="milestoneId" label="关联里程碑">
-                <Select
+                <SearchSelect
                   allowClear
                   disabled={!detail.data.canEdit}
                   options={project.milestones.map(item => ({

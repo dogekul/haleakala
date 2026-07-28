@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { projectApi } from '../project/projectApi'
 import { buildProjectName } from '../project/projectName'
@@ -297,16 +298,16 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
   return <Drawer title="转交实施" open={Boolean(opportunity)} width={620} onClose={onClose} extra={<Button type="primary" onClick={() => form.submit()}>确认转交</Button>}>
     <Form form={form} layout="vertical" initialValues={{ mode: 'CREATE', gateMode: 'BLOCK' }} onFinish={save.mutate}>
       <Form.Item name="mode" label="交接方式"><Radio.Group options={[{ label: '创建项目', value: 'CREATE' }, { label: '关联项目', value: 'LINK' }]} /></Form.Item>
-      {mode === 'LINK' ? <Form.Item name="projectId" label="同客户项目" rules={[{ required: true }]}><Select virtual={false}
+      {mode === 'LINK' ? <Form.Item name="projectId" label="同客户项目" rules={[{ required: true }]}><SearchSelect
         options={(projects.data ?? []).filter(item => item.customerId === opportunity?.customerId).map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item>
         : <><Form.Item name="customerName" label="客户"><Input disabled /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={products.isLoading}
+          <Row gutter={12}><Col span={12}><Form.Item name="productId" label="产品" rules={[{ required: true }]}><SearchSelect loading={products.isLoading}
             onChange={() => form.setFieldValue('productVersionId', undefined)} options={(products.data ?? []).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
-          <Col span={12}><Form.Item name="productVersionId" label="产品版本" rules={[{ required: true }]}><Select virtual={false} disabled={!productId} loading={versions.isLoading}
+          <Col span={12}><Form.Item name="productVersionId" label="产品版本" rules={[{ required: true }]}><SearchSelect disabled={!productId} loading={versions.isLoading}
             options={(versions.data ?? []).map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
           <Form.Item name="name" label="项目名称" extra="项目编号由系统自动生成"
             rules={[{ required: true }]}><Input /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="managerUserId" label="项目经理" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" virtual={false} loading={owners.isLoading}
+          <Row gutter={12}><Col span={12}><Form.Item name="managerUserId" label="项目经理" rules={[{ required: true }]}><SearchSelect loading={owners.isLoading}
             options={(owners.data ?? []).map(item => ({ value: item.id, label: item.displayName }))} /></Form.Item></Col><Col span={12}><Form.Item name="gateMode" label="门禁模式"><Select virtual={false} options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '提醒' }]} /></Form.Item></Col></Row>
           <Row gutter={12}><Col span={12}><Form.Item name="startDate" label="开始日期" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col><Col span={12}><Form.Item name="plannedEndDate" label="计划结束" rules={[{ required: true }]}><Input type="date" /></Form.Item></Col></Row></>}
     </Form>

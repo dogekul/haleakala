@@ -7,6 +7,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { useAuth } from '../../app/AuthProvider'
 import { productApi } from './productApi'
 import type { Product, ProductStatus } from './types'
@@ -76,11 +77,11 @@ export function ProductListPage() {
         <Space wrap>
           <Input allowClear prefix={<SearchOutlined />} placeholder="搜索产品名称或编码" value={keyword}
             onChange={event => setKeyword(event.target.value)} style={{ width: 240 }} />
-          <Select aria-label="分类筛选" virtual={false} allowClear placeholder="全部分类" value={category} onChange={setCategory} style={{ width: 140 }}
+          <SearchSelect aria-label="分类筛选" placeholder="全部分类" value={category} onChange={setCategory} style={{ width: 140 }}
             options={categories.map(value => ({ value, label: value }))} />
           <Select aria-label="状态筛选" virtual={false} allowClear placeholder="全部状态" value={status} onChange={setStatus} style={{ width: 130 }}
             options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} />
-          <Select aria-label="负责人筛选" virtual={false} allowClear placeholder="全部负责人" value={ownerUserId} onChange={setOwnerUserId} style={{ width: 140 }}
+          <SearchSelect aria-label="负责人筛选" placeholder="全部负责人" value={ownerUserId} onChange={setOwnerUserId} style={{ width: 140 }}
             options={owners} />
           <span className="result-count">共 {data.length} 个产品</span>
         </Space>
@@ -160,7 +161,7 @@ function ProductEditor({ value, canWrite, onClose }: { value: Product | null | u
       <Form.Item label="产品名称" name="name" extra="产品编号由系统自动生成"
         rules={[{ required: true, message: '请输入产品名称' }]}><Input /></Form.Item>
       <Form.Item label="分类" name="category"><Input placeholder="例如：企业应用" /></Form.Item>
-      <Form.Item label="负责人" name="ownerUserId"><Select allowClear showSearch optionFilterProp="label" virtual={false}
+      <Form.Item label="负责人" name="ownerUserId"><SearchSelect
         loading={owners.isLoading} placeholder="选填"
         notFoundContent="暂无产品负责人，请先在系统管理中配置产品负责人角色" options={ownerOptions} /></Form.Item>
       <Form.Item label="产品说明" name="description"><Input.TextArea rows={4} maxLength={500} showCount /></Form.Item>

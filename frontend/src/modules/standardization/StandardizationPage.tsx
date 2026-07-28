@@ -10,6 +10,7 @@ import {
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
+import { SearchSelect } from '../../components/SearchSelect'
 import { productApi } from '../product/productApi'
 import { ConvertToFeatureDrawer } from './ConvertToFeatureDrawer'
 import { projectApi } from '../project/projectApi'
@@ -48,8 +49,8 @@ export function StandardizationPage() {
   return <div className="standardization-page">
     <div className="workshop-heading"><div><span className="eyebrow dark">PRODUCT STANDARDIZATION</span><Typography.Title level={2}>标准化中心</Typography.Title>
       <Typography.Paragraph>把项目偏离转化为产品能力，让每次交付都降低下一次的成本。</Typography.Paragraph></div>
-      <Space><Select aria-label="产品" showSearch optionFilterProp="label" value={productId} loading={products.isLoading} onChange={value => { setProductId(value); setVersionId(undefined) }} style={{ width: 170 }} options={products.data?.map(item => ({ value: item.id, label: item.name }))} />
-        <Select aria-label="版本" showSearch optionFilterProp="label" value={versionId} loading={versions.isLoading} onChange={setVersionId} style={{ width: 130 }} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Space></div>
+      <Space><SearchSelect aria-label="产品" value={productId} loading={products.isLoading} onChange={value => { setProductId(value); setVersionId(undefined) }} style={{ width: 170 }} options={products.data?.map(item => ({ value: item.id, label: item.name }))} />
+        <SearchSelect aria-label="版本" value={versionId} loading={versions.isLoading} onChange={setVersionId} style={{ width: 130 }} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Space></div>
     <div className="standardization-context"><div><ApiOutlined /><span>当前基线</span><strong>{currentProduct?.name ?? '请选择产品'} / {currentVersion?.versionName ?? '-'}</strong></div>
       <div><span>评估周期</span><strong>{assessment.data?.period ?? '-'}</strong></div><div><span>标准覆盖</span><strong>{assessment.data ? `${assessment.data.standardCoverage}%` : '-'}</strong></div><div><span>二开实际成本</span><strong>{currency(costs.data?.actualCost)}</strong></div></div>
     {!versionId ? <Card><Empty description="请先选择产品版本" /></Card> : <Tabs className="standardization-tabs" items={[
@@ -146,7 +147,7 @@ function TaskEditor({ productVersionId, value, onClose }: { productVersionId: nu
   const requirementOptions = requirements.data?.filter(requirement => requirement.projectId === projectId && requirement.status === 'CONFIRMED' && requirement.confirmedLevel === 'L1').map(requirement => ({ value: requirement.id, label: `${requirement.code} · ${requirement.title}` }))
   return <Drawer width={650} title={value ? '编辑二开任务成本' : '新建二开任务'} open={value !== undefined} onClose={onClose} extra={<Button type="primary" loading={save.isPending} onClick={() => form.submit()}>保存任务</Button>}>
     <Form form={form} layout="vertical" onFinish={save.mutate}>
-      <Row gutter={12}><Col span={12}><Form.Item label="项目" name="projectId" rules={[{ required: true }]}><Select disabled={Boolean(value)} options={projectOptions} onChange={() => form.setFieldValue('requirementId', undefined)} /></Form.Item></Col><Col span={12}><Form.Item label="L1 需求" name="requirementId" rules={[{ required: true }]}><Select disabled={Boolean(value) || !projectId} options={requirementOptions} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item label="项目" name="projectId" rules={[{ required: true }]}><SearchSelect disabled={Boolean(value)} options={projectOptions} onChange={() => form.setFieldValue('requirementId', undefined)} /></Form.Item></Col><Col span={12}><Form.Item label="L1 需求" name="requirementId" rules={[{ required: true }]}><SearchSelect disabled={Boolean(value) || !projectId} options={requirementOptions} /></Form.Item></Col></Row>
       <Form.Item label="任务标题" name="title" rules={[{ required: true }]}><Input /></Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={Object.entries(taskStatusLabels).map(([status, label]) => ({ value: status, label }))} /></Form.Item></Col><Col span={12}><Form.Item label="技术负责人 ID" name="technicalOwnerId"><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item label="扩展点" name="extensionPoint"><Input placeholder="例如 reconciliation.retry" /></Form.Item>

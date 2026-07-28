@@ -1,8 +1,9 @@
 import { SearchOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Card, DatePicker, Input, Select, Space, Table, Tag, Typography } from 'antd'
+import { Card, DatePicker, Input, Space, Table, Tag, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useState } from 'react'
+import { SearchSelect } from '../../components/SearchSelect'
 import { adminApi } from './adminApi'
 import { AdminQueryAlert } from './AdminQueryAlert'
 import type { AuditLog } from './types'
@@ -23,8 +24,8 @@ export function AuditLogsPage() {
     <AdminQueryAlert errors={[query.error, facets.error, settings.error]} onRetry={() => { void Promise.all([query.refetch(), facets.refetch(), settings.refetch()]) }} />
     <Card className="admin-filter"><Space wrap>
       <Input allowClear prefix={<SearchOutlined />} placeholder="操作者、资源、Trace ID" value={keyword} onChange={event => { setKeyword(event.target.value); setPage(1) }} style={{ width: 250 }} />
-      <Select allowClear showSearch placeholder="动作" value={action} onChange={change(setAction)} style={{ width: 190 }} options={(facets.data?.actions ?? []).map(value => ({ value, label: value }))} />
-      <Select allowClear showSearch placeholder="资源类型" value={resourceType} onChange={change(setResourceType)} style={{ width: 180 }} options={(facets.data?.resourceTypes ?? []).map(value => ({ value, label: value }))} />
+      <SearchSelect placeholder="动作" value={action} onChange={change(setAction)} style={{ width: 190 }} options={(facets.data?.actions ?? []).map(value => ({ value, label: value }))} />
+      <SearchSelect placeholder="资源类型" value={resourceType} onChange={change(setResourceType)} style={{ width: 180 }} options={(facets.data?.resourceTypes ?? []).map(value => ({ value, label: value }))} />
       <DatePicker.RangePicker value={range} onChange={value => { setRange(value); setPage(1) }} />
     </Space></Card>
     <Card className="admin-surface audit-table" title="操作记录" extra={`共 ${query.data?.total ?? 0} 条`}><Table rowKey="id" loading={query.isLoading} dataSource={query.data?.items} pagination={{ current: page, pageSize: 20, total: query.data?.total ?? 0, showSizeChanger: false, onChange: setPage }} columns={[

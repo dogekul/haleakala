@@ -10,6 +10,7 @@ import {
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../app/AuthProvider'
+import { SearchSelect } from '../../components/SearchSelect'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { stageNames } from '../project/types'
 import { projectApi } from '../project/projectApi'
@@ -469,14 +470,12 @@ function KnowledgeEditor({
       <Form.Item label="标签" name="tags"><Input placeholder="用英文逗号分隔" /></Form.Item>
       <Row gutter={12}>
         <Col span={12}><Form.Item label="产品" name="productId">
-          <Select
-            allowClear
+          <SearchSelect
             options={products.data?.map(item => ({ value: item.id, label: item.name }))}
           />
         </Form.Item></Col>
         <Col span={12}><Form.Item label="版本" name="productVersionId">
-          <Select
-            allowClear
+          <SearchSelect
             disabled={!productId}
             options={versions.data?.map(item => ({
               value: item.id, label: item.versionName,
