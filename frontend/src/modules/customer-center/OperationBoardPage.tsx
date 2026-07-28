@@ -1,10 +1,11 @@
 import { EditOutlined, PlusOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Select, Space, Table, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { crmApi } from './crmApi'
 import { OperationEditor } from './OperationEditor'
 import type { CustomerOperation, OperationStage, OperationStatus } from './types'
@@ -31,10 +32,19 @@ export function OperationBoardPage() {
   if (stage) params.set('stage', stage)
   if (status) params.set('status', status)
   const queryString = params.toString() ? `?${params}` : ''
-  const query = useQuery({ queryKey: ['operations', queryString], queryFn: () => crmApi.operations(queryString) })
+  const query = useQuery({
+    queryKey: ['operations', queryString],
+    queryFn: () => crmApi.operations(queryString),
+    placeholderData: keepPreviousData,
+  })
+  const optionQuery = useQuery({
+    queryKey: ['operations', 'filter-options'],
+    queryFn: () => crmApi.operations(''),
+  })
   const data = query.data ?? []
-  const owners = useMemo(() => { const values = new Map<number, string>(); (query.data ?? []).forEach(item => { if (item.ownerUserId) values.set(item.ownerUserId, item.ownerName ?? `用户 ${item.ownerUserId}`) }); return [...values].map(([value, label]) => ({ value, label })) }, [query.data])
-  const customers = useMemo(() => { const values = new Map<number, string>(); (query.data ?? []).forEach(item => values.set(item.customerId, item.customerName)); return [...values].map(([value, label]) => ({ value, label })) }, [query.data])
+  const dimensionData = optionQuery.data ?? data
+  const owners = useMemo(() => { const values = new Map<number, string>(); dimensionData.forEach(item => { if (item.ownerUserId) values.set(item.ownerUserId, item.ownerName ?? `用户 ${item.ownerUserId}`) }); return [...values].map(([value, label]) => ({ value, label })) }, [dimensionData])
+  const customers = useMemo(() => { const values = new Map<number, string>(); dimensionData.forEach(item => values.set(item.customerId, item.customerName)); return [...values].map(([value, label]) => ({ value, label })) }, [dimensionData])
   const advance = useMutation({ mutationFn: (item: CustomerOperation) => crmApi.advanceOperation(item.id, item.version),
     onSuccess: async () => { await client.invalidateQueries({ queryKey: ['operations'] }); message.success('运营阶段已推进') },
     onError: (error: Error) => message.error(error.message) })
@@ -44,8 +54,8 @@ export function OperationBoardPage() {
   </div>{canWrite && <Button type="primary" aria-label="新建运营" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新建运营</Button>}</div>
   <Card className="crm-filter operation-filter"><div className="crm-toolbar operation-toolbar"><Space className="operation-filter-fields" wrap size={8}>
     <Input allowClear prefix={<SearchOutlined />} placeholder="搜索运营或客户" value={keyword} onChange={event => setKeyword(event.target.value)} />
-    <Select aria-label="运营负责人筛选" allowClear placeholder="全部负责人" virtual={false} value={owner} onChange={setOwner} options={owners} />
-    <Select aria-label="运营客户筛选" allowClear placeholder="全部客户" virtual={false} value={customer} onChange={setCustomer} options={customers} />
+    <SearchSelect aria-label="运营负责人筛选" placeholder="全部负责人" value={owner} onChange={setOwner} options={owners} />
+    <SearchSelect aria-label="运营客户筛选" placeholder="全部客户" value={customer} onChange={setCustomer} options={customers} />
     <Select aria-label="运营阶段筛选" allowClear placeholder="全部阶段" virtual={false} value={stage} onChange={setStage}
       options={[...operationStages, { value: 'CLOSED' as OperationStage, label: '已关闭' }]} />
     <Select aria-label="运营状态筛选" allowClear placeholder="全部状态" virtual={false} value={status} onChange={setStatus}

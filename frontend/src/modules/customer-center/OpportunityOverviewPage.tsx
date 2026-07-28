@@ -1,10 +1,11 @@
 import { EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Button, Card, Col, Input, Row, Segmented, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
+import { SearchSelect } from '../../components/SearchSelect'
 import { crmApi } from './crmApi'
 import { OpportunityEditor } from './OpportunityEditor'
 import type { Opportunity, OpportunityStage, OpportunityStatus } from './types'
@@ -40,19 +41,28 @@ export function OpportunityOverviewPage() {
   if (stage) params.set('stage', stage)
   if (status) params.set('status', status)
   const queryString = params.toString() ? `?${params}` : ''
-  const query = useQuery({ queryKey: ['opportunities', queryString], queryFn: () => crmApi.opportunities(queryString) })
+  const query = useQuery({
+    queryKey: ['opportunities', queryString],
+    queryFn: () => crmApi.opportunities(queryString),
+    placeholderData: keepPreviousData,
+  })
+  const optionQuery = useQuery({
+    queryKey: ['opportunities', 'filter-options'],
+    queryFn: () => crmApi.opportunities(''),
+  })
   const data = query.data ?? []
+  const dimensionData = optionQuery.data ?? data
   const terminal = data.filter(item => item.status !== 'OPEN')
   const won = data.filter(item => item.status === 'WON').length
   const lost = data.filter(item => item.status === 'LOST').length
   const dimensions = useMemo(() => ({
-    customers: unique(data, 'customerId', 'customerName'),
-    products: unique(data.filter(item => item.productId), 'productId', 'productName'),
-    commercialOwners: unique(data.filter(item => item.commercialOwnerUserId), 'commercialOwnerUserId', 'commercialOwnerName'),
-    solutionOwners: unique(data.filter(item => item.solutionOwnerUserId), 'solutionOwnerUserId', 'solutionOwnerName'),
-    projectManagers: unique(data.filter(item => item.projectManagerUserId), 'projectManagerUserId', 'projectManagerName'),
-    operationOwners: unique(data.filter(item => item.operationOwnerUserId), 'operationOwnerUserId', 'operationOwnerName'),
-  }), [data])
+    customers: unique(dimensionData, 'customerId', 'customerName'),
+    products: unique(dimensionData.filter(item => item.productId), 'productId', 'productName'),
+    commercialOwners: unique(dimensionData.filter(item => item.commercialOwnerUserId), 'commercialOwnerUserId', 'commercialOwnerName'),
+    solutionOwners: unique(dimensionData.filter(item => item.solutionOwnerUserId), 'solutionOwnerUserId', 'solutionOwnerName'),
+    projectManagers: unique(dimensionData.filter(item => item.projectManagerUserId), 'projectManagerUserId', 'projectManagerName'),
+    operationOwners: unique(dimensionData.filter(item => item.operationOwnerUserId), 'operationOwnerUserId', 'operationOwnerName'),
+  }), [dimensionData])
   const columns = [
     { title: '商机', key: 'title', render: (_: unknown, item: Opportunity) => <div className="crm-name-cell"><Link to={`/customers/opportunities/${item.id}`}>{item.title}</Link><span>{item.customerName}</span></div> },
     { title: '阶段', dataIndex: 'stage', render: (value: OpportunityStage) => stageLabel(value) },
@@ -110,7 +120,7 @@ function StageAge({ item }: { item: Opportunity }) {
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value?: number; onChange: (value?: number) => void; options: { value: number; label: string }[] }) {
-  return <Select aria-label={label} allowClear placeholder={label.replace('筛选', '')} virtual={false} value={value} onChange={onChange} options={options} />
+  return <SearchSelect aria-label={label} placeholder={label.replace('筛选', '')} value={value} onChange={onChange} options={options} />
 }
 
 function unique(items: Opportunity[], idKey: keyof Opportunity, nameKey: keyof Opportunity) {

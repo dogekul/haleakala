@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, vi } from 'vitest'
@@ -112,6 +112,33 @@ it('客户运营筛选由服务端查询执行', async () => {
     const path = String(call[0])
     return path.includes('keyword=%E9%93%B6%E8%A1%8C') && path.includes('stage=OPERATING')
   })).toBe(true))
+})
+
+it('客户运营实体筛选搜索时不清空看板和完整客户候选项', async () => {
+  let resolveFiltered!: (response: Response) => void
+  const filtered = new Promise<Response>(resolve => { resolveFiltered = resolve })
+  const fetch = vi.fn((path: RequestInfo | URL) => String(path).includes('customerId=21')
+    ? filtered
+    : json(operations))
+  vi.stubGlobal('fetch', fetch)
+  const user = userEvent.setup()
+  show(<OperationBoardPage />)
+
+  await screen.findByText('华南制造经营')
+  const customer = screen.getByRole('combobox', { name: '运营客户筛选' })
+  await user.click(customer)
+  await user.type(customer, '华东 银行')
+  expect(screen.queryByRole('option', { name: '华南制造' })).not.toBeInTheDocument()
+  await user.click(await screen.findByRole('option', { name: '华东银行' }))
+
+  await waitFor(() => expect(fetch.mock.calls.some(call =>
+    String(call[0]).includes('customerId=21'))).toBe(true))
+  expect(screen.getByText('华南制造经营')).toBeVisible()
+
+  await act(async () => resolveFiltered(await json([operations[0]])))
+  await waitFor(() => expect(screen.queryByText('华南制造经营')).not.toBeInTheDocument())
+  await user.click(customer)
+  expect(await screen.findByRole('option', { name: '华南制造' })).toBeVisible()
 })
 
 it('运营详情展示客户商机项目来源和可跳转全链', async () => {
