@@ -193,6 +193,7 @@ public class ProjectService {
     if (target.ordinal() != current.ordinal() + 1) {
       throw new ConflictException("只能推进到下一个交付阶段");
     }
+    assertRequiredDocumentsCompleted(projectId, current);
     List<String> warnings = stageWarnings(projectId, current);
     if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
       throw new ConflictException(String.join("；", warnings));
@@ -224,6 +225,7 @@ public class ProjectService {
         || !("CLOSING".equals(project.getStatus()) || "ACTIVE".equals(project.getStatus()))) {
       throw new ConflictException("只有已进入过程跟进阶段的项目可以关闭");
     }
+    assertRequiredDocumentsCompleted(projectId, DeliveryStage.CLOSE);
     List<String> warnings = stageWarnings(projectId, DeliveryStage.CLOSE);
     if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
       throw new ConflictException(String.join("；", warnings));
@@ -488,16 +490,18 @@ public class ProjectService {
       Object gateMessage = gate.get("gate_message");
       warnings.add(gateMessage == null ? "阶段门禁未通过" : String.valueOf(gateMessage));
     }
+    return warnings;
+  }
+
+  private void assertRequiredDocumentsCompleted(long projectId, DeliveryStage stage) {
     List<Map<String, Object>> incompleteDocuments =
         projectDocuments.incompleteRequired(projectId, stage);
-    if (!incompleteDocuments.isEmpty()) {
-      List<String> titles = new ArrayList<String>();
-      for (Map<String, Object> document : incompleteDocuments) {
-        titles.add(String.valueOf(document.get("title")));
-      }
-      warnings.add("未完成必需文档：" + String.join("、", titles));
+    if (incompleteDocuments.isEmpty()) return;
+    List<String> titles = new ArrayList<String>();
+    for (Map<String, Object> document : incompleteDocuments) {
+      titles.add(String.valueOf(document.get("title")));
     }
-    return warnings;
+    throw new ConflictException("未完成必需文档：" + String.join("、", titles));
   }
 
   private void refreshProjectRisk(long projectId) {

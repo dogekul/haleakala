@@ -46,7 +46,7 @@ export interface ProjectDocument {
   requirement: 'REQUIRED' | 'OPTIONAL'
   conditionCode: 'ALWAYS' | 'HAS_CUSTOM_DEV'
   gateRequired: boolean
-  status: 'PENDING' | 'TODO' | 'PENDING_CONFIRMATION' | 'COMPLETED' | 'FAILED'
+  status: 'PENDING' | 'TODO' | 'IN_PROGRESS' | 'PENDING_CONFIRMATION' | 'COMPLETED' | 'FAILED'
   revision?: number
   confirmedRevision?: number
   confirmedBy?: number
@@ -100,4 +100,8 @@ export interface DeliveryTrackingItem {
 export const stageNames: Record<string, string> = {
   START: '项目立项', REQUIREMENT: '调研与启动', CUSTOM_DEV: '方案与计划', GO_LIVE: '开发与测试',
   TRIAL_HANDOVER: '验证与发布', STANDARDIZATION: '验收与结项', CLOSE: '过程跟进',
+}
+
+export const stageStatusNames: Record<Stage['status'], string> = {
+  PENDING: '待开始', ACTIVE: '进行中', COMPLETED: '已完成', BLOCKED: '已阻塞',
 }

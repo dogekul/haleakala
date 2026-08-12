@@ -155,6 +155,13 @@ public class ProjectDocumentService {
     return refresh(projectDocumentId, projectId, organizationId);
   }
 
+  public void refreshAfterSave(
+      long projectId, long projectDocumentId, CurrentUser user) {
+    assertProjectAccess(projectId, user);
+    long organizationId = ((Number) project(projectId).get("organization_id")).longValue();
+    refresh(projectDocumentId, projectId, organizationId);
+  }
+
   public List<Map<String, Object>> incompleteRequired(
       long projectId, DeliveryStage stage) {
     Map<String, Object> project = project(projectId);
@@ -373,7 +380,10 @@ public class ProjectDocumentService {
         DocumentView document = documents.readLink(
             ((Number) linkValue).longValue(), organizationId);
         Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
-        String status = contentStatus(document.getTitle(), document.getMarkdown());
+        String status = contentStatus(
+            document.getTitle(), document.getMarkdown(),
+            row.get("source_markdown_snapshot") == null
+                ? null : String.valueOf(row.get("source_markdown_snapshot")));
         boolean completed = "PENDING_CONFIRMATION".equals(status)
             && confirmedRevision != null
             && confirmedRevision.longValue() == document.getRevision();
@@ -453,17 +463,29 @@ public class ProjectDocumentService {
     return result;
   }
 
-  private String contentStatus(String title, String markdown) {
+  private String contentStatus(String title, String markdown, String sourceMarkdown) {
     if (markdown == null || markdown.trim().isEmpty()) return "TODO";
     String expectedTitle = plain(title);
+    boolean hasContent = false;
+    boolean hasPlaceholder = false;
     for (String sourceLine : markdown.split("\\r?\\n")) {
       if (sourceLine.matches("^\\s{0,3}#{1,6}(\\s+.*)?$")) continue;
+      if (sourceLine.matches("^\\s*>.*$")) continue;
       String line = plain(sourceLine);
-      if (line.isEmpty() || line.equals(expectedTitle) || hint(line)) continue;
+      if (line.isEmpty() || line.equals(expectedTitle)) continue;
       if (line.matches("^[-:|\\s]+$") || line.endsWith("：") || line.endsWith(":")) continue;
-      return "PENDING_CONFIRMATION";
+      if (hint(line)) hasPlaceholder = true;
+      else hasContent = true;
     }
-    return "TODO";
+    boolean changed = sourceMarkdown != null
+        && !canonical(markdown).equals(canonical(sourceMarkdown));
+    if (hasPlaceholder) return changed || hasContent ? "IN_PROGRESS" : "TODO";
+    return hasContent ? "PENDING_CONFIRMATION" : changed ? "IN_PROGRESS" : "TODO";
+  }
+
+  private String canonical(String value) {
+    return value == null ? "" : value.replace("\\n", "\n")
+        .replaceAll("\\s+", " ").trim();
   }
 
   private String plain(String value) {

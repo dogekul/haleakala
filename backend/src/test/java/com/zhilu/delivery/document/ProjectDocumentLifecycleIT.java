@@ -188,6 +188,40 @@ class ProjectDocumentLifecycleIT {
   }
 
   @Test
+  void escapedTemplateNewlinesDoNotLookLikeUserEdits() {
+    outlineDocuments.put("project-document-7310", document(
+        "project-document-7310", "项目启动检查单",
+        "# 项目启动检查单\n\n> 用于确认项目目标。\n\n请补充项目目标", 2));
+    jdbc.update("update project_document set source_markdown_snapshot=? where id=?",
+        "# 项目启动检查单\\n\\n> 用于确认项目目标。\\n\\n请补充项目目标", todoDocumentId);
+
+    Map<String, Object> value = projectDocuments.list(projectId, member).stream()
+        .filter(item -> ((Number) item.get("id")).longValue() == todoDocumentId)
+        .findFirst().get();
+
+    assertEquals("TODO", value.get("status"));
+  }
+
+  @Test
+  void aRemainingTemplatePlaceholderKeepsTheDocumentOutOfTheGate() throws Exception {
+    String outlineId = "project-document-7320";
+    outlineDocuments.put(outlineId, document(
+        outlineId, "项目启动方案",
+        "# 项目启动方案\n\n## 项目目标\n核心系统按期升级。\n\n## 风险\n请填写", 3));
+
+    mvc.perform(get("/api/v1/projects/{id}/documents", projectId)
+            .with(actor(member, "project:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[?(@.id==" + requiredDocumentId + ")].status")
+            .value("IN_PROGRESS"));
+
+    mvc.perform(post("/api/v1/projects/{id}/documents/{documentId}/confirm",
+            projectId, requiredDocumentId)
+            .with(actor(manager, "project:write")).with(csrf()))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
   void staleRefreshCannotClearANewerConfirmation() throws Exception {
     CountDownLatch staleRefreshRead = new CountDownLatch(1);
     CountDownLatch continueStaleRefresh = new CountDownLatch(1);
@@ -344,24 +378,17 @@ class ProjectDocumentLifecycleIT {
   }
 
   @Test
-  void warningModeAllowsAdvanceAndAuditsTheIncompleteDocumentList() throws Exception {
+  void warningModeCannotBypassRequiredProjectDocuments() throws Exception {
     jdbc.update("update delivery_project set gate_mode='WARNING' where id=?", projectId);
 
     mvc.perform(post("/api/v1/projects/{id}/advance", projectId)
             .with(actor(manager, "project:write")).with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"targetStage\":\"REQUIREMENT\",\"mode\":\"BLOCK\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.currentStage").value("REQUIREMENT"));
-
-    Map<String, Object> activity = jdbc.queryForMap(
-        "select action,details_text from project_activity where project_id=? "
-            + "order by id desc limit 1",
-        projectId);
-    assertEquals("STAGE_ADVANCED_WITH_WARNING", activity.get("action"));
-    assertEquals(true, String.valueOf(activity.get("details_text")).contains("项目启动检查单"));
-    assertEquals(true, String.valueOf(activity.get("details_text")).contains("项目启动方案"));
-    assertEquals(false, String.valueOf(activity.get("details_text")).contains("参考资料"));
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message", Matchers.containsString("项目启动检查单")))
+        .andExpect(jsonPath("$.message", Matchers.containsString("项目启动方案")))
+        .andExpect(jsonPath("$.message", Matchers.not(Matchers.containsString("参考资料"))));
   }
 
   @Test

@@ -7,7 +7,7 @@ import {
   Alert, Button, Card, Col, Drawer, Empty, Row, Space, Spin, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../app/AuthProvider'
 import { DocumentWorkspace } from '../document/DocumentWorkspace'
 import { projectApi } from './projectApi'
@@ -25,6 +25,7 @@ const statusMeta: Record<ProjectDocument['status'], {
 }> = {
   PENDING: { label: '待初始化', color: 'default', icon: <ClockCircleOutlined /> },
   TODO: { label: '待填写', color: 'processing', icon: <FileTextOutlined /> },
+  IN_PROGRESS: { label: '填写中', color: 'blue', icon: <FileTextOutlined /> },
   PENDING_CONFIRMATION: { label: '待确认', color: 'warning', icon: <WarningOutlined /> },
   COMPLETED: { label: '已完成', color: 'success', icon: <CheckCircleOutlined /> },
   FAILED: { label: '同步失败', color: 'error', icon: <WarningOutlined /> },
@@ -33,7 +34,10 @@ const statusMeta: Record<ProjectDocument['status'], {
 export function ProjectDocuments({ project }: { project: Project }) {
   const { me } = useAuth()
   const client = useQueryClient()
-  const [stage, setStage] = useState(project.currentStage)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedStage = searchParams.get('stage')
+  const [stage, setStage] = useState(stageCodes.includes(requestedStage ?? '')
+    ? requestedStage! : project.currentStage)
   const [selected, setSelected] = useState<ProjectDocument>()
   const query = useQuery({
     queryKey: ['project-documents', project.id],
@@ -69,6 +73,18 @@ export function ProjectDocuments({ project }: { project: Project }) {
     },
   })
   const documents = query.data ?? []
+  useEffect(() => {
+    if (requestedStage && stageCodes.includes(requestedStage)) setStage(requestedStage)
+  }, [requestedStage])
+  useEffect(() => {
+    const requestedDocumentId = Number(searchParams.get('docId'))
+    if (!Number.isFinite(requestedDocumentId) || requestedDocumentId <= 0) return
+    const document = documents.find(item => item.id === requestedDocumentId)
+    if (document && !['PENDING', 'FAILED'].includes(document.status)) {
+      setStage(document.stageCode)
+      setSelected(document)
+    }
+  }, [documents, searchParams])
   useEffect(() => {
     if (!selected) return
     const refreshed = documents.find(item => item.id === selected.id)
@@ -157,7 +173,15 @@ export function ProjectDocuments({ project }: { project: Project }) {
             {visible.map(item => <Col xs={24} lg={12} xxl={8} key={item.id}>
               <DocumentCard
                 document={item}
-                onOpen={() => !['PENDING', 'FAILED'].includes(item.status) && setSelected(item)}
+                onOpen={() => {
+                  if (['PENDING', 'FAILED'].includes(item.status)) return
+                  setSelected(item)
+                  const next = new URLSearchParams(searchParams)
+                  next.set('tab', 'documents')
+                  next.set('stage', item.stageCode)
+                  next.set('docId', String(item.id))
+                  setSearchParams(next, { replace: true })
+                }}
               />
             </Col>)}
             {!visible.length && <Col span={24}><Card className="project-document-empty">
@@ -171,7 +195,12 @@ export function ProjectDocuments({ project }: { project: Project }) {
       width="min(1180px, 94vw)"
       open={Boolean(selected)}
       destroyOnHidden
-      onClose={() => setSelected(undefined)}
+      onClose={() => {
+        setSelected(undefined)
+        const next = new URLSearchParams(searchParams)
+        next.delete('docId')
+        setSearchParams(next, { replace: true })
+      }}
     >
       {selected && <>
         <div className="project-document-drawer-meta">

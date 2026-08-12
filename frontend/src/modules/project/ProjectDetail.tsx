@@ -1,6 +1,6 @@
 import {
   ArrowLeftOutlined, CheckCircleFilled, CheckSquareOutlined, ClockCircleOutlined, ExclamationCircleFilled,
-  FileTextOutlined, PlusOutlined, ProfileOutlined, RobotOutlined, SettingOutlined,
+  FileTextOutlined, PlusOutlined, ProfileOutlined, ReloadOutlined, RobotOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -18,10 +18,14 @@ import { ProjectDocuments } from './ProjectDocuments'
 import { ProjectDeliveryTracking } from './ProjectDeliveryTracking'
 import { ProjectTasks } from './ProjectTasks'
 import { projectApi } from './projectApi'
-import { stageNames, type Project } from './types'
+import { stageNames, stageStatusNames, type Project, type ProjectDocument, type Stage } from './types'
 
 type StageDeliverable = { title: string; type: '关键卡点' | '关键过程' | '仅归档'; note: string }
 type StageMatter = { matter: string; deliverables: StageDeliverable[] }
+
+const stageStatusColors: Record<Stage['status'], string> = {
+  PENDING: 'default', ACTIVE: 'processing', COMPLETED: 'success', BLOCKED: 'error',
+}
 
 const stageGuides: Record<string, StageMatter[]> = {
   START: [{ matter: '4. 项目立项', deliverables: [
@@ -82,6 +86,14 @@ const stageGuides: Record<string, StageMatter[]> = {
 }
 
 const nodeColors = { 关键卡点: 'red', 关键过程: 'blue', 仅归档: 'green' } as const
+const documentStatusMeta: Record<ProjectDocument['status'], { label: string; color: string }> = {
+  PENDING: { label: '正在创建', color: 'default' },
+  TODO: { label: '待填写', color: 'processing' },
+  IN_PROGRESS: { label: '填写中', color: 'blue' },
+  PENDING_CONFIRMATION: { label: '待负责人确认', color: 'warning' },
+  COMPLETED: { label: '已完成', color: 'success' },
+  FAILED: { label: '同步失败', color: 'error' },
+}
 
 export function ProjectDetail() {
   const id = Number(useParams().id)
@@ -123,10 +135,9 @@ function ProjectDetailContent({ project }: { project: Project }) {
       { key: 'tasks', label: <span><CheckSquareOutlined /> 项目任务</span>, children: <ProjectTasks project={project} selectedTaskId={selectedTaskId} /> },
       { key: 'tracking', label: <span><ProfileOutlined /> 交付执行跟踪</span>, children: <ProjectDeliveryTracking project={project} /> },
       { key: 'documents', label: <span><FileTextOutlined /> 项目文档</span>, children: <ProjectDocuments project={project} /> },
-      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
-      { key: 'templates', label: '模板中心', children: <Templates /> },
       { key: 'risks', label: `风险登记册 (${project.risks.length})`, children: <Risks project={project} /> },
       { key: 'milestones', label: '里程碑与时间线', children: <Milestones project={project} /> },
+      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
       { key: 'settings', label: <span><SettingOutlined /> 项目信息与设置</span>, children: <Settings project={project} /> },
     ]} />
   </div>
@@ -141,8 +152,24 @@ function Lifecycle({ project }: { project: Project }) {
   const documents = useQuery({
     queryKey: ['project-documents', project.id],
     queryFn: () => projectApi.documents(project.id),
-    enabled: project.gateMode === 'WARNING',
   })
+  const syncDocuments = useMutation({
+    mutationFn: () => projectApi.syncDocuments(project.id),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['project', project.id] }),
+        client.invalidateQueries({ queryKey: ['project-documents', project.id] }),
+      ])
+      message.success('已同步知识库中的最新文档模版')
+    },
+    onError: (error: Error) => message.error(error.message),
+  })
+  const currentDocuments = (Array.isArray(documents.data) ? documents.data : [])
+    .filter(item => item.stageCode === project.currentStage)
+  const requiredDocuments = currentDocuments.filter(item =>
+    item.gateRequired ?? item.requirement === 'REQUIRED')
+  const incompleteDocuments = requiredDocuments.filter(item => item.status !== 'COMPLETED')
+  const completedCount = requiredDocuments.length - incompleteDocuments.length
   const advance = useMutation({ mutationFn: () => projectApi.advance(project.id, next.code),
     onSuccess: async () => { await client.invalidateQueries({ queryKey: ['project', project.id] }); message.success('阶段推进成功') },
     onError: (error) => {
@@ -179,21 +206,14 @@ function Lifecycle({ project }: { project: Project }) {
     },
   })
   const requestAdvance = () => {
+    if (incompleteDocuments.length) return
     if (project.gateMode !== 'WARNING') {
       advance.mutate()
       return
     }
     const current = project.stages[currentIndex]
-    const warnings = [
-      ...(current?.gateStatus === 'BLOCKING'
-        ? [current.gateMessage || '阶段门禁未通过']
-        : []),
-      ...(documents.data ?? [])
-        .filter(item => item.stageCode === project.currentStage
-          && (item.gateRequired ?? item.requirement === 'REQUIRED')
-          && item.status !== 'COMPLETED')
-        .map(item => `未完成必需文档：${item.title}`),
-    ]
+    const warnings = current?.gateStatus === 'BLOCKING'
+      ? [current.gateMessage || '阶段门禁未通过'] : []
     if (!warnings.length) {
       advance.mutate()
       return
@@ -211,11 +231,12 @@ function Lifecycle({ project }: { project: Project }) {
     })
   }
   const requestClose = () => {
+    if (incompleteDocuments.length) return
     Modal.confirm({
       title: '确认关闭项目',
       content: project.gateMode === 'WARNING'
-        ? '系统将记录当前未完成项并完成项目关闭，请确认已接受相关风险。'
-        : '系统会检查过程跟进阶段的全部必需文档，通过后项目将不可再推进。',
+        ? '必需文档已全部完成。系统将记录尚未解除的手工提醒并关闭项目，请确认已接受相关风险。'
+        : '过程跟进阶段的全部必需文档已完成，关闭后项目将不可再推进。',
       okText: '确认关闭',
       cancelText: '继续完善',
       onOk: () => close.mutate(),
@@ -224,20 +245,29 @@ function Lifecycle({ project }: { project: Project }) {
   return <div>
     <Card className="lifecycle-card">
       <Steps current={currentIndex} items={project.stages.map(stage => ({
-        title: stage.name,
-        status: stage.status === 'COMPLETED' ? 'finish' : stage.status === 'ACTIVE' ? 'process' : 'wait',
-        description: stage.gateStatus === 'BLOCKING' ? <Tag color="red">门禁阻断</Tag> : undefined,
+        title: stageNames[stage.code] ?? stage.name,
+        status: stage.status === 'COMPLETED' ? 'finish'
+          : stage.status === 'ACTIVE' ? 'process'
+          : stage.status === 'BLOCKED' ? 'error' : 'wait',
+        description: <Space size={4} wrap>
+          <Tag color={stageStatusColors[stage.status]}>{stageStatusNames[stage.status]}</Tag>
+          {stage.gateStatus === 'BLOCKING' && <Tag color="red">门禁阻断</Tag>}
+        </Space>,
       }))} />
       <div className="stage-focus"><div><span>交付阶段 {currentIndex + 2} / {project.stages.length + 1}</span><h3>{stageNames[project.currentStage]}</h3>
         <p>{project.stages[currentIndex]?.gateMessage ?? '按交付检查清单完成本阶段任务和产出物。'}</p></div>
-        {next ? <Button
+        {documents.isLoading ? <Button type="primary" loading disabled>正在校验文档门禁</Button>
+          : project.status === 'CLOSED' ? <Tag color="green">项目已关闭</Tag>
+          : incompleteDocuments.length ? <Button type="primary" icon={<FileTextOutlined />}>
+          <Link to={projectDocumentUrl(project, incompleteDocuments[0])}>
+            去完善 {incompleteDocuments.length} 份门禁文档
+          </Link>
+        </Button> : next ? <Button
           aria-label={`推进至${nextName}`}
           type="primary"
           loading={advance.isPending || documents.isLoading}
           onClick={requestAdvance}
-        >推进至 {nextName}</Button> : project.status === 'CLOSED'
-          ? <Tag color="green">项目已关闭</Tag>
-          : <Button
+        >推进至 {nextName}</Button> : <Button
               aria-label="完成并关闭项目"
               type="primary"
               danger
@@ -245,15 +275,40 @@ function Lifecycle({ project }: { project: Project }) {
               onClick={requestClose}
             >完成并关闭项目</Button>}</div>
     </Card>
-    <Card className="stage-guide-card" title="本阶段事项与交付物" extra={<Space><Tag color="red">关键卡点</Tag><Tag color="blue">关键过程</Tag><Tag color="green">仅归档</Tag></Space>}>
-      <div className="stage-guide-head"><span>事项</span><span>交付物</span><span>节点类型</span><span>说明</span></div>
-      {guide.flatMap(group => group.deliverables.map((deliverable, index) =>
-        <div className="stage-guide-row" key={`${group.matter}-${deliverable.title}`}>
+    <Card className="stage-guide-card" title="本阶段文档门禁" extra={<Space><Tag color="red">关键卡点</Tag><Tag color="blue">关键过程</Tag><Tag color="green">仅归档</Tag></Space>}>
+      <div className="stage-gate-summary">
+        <div>
+          <strong>{requiredDocuments.length ? `${completedCount} / ${requiredDocuments.length}` : '等待同步'}</strong>
+          <span>必需文档已完成</span>
+        </div>
+        <Progress
+          percent={requiredDocuments.length ? Math.round(completedCount / requiredDocuments.length * 100) : 0}
+          showInfo={false}
+        />
+        <Typography.Text type="secondary">
+          文档从知识库模版生成项目副本。补全所有占位内容并由项目负责人确认后，才可推进阶段。
+        </Typography.Text>
+        <Button
+          icon={<ReloadOutlined />}
+          loading={syncDocuments.isPending}
+          onClick={() => syncDocuments.mutate()}
+        >同步文档模版</Button>
+      </div>
+      {documents.error && <Alert className="stage-gate-alert" type="error" showIcon
+        message="文档状态加载失败" description={(documents.error as Error).message} />}
+      <div className="stage-guide-head"><span>事项</span><span>交付物</span><span>完成状态</span><span>说明 / 操作</span></div>
+      {guide.flatMap(group => group.deliverables.map((deliverable, index) => {
+        const document = preferredDocument(currentDocuments, deliverable.title)
+        const status = document ? documentStatusMeta[document.status] : undefined
+        return <div className="stage-guide-row" key={`${group.matter}-${deliverable.title}`}>
           <strong>{index === 0 ? group.matter : ''}</strong>
-          <span>{deliverable.title}</span>
-          <span><Tag color={nodeColors[deliverable.type]}>{deliverable.type}</Tag></span>
-          <span>{deliverable.note}</span>
-        </div>))}
+          <span className="stage-guide-document"><span>{deliverable.title}</span><Tag color={nodeColors[deliverable.type]}>{deliverable.type}</Tag></span>
+          <span><Tag color={status?.color ?? 'default'}>{status?.label ?? '待从知识库同步'}</Tag></span>
+          <span className="stage-guide-action"><span>{deliverable.note}</span>{document
+            ? <Link to={projectDocumentUrl(project, document)}>{document.status === 'COMPLETED' ? '查看文档' : '去完善文档'}</Link>
+            : <Button type="link" loading={syncDocuments.isPending} onClick={() => syncDocuments.mutate()}>立即同步</Button>}</span>
+        </div>
+      }))}
     </Card>
     <Row gutter={16} className="detail-grid"><Col span={16}><Card title="最近活动">
       <Timeline items={project.activities.slice(0, 8).map(activity => ({ children: <div><strong>{String(activity.summary)}</strong><p>{String(activity.actorName ?? '系统')} · {String(activity.createdAt ?? '')}</p></div> }))} />
@@ -308,7 +363,8 @@ function Milestones({ project }: { project: Project }) {
     }))} /> : <Empty description="暂无里程碑" />}</Card></Col>
     <Col span={8}><Card title="阶段节奏"><List dataSource={project.stages} renderItem={stage => <List.Item>
       <List.Item.Meta avatar={stage.status === 'COMPLETED' ? <CheckCircleFilled className="success-icon" /> : <ClockCircleOutlined />}
-        title={stage.name} description={stage.status} /></List.Item>} /></Card></Col>
+        title={stageNames[stage.code] ?? stage.name}
+        description={<Tag color={stageStatusColors[stage.status]}>{stageStatusNames[stage.status]}</Tag>} /></List.Item>} /></Card></Col>
     <Modal title="新增里程碑" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} confirmLoading={add.isPending}>
       <Form form={form} layout="vertical" onFinish={values => add.mutate({ ...values, dueDate: values.dueDate.format('YYYY-MM-DD') })}>
         <Form.Item label="里程碑名称" name="name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -318,24 +374,27 @@ function Milestones({ project }: { project: Project }) {
   </Row>
 }
 
-function Templates() {
-  return <Card className="project-template-migration">
-    <FileTextOutlined />
-    <Typography.Title level={3}>项目文档模版已统一迁移到知识库</Typography.Title>
-    <Typography.Paragraph>
-      请在“知识库 → 文档模版”维护适用阶段、必需性和 Outline 正文。
-      新建项目会自动复制当前已发布模版，既有项目副本不会被后续模版修改覆盖。
-    </Typography.Paragraph>
-    <Button type="primary"><Link to="/knowledge">前往文档模版</Link></Button>
-  </Card>
-}
-
 function gateMessages(messageText: string) {
   return messageText.split('；').flatMap(part => {
     const trimmed = part.trim()
     if (!trimmed.startsWith('未完成必需文档')) return trimmed ? [trimmed] : []
     return trimmed.replace(/^未完成必需文档[：:]/, '').split('、').filter(Boolean)
   })
+}
+
+function sameDocumentTitle(actual: string, expected: string) {
+  return actual.replace(/\s+/g, '') === expected.replace(/\s+/g, '')
+}
+
+function preferredDocument(documents: ProjectDocument[], title: string) {
+  return documents
+    .filter(item => sameDocumentTitle(item.title, title))
+    .sort((left, right) => Number(right.gateRequired) - Number(left.gateRequired)
+      || right.sourceTemplateId - left.sourceTemplateId)[0]
+}
+
+function projectDocumentUrl(project: Project, document: ProjectDocument) {
+  return `/projects/${project.id}?tab=documents&stage=${document.stageCode}&docId=${document.id}`
 }
 
 function Settings({ project }: { project: Project }) {
@@ -357,7 +416,11 @@ function Settings({ project }: { project: Project }) {
       /></Form.Item></Col>
         <Col span={8}><Form.Item label="健康度" name="riskLevel"><Select options={['GREEN', 'YELLOW', 'RED'].map(value => ({ value, label: value }))} /></Form.Item></Col>
         <Col span={8}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
-      <Form.Item label="阶段门禁模式" name="gateMode"><Radio.Group options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '仅警告' }]} /></Form.Item>
+      <Form.Item
+        label="阶段门禁模式"
+        name="gateMode"
+        extra="该设置仅影响手工阶段提醒；知识库必需文档未完成时始终阻断推进。"
+      ><Radio.Group options={[{ value: 'BLOCK', label: '阻断' }, { value: 'WARNING', label: '仅警告' }]} /></Form.Item>
       <Button
         type="primary"
         htmlType="submit"

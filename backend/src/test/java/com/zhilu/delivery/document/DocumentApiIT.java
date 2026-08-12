@@ -151,6 +151,30 @@ class DocumentApiIT {
   }
 
   @Test
+  void projectSaveRefreshesItsWorkflowStatusImmediately() throws Exception {
+    OutlineDocument original = document("知识正文", "# 项目文档\n\n请填写", 2);
+    OutlineDocument completed = document("项目文档", "# 项目文档\n\n项目目标已明确。", 3);
+    when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
+        .thenReturn(original, completed);
+    when(outline.update(any(OutlineConnection.class), eq(DOCUMENT_ID),
+        eq("项目文档"), eq("# 项目文档\n\n项目目标已明确。")))
+        .thenReturn(completed);
+
+    mvc.perform(put("/api/v1/projects/{projectId}/documents/{documentId}",
+            projectId, projectDocumentId)
+            .with(actor(4101, 4100, "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"title\":\"项目文档\",\"markdown\":"
+                + "\"# 项目文档\\n\\n项目目标已明确。\",\"revision\":2}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.revision").value(3));
+
+    assertEquals("PENDING_CONFIRMATION", jdbc.queryForObject(
+        "select status from project_document where id=?",
+        String.class, projectDocumentId));
+  }
+
+  @Test
   void editingPublishedKnowledgeDocumentReturnsItToDraft() throws Exception {
     when(outline.info(any(OutlineConnection.class), eq(DOCUMENT_ID)))
         .thenReturn(document("知识正文", "# 已发布正文", 2));

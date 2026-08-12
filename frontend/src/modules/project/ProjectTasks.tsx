@@ -331,7 +331,7 @@ export function ProjectTasks({
                 <SearchSelect
                   allowClear
                   disabled={!detail.data.canEdit}
-                  options={project.stages.map(stage => ({ value: stage.code, label: stage.name }))}
+                  options={project.stages.map(stage => ({ value: stage.code, label: stageNames[stage.code] ?? stage.name }))}
                 />
               </Form.Item>
               <Form.Item name="milestoneId" label="关联里程碑">

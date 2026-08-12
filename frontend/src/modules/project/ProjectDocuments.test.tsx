@@ -154,11 +154,11 @@ it('保存正文后同步刷新当前抽屉中的项目文档状态', async () =
     })
     if (path === '/api/v1/projects/9/documents/10' && init?.method === 'PUT') {
       currentDocuments = documents.map(item => item.id === 10
-        ? { ...item, status: 'PENDING_CONFIRMATION' as const, revision: 2 }
+        ? { ...item, status: 'IN_PROGRESS' as const, revision: 2 }
         : item)
       return json({
-        linkId: 81, title: '启动检查单', markdown: '# 启动检查单\n\n目标已明确',
-        renderedHtml: '<h1>启动检查单</h1><p>目标已明确</p>', revision: 2,
+        linkId: 81, title: '启动检查单', markdown: '# 启动检查单\n\n目标已明确\n\n请填写风险',
+        renderedHtml: '<h1>启动检查单</h1><p>目标已明确</p><p>请填写风险</p>', revision: 2,
         syncStatus: 'READY',
       })
     }
@@ -172,10 +172,10 @@ it('保存正文后同步刷新当前抽屉中的项目文档状态', async () =
   await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
   const editor = screen.getByRole('textbox', { name: 'Markdown 正文' })
   await userEvent.clear(editor)
-  await userEvent.type(editor, '# 启动检查单\n\n目标已明确')
+  await userEvent.type(editor, '# 启动检查单\n\n目标已明确\n\n请填写风险')
   await userEvent.click(screen.getByRole('button', { name: '保存' }))
 
-  await waitFor(() => expect(screen.getAllByText('待确认').length).toBeGreaterThan(0))
+  await waitFor(() => expect(screen.getAllByText('填写中').length).toBeGreaterThan(0))
   expect(screen.queryByText('待填写')).not.toBeInTheDocument()
 })
 
@@ -235,6 +235,7 @@ it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', a
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path === '/api/v1/projects/9') return json(blockingProject)
+    if (path === '/api/v1/projects/9/documents') return json([])
     if (path === '/api/v1/projects/9/advance' && init?.method === 'POST') {
       advanceBody = JSON.parse(String(init.body))
       return json({
@@ -260,9 +261,41 @@ it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', a
   expect(advanceBody).toEqual({ targetStage: 'REQUIREMENT' })
 })
 
+it('七阶段看板统一展示新版阶段名称和中文状态', async () => {
+  const lifecycleProject: Project = {
+    ...project,
+    stages: stages.map((stage, index) => ({
+      ...stage,
+      status: index === 0 ? 'COMPLETED' : index === 1 ? 'ACTIVE' : index === 2 ? 'BLOCKED' : 'PENDING',
+    })),
+  }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/v1/projects/9') return json(lifecycleProject)
+    if (String(input) === '/api/v1/projects/9/documents') return json([])
+    throw new Error(`unexpected request: ${String(input)}`)
+  }))
+  show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
+    managerAuth, '/projects/9')
+
+  expect(await screen.findByText('项目立项')).toBeVisible()
+  expect(screen.getAllByText('调研与启动').length).toBeGreaterThan(0)
+  expect(screen.getByText('方案与计划')).toBeVisible()
+  expect(screen.getByText('开发与测试')).toBeVisible()
+  expect(screen.getByText('验证与发布')).toBeVisible()
+  expect(screen.getByText('验收与结项')).toBeVisible()
+  expect(screen.getByText('过程跟进')).toBeVisible()
+  expect(screen.queryByText('需求采集')).not.toBeInTheDocument()
+  expect(screen.queryByText('二开实施')).not.toBeInTheDocument()
+  expect(screen.getByText('已完成')).toBeVisible()
+  expect(screen.getByText('进行中')).toBeVisible()
+  expect(screen.getByText('已阻塞')).toBeVisible()
+  expect(screen.getAllByText('待开始').length).toBe(4)
+})
+
 it('项目阶段推进按钮使用可见的白色文字', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     if (String(input) === '/api/v1/projects/9') return json({ ...project, currentStage: 'START' })
+    if (String(input) === '/api/v1/projects/9/documents') return json([])
     throw new Error(`unexpected request: ${String(input)}`)
   }))
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
@@ -285,6 +318,7 @@ it('过程跟进阶段通过专用动作完成最终关闭门禁', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path === '/api/v1/projects/9') return json(closingProject)
+    if (path === '/api/v1/projects/9/documents') return json([])
     if (path === '/api/v1/projects/9/close' && init?.method === 'POST') {
       return json({ ...closingProject, status: 'CLOSED' })
     }
@@ -303,17 +337,15 @@ it('过程跟进阶段通过专用动作完成最终关闭门禁', async () => {
   ))
 })
 
-it('WARNING 项目先确认已知缺失项再由后端记录警告推进', async () => {
+it('WARNING 项目也必须先完成知识库必需文档', async () => {
   const warningProject = {
     ...project, currentStage: 'START', gateMode: 'WARNING' as const,
   }
-  let advanceBody: Record<string, unknown> | undefined
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path === '/api/v1/projects/9') return json(warningProject)
     if (path === '/api/v1/projects/9/documents') return json(documents)
     if (path === '/api/v1/projects/9/advance' && init?.method === 'POST') {
-      advanceBody = JSON.parse(String(init.body))
       return json({ ...warningProject, currentStage: 'REQUIREMENT' })
     }
     throw new Error(`unexpected request: ${path}`)
@@ -322,12 +354,8 @@ it('WARNING 项目先确认已知缺失项再由后端记录警告推进', async
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
     managerAuth, '/projects/9')
 
-  const advance = await screen.findByRole('button', { name: /推进至调研与启动/ })
-  await waitFor(() => expect(advance).toBeEnabled())
-  await userEvent.click(advance)
-  const dialog = await screen.findByRole('dialog', { name: '阶段存在未完成项' })
-  expect(within(dialog).getByText('未完成必需文档：启动检查单')).toBeInTheDocument()
-  expect(advanceBody).toBeUndefined()
-  await userEvent.click(within(dialog).getByText('记录警告并推进'))
-  await waitFor(() => expect(advanceBody).toEqual({ targetStage: 'REQUIREMENT' }))
+  const complete = await screen.findByRole('link', { name: /去完善 1 份门禁文档/ })
+  expect(complete).toHaveAttribute('href', '/projects/9?tab=documents&stage=START&docId=10')
+  expect(screen.queryByRole('button', { name: /推进至调研与启动/ })).not.toBeInTheDocument()
+  expect(fetch).not.toHaveBeenCalledWith('/api/v1/projects/9/advance', expect.anything())
 })

@@ -22,14 +22,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class DocumentController {
   private final DocumentCenterService documents;
+  private final ProjectDocumentService projectDocuments;
   private final DocumentExportService exports;
   private final KnowledgeService knowledge;
   private final AuditService audit;
 
   public DocumentController(
-      DocumentCenterService documents, DocumentExportService exports,
+      DocumentCenterService documents, ProjectDocumentService projectDocuments,
+      DocumentExportService exports,
       KnowledgeService knowledge, AuditService audit) {
     this.documents = documents;
+    this.projectDocuments = projectDocuments;
     this.exports = exports;
     this.knowledge = knowledge;
     this.audit = audit;
@@ -75,6 +78,7 @@ public class DocumentController {
       @Valid @RequestBody SaveRequest request, @AuthenticationPrincipal CurrentUser user) {
     DocumentView value = documents.updateProjectDocument(
         projectId, documentId, request.title, request.markdown, request.revision, user);
+    projectDocuments.refreshAfterSave(projectId, documentId, user);
     audit.record(user.getOrganizationId(), user.getId(), "EDIT", "PROJECT_DOCUMENT",
         String.valueOf(documentId), "project " + projectId + " · revision " + value.getRevision());
     return value;
