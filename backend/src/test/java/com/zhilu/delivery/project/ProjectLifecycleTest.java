@@ -64,7 +64,7 @@ class ProjectLifecycleTest {
     ProjectView project = projects.create(command());
 
     assertEquals(String.valueOf(project.getId()), project.getCode());
-    assertEquals(Arrays.asList("启动", "需求采集", "二开实施", "上线切换", "试运行与移交", "标准化评估", "项目收尾"),
+    assertEquals(Arrays.asList("项目立项", "调研与启动", "方案与计划", "开发与测试", "验证与发布", "验收与结项", "过程跟进"),
         project.getStages().stream().map(StageView::getName).collect(Collectors.toList()));
     assertEquals("START", project.getCurrentStage());
     assertEquals("ACTIVE", project.getStatus());

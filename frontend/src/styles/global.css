@@ -389,6 +389,17 @@ button, input { font: inherit; }
 .stage-focus > div > span { color: #3370ff; font-size: 11px; font-weight: 600; }
 .stage-focus h3 { margin: 5px 0; }
 .stage-focus p { margin: 0; color: #646a73; }
+.stage-guide-card { margin-top: 16px; border-color: #d8e4f5; }
+.stage-guide-card .ant-card-body { padding: 0; }
+.stage-guide-head, .stage-guide-row { display: grid; grid-template-columns: minmax(150px,.8fr) minmax(180px,1fr) 105px minmax(280px,2fr); align-items: stretch; }
+.stage-guide-head { color: #fff; background: #315b97; font-weight: 600; }
+.stage-guide-head span, .stage-guide-row > * { padding: 10px 14px; border-right: 1px solid #d8e4f5; }
+.stage-guide-head span:last-child, .stage-guide-row > *:last-child { border-right: 0; }
+.stage-guide-row { border-bottom: 1px solid #d8e4f5; color: #4e5969; }
+.stage-guide-row:last-child { border-bottom: 0; }
+.stage-guide-row > strong { background: #edf3fb; color: #1f2329; }
+.stage-guide-row > span:nth-child(2) { color: #1f2329; font-weight: 600; }
+.stage-guide-row .ant-tag { margin: 0; }
 .detail-grid { margin-top: 16px; }
 .detail-grid .ant-card { min-height: 260px; }
 .detail-grid .ant-timeline p { margin: 2px 0 0; color: #8f959e; font-size: 12px; }
@@ -452,6 +463,11 @@ button, input { font: inherit; }
   .project-document-stages > button { flex: 0 0 130px; margin: 0 4px 0 0; }
   .project-document-main { padding: 16px; }
   .project-document-main > header,.project-document-drawer-meta { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 760px) {
+  .stage-guide-card .ant-card-body { overflow-x: auto; }
+  .stage-guide-head, .stage-guide-row { min-width: 760px; }
 }
 
 .admin-page { max-width: 1500px; margin: 0 auto; }

@@ -634,7 +634,7 @@ class SchemaBaselineTest {
 
     Flyway.configure().dataSource(dataSource).load().migrate();
 
-    assertEquals("25", legacy.queryForObject(
+    assertEquals("26", legacy.queryForObject(
         "select version from flyway_schema_history where success=true "
             + "order by installed_rank desc limit 1",
         String.class));

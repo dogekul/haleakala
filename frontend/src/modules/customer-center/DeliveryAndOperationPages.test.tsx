@@ -44,7 +44,7 @@ it('实施协同只读呈现项目真实七阶段、风险和里程碑', async (
   expect(await screen.findByText('华东银行')).toBeVisible()
   expect(screen.getByText('财务中台升级')).toBeVisible()
   expect(screen.getByText('财务中台项目')).toBeVisible()
-  expect(screen.getByText('需求采集')).toBeVisible()
+  expect(screen.getByText('调研与启动')).toBeVisible()
   expect(screen.getByText('周项目')).toBeVisible()
   expect(screen.getByText('1 个红色风险')).toBeVisible()
   expect(screen.getByText(/需求基线确认/)).toBeVisible()

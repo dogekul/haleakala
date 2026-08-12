@@ -222,7 +222,7 @@ public class ProjectService {
     ProjectView project = get(projectId, user);
     if (!DeliveryStage.CLOSE.name().equals(project.getCurrentStage())
         || !("CLOSING".equals(project.getStatus()) || "ACTIVE".equals(project.getStatus()))) {
-      throw new ConflictException("只有已进入项目收尾阶段的项目可以关闭");
+      throw new ConflictException("只有已进入过程跟进阶段的项目可以关闭");
     }
     List<String> warnings = stageWarnings(projectId, DeliveryStage.CLOSE);
     if (!warnings.isEmpty() && GateMode.BLOCK.name().equals(project.getGateMode())) {
@@ -238,7 +238,7 @@ public class ProjectService {
     boolean warned = !warnings.isEmpty();
     activity(projectId, user.getId(),
         warned ? "PROJECT_CLOSED_WITH_WARNING" : "PROJECT_CLOSED",
-        "完成项目收尾并关闭项目", warned ? String.join("；", warnings) : null);
+        "完成全过程跟进并关闭项目", warned ? String.join("；", warnings) : null);
     return get(projectId);
   }
 
@@ -471,7 +471,7 @@ public class ProjectService {
       throw new IllegalArgumentException("项目状态不受支持");
     }
     if ("CLOSING".equals(target) || "CLOSED".equals(target)) {
-      throw new ConflictException("请通过项目收尾流程关闭项目");
+      throw new ConflictException("请通过过程跟进阶段关闭项目");
     }
     if (current.equals(target)) return;
     boolean legal = "ACTIVE".equals(current) && "SUSPENDED".equals(target);

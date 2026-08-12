@@ -12,9 +12,9 @@ it('展示六个交付 Skill 并提交任务', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><AgentExecutionPanel projectId={1} /></QueryClientProvider>)
 
-  await waitFor(() => expect(screen.getByText('项目初始化')).toBeVisible())
+  await waitFor(() => expect(screen.getByText('项目立项')).toBeVisible())
   expect(screen.getAllByText(/deliver-/)).toHaveLength(6)
-  await userEvent.click(screen.getByRole('button', { name: '执行项目初始化' }))
+  await userEvent.click(screen.getByRole('button', { name: '执行项目立项' }))
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/projects/1/agent-jobs', expect.objectContaining({ method: 'POST' })))
   vi.unstubAllGlobals()
 })

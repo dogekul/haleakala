@@ -157,8 +157,8 @@ class ProjectDocumentInitializationTest {
             + "and business_key like ?",
         Integer.class, "PROJECT:" + project.getId() + ":STAGE:%"));
     assertEquals(Arrays.asList(
-        "01 项目启动", "02 需求采集", "03 二开实施", "04 上线切换",
-        "05 试运行与移交", "06 标准化评估", "07 项目收尾"),
+        "02 项目立项", "03 调研与启动", "04 方案与计划", "05 开发与测试",
+        "06 验证与发布", "07 验收与结项", "08 过程跟进"),
         stageTitles(project.getId()));
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from project_document where project_id=?",

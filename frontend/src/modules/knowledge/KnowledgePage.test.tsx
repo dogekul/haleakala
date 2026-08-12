@@ -132,7 +132,7 @@ it('展示文档模版并从卡片进入 Outline 文档工作区', async () => {
 
   expect(await screen.findByText('项目启动检查单')).toBeVisible()
   expect(screen.getByText('文档模版')).toBeVisible()
-  expect(screen.getByText('启动 · 必需')).toBeVisible()
+  expect(screen.getByText('项目立项 · 必需')).toBeVisible()
   expect(screen.getByText('修订 5')).toBeVisible()
   expect(screen.getByText('待初始化')).toBeVisible()
   expect(screen.getByText('同步失败')).toBeVisible()

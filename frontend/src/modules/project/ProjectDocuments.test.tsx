@@ -96,9 +96,9 @@ it('按七阶段展示项目文档卡片并默认定位当前阶段', async () =
   expect(await screen.findByText('需求规格说明书')).toBeVisible()
   expect(screen.getByText('待确认')).toBeVisible()
   expect(screen.getByText('已完成')).toBeVisible()
-  expect(screen.getByRole('button', { name: /需求采集/ })).toHaveClass('is-active')
+  expect(screen.getByRole('button', { name: /调研与启动/ })).toHaveClass('is-active')
 
-  await userEvent.click(screen.getByRole('button', { name: /启动/ }))
+  await userEvent.click(screen.getByRole('button', { name: /项目立项/ }))
   expect(screen.getByText('启动检查单')).toBeVisible()
   expect(screen.getByText('待填写')).toBeVisible()
   expect(screen.getByText('同步失败')).toBeVisible()
@@ -167,7 +167,7 @@ it('保存正文后同步刷新当前抽屉中的项目文档状态', async () =
   vi.stubGlobal('fetch', fetch)
   show(<ProjectDocuments project={project} />)
 
-  await userEvent.click(await screen.findByRole('button', { name: /启动/ }))
+  await userEvent.click(await screen.findByRole('button', { name: /项目立项/ }))
   await userEvent.click(await screen.findByText('启动检查单'))
   await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
   const editor = screen.getByRole('textbox', { name: 'Markdown 正文' })
@@ -220,7 +220,7 @@ it('标识未触发的条件门禁并支持同步最新门禁模版', async () =
   vi.stubGlobal('fetch', fetch)
   show(<ProjectDocuments project={project} />)
 
-  await userEvent.click(await screen.findByRole('button', { name: /二开实施/ }))
+  await userEvent.click(await screen.findByRole('button', { name: /方案与计划/ }))
   expect(screen.getByText('条件文档（未触发）')).toBeVisible()
   await userEvent.click(screen.getByRole('button', { name: /同步门禁模版/ }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith(
@@ -250,7 +250,7 @@ it('阶段推进遵循持久化门禁模式且不会发送临时覆盖参数', a
     managerAuth, '/projects/9')
 
   expect(await screen.findByRole('link', { name: /返回项目列表/ })).toHaveClass('detail-back-link')
-  const advance = await screen.findByRole('button', { name: /推进至需求采集/ })
+  const advance = await screen.findByRole('button', { name: /推进至调研与启动/ })
   await waitFor(() => expect(advance).toBeEnabled())
   await userEvent.click(advance)
   const dialog = await screen.findByRole('dialog', { name: '阶段门禁未通过' })
@@ -268,11 +268,11 @@ it('项目阶段推进按钮使用可见的白色文字', async () => {
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
     managerAuth, '/projects/9')
 
-  const advance = await screen.findByRole('button', { name: /推进至需求采集/ })
+  const advance = await screen.findByRole('button', { name: /推进至调研与启动/ })
   expect(getComputedStyle(advance.querySelector('span')!).color).toBe('rgb(255, 255, 255)')
 })
 
-it('项目收尾阶段通过专用动作完成最终关闭门禁', async () => {
+it('过程跟进阶段通过专用动作完成最终关闭门禁', async () => {
   const closingProject: Project = {
     ...project,
     status: 'CLOSING',
@@ -322,7 +322,7 @@ it('WARNING 项目先确认已知缺失项再由后端记录警告推进', async
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
     managerAuth, '/projects/9')
 
-  const advance = await screen.findByRole('button', { name: /推进至需求采集/ })
+  const advance = await screen.findByRole('button', { name: /推进至调研与启动/ })
   await waitFor(() => expect(advance).toBeEnabled())
   await userEvent.click(advance)
   const dialog = await screen.findByRole('dialog', { name: '阶段存在未完成项' })

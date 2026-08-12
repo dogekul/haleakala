@@ -253,6 +253,7 @@ it('同一项目内点击提醒链接时会切换到任务标签', async () => {
   )
 
   expect(await screen.findByRole('tab', { name: '七阶段看板' })).toHaveAttribute('aria-selected', 'true')
+  expect(await screen.findByText('功能性测试报告')).toBeVisible()
   await user.click(screen.getByRole('link', { name: '打开任务提醒' }))
   expect(await screen.findByRole('tab', { name: /项目任务/ })).toHaveAttribute('aria-selected', 'true')
   expect(await screen.findByDisplayValue('确认上线窗口')).toBeVisible()

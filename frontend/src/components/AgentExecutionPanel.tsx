@@ -21,12 +21,12 @@ export interface AgentJob {
 }
 
 const skills = [
-  { code: 'deliver-init', name: '项目初始化', description: '生成启动检查清单与项目基础文档', icon: <RocketOutlined /> },
-  { code: 'deliver-require', name: '需求梳理', description: '归整需求、能力对标与分类输入', icon: <FileSearchOutlined /> },
-  { code: 'deliver-dev', name: '二开实施', description: '生成开发实施计划与技术检查项', icon: <CodeOutlined /> },
-  { code: 'deliver-transition', name: '上线移交', description: '准备切换、试运行和移交清单', icon: <SwapOutlined /> },
-  { code: 'deliver-standardize', name: '标准化评估', description: '识别复用机会与产品化候选', icon: <RobotOutlined /> },
-  { code: 'deliver-close', name: '项目收尾', description: '汇总验收材料、复盘与归档', icon: <FlagOutlined /> },
+  { code: 'deliver-init', name: '项目立项', description: '生成立项登记、评审纪要与项目基础文档', icon: <RocketOutlined /> },
+  { code: 'deliver-require', name: '调研与启动', description: '归整业务、技术调研和启动计划', icon: <FileSearchOutlined /> },
+  { code: 'deliver-dev', name: '方案与计划', description: '生成产品方案、系统实施方案与项目 WBS', icon: <CodeOutlined /> },
+  { code: 'deliver-transition', name: '验证与发布', description: '准备版本验收、发布和试运行清单', icon: <SwapOutlined /> },
+  { code: 'deliver-standardize', name: '验收与结项', description: '汇总验收材料、问题闭环与项目总结', icon: <RobotOutlined /> },
+  { code: 'deliver-close', name: '过程跟进', description: '汇总风险、变更、周报与阶段复盘', icon: <FlagOutlined /> },
 ] as const
 
 const terminal = new Set(['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELLED'])

@@ -1,13 +1,13 @@
 package com.zhilu.delivery.project;
 
 public enum DeliveryStage {
-  START("启动"),
-  REQUIREMENT("需求采集"),
-  CUSTOM_DEV("二开实施"),
-  GO_LIVE("上线切换"),
-  TRIAL_HANDOVER("试运行与移交"),
-  STANDARDIZATION("标准化评估"),
-  CLOSE("项目收尾");
+  START("项目立项"),
+  REQUIREMENT("调研与启动"),
+  CUSTOM_DEV("方案与计划"),
+  GO_LIVE("开发与测试"),
+  TRIAL_HANDOVER("验证与发布"),
+  STANDARDIZATION("验收与结项"),
+  CLOSE("过程跟进");
 
   private final String displayName;
 

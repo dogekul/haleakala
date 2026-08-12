@@ -20,6 +20,69 @@ import { ProjectTasks } from './ProjectTasks'
 import { projectApi } from './projectApi'
 import { stageNames, type Project } from './types'
 
+type StageDeliverable = { title: string; type: '关键卡点' | '关键过程' | '仅归档'; note: string }
+type StageMatter = { matter: string; deliverables: StageDeliverable[] }
+
+const stageGuides: Record<string, StageMatter[]> = {
+  START: [{ matter: '4. 项目立项', deliverables: [
+    { title: '项目立项登记表', type: '关键卡点', note: '前置立项：战略客户、高意向客户、POC 本地化等' },
+    { title: '项目立项评审纪要', type: '关键卡点', note: '部门立项评审结论及领导要求' },
+  ] }],
+  REQUIREMENT: [
+    { matter: '5. 需求及技术调研', deliverables: [
+      { title: '项目调研计划', type: '关键过程', note: '提前与客户沟通约定的调研实施计划' },
+      { title: '业务基础调研表', type: '关键过程', note: '业务基础调研信息' },
+      { title: '技术调研表', type: '关键过程', note: '技术环境及对接调研信息' },
+      { title: '功能执行跟踪表', type: '关键过程', note: '产品执行跟踪；在“交付执行跟踪”页维护' },
+      { title: '运营执行跟踪表', type: '关键过程', note: '运营方案及执行跟踪' },
+    ] },
+    { matter: '6. 项目启动会', deliverables: [
+      { title: '项目实施计划', type: '关键卡点', note: '里程碑及交付版本规划' },
+      { title: '项目管理计划', type: '关键卡点', note: '实施计划、管理过程及各项机制' },
+    ] },
+  ],
+  CUSTOM_DEV: [
+    { matter: '7. 需求澄清及技术方案评审', deliverables: [
+      { title: '产品设计方案', type: '关键过程', note: '归类标准化功能、定制化功能并输出产品设计' },
+      { title: '系统实施方案', type: '关键过程', note: '系统现场部署实施及对接方案' },
+    ] },
+    { matter: '8. 任务拆解及项目计划制定', deliverables: [
+      { title: '项目实施 WBS', type: '关键过程', note: '任务到人、时间到天' },
+    ] },
+  ],
+  GO_LIVE: [{ matter: '9. 编码与测试跟进', deliverables: [
+    { title: '功能性测试报告', type: '仅归档', note: '归档功能测试范围、结果和遗留问题' },
+    { title: '性能测试报告', type: '仅归档', note: '归档性能指标、场景和测试结论' },
+  ] }],
+  TRIAL_HANDOVER: [
+    { matter: '10. 组织客户验证版本', deliverables: [
+      { title: '版本验收报告', type: '关键卡点', note: '记录迭代版本验收通过情况并闭环确认' },
+      { title: '客户验收确认邮件', type: '关键卡点', note: '保留客户邮件回复或等效确认依据' },
+    ] },
+    { matter: '11. 发布组织与试运行跟进', deliverables: [
+      { title: '上线发布公告', type: '关键卡点', note: '明确交付内容、业务价值及后续验收依据' },
+    ] },
+  ],
+  STANDARDIZATION: [
+    { matter: '12. 项目验收组织及交接', deliverables: [
+      { title: '项目验收问题跟进表', type: '关键过程', note: '登记验收问题及客户诉求并闭环跟进' },
+      { title: '项目验收报告', type: '关键卡点', note: '明确完成交付及客户验收结论，作为回款和正式结束依据' },
+    ] },
+    { matter: '13. 项目复盘及总结', deliverables: [
+      { title: '项目总结报告', type: '仅归档', note: '按时保质完成结论及经验总结' },
+    ] },
+  ],
+  CLOSE: [{ matter: '项目经理每周跟进', deliverables: [
+    { title: '项目风险及问题登记表', type: '关键过程', note: '全程相关问题记录' },
+    { title: '项目变更记录表', type: '关键过程', note: '范围、方案、计划、资源变更记录' },
+    { title: '项目周例会会议纪要', type: '关键过程', note: '每周进度、协作对齐' },
+    { title: '项目周报', type: '关键过程', note: '每周同步客户' },
+    { title: '项目阶段复盘报告', type: '关键过程', note: '阶段性问题及后续措施建议' },
+  ] }],
+}
+
+const nodeColors = { 关键卡点: 'red', 关键过程: 'blue', 仅归档: 'green' } as const
+
 export function ProjectDetail() {
   const id = Number(useParams().id)
   const query = useQuery({ queryKey: ['project', id], queryFn: () => projectApi.get(id), enabled: Number.isFinite(id) })
@@ -73,6 +136,8 @@ function Lifecycle({ project }: { project: Project }) {
   const client = useQueryClient()
   const currentIndex = project.stages.findIndex(item => item.code === project.currentStage)
   const next = project.stages[currentIndex + 1]
+  const nextName = next ? stageNames[next.code] ?? next.name : undefined
+  const guide = stageGuides[project.currentStage] ?? []
   const documents = useQuery({
     queryKey: ['project-documents', project.id],
     queryFn: () => projectApi.documents(project.id),
@@ -150,7 +215,7 @@ function Lifecycle({ project }: { project: Project }) {
       title: '确认关闭项目',
       content: project.gateMode === 'WARNING'
         ? '系统将记录当前未完成项并完成项目关闭，请确认已接受相关风险。'
-        : '系统会检查项目收尾阶段的全部必需文档，通过后项目将不可再推进。',
+        : '系统会检查过程跟进阶段的全部必需文档，通过后项目将不可再推进。',
       okText: '确认关闭',
       cancelText: '继续完善',
       onOk: () => close.mutate(),
@@ -163,14 +228,14 @@ function Lifecycle({ project }: { project: Project }) {
         status: stage.status === 'COMPLETED' ? 'finish' : stage.status === 'ACTIVE' ? 'process' : 'wait',
         description: stage.gateStatus === 'BLOCKING' ? <Tag color="red">门禁阻断</Tag> : undefined,
       }))} />
-      <div className="stage-focus"><div><span>阶段 {currentIndex + 1} / 7</span><h3>{stageNames[project.currentStage]}</h3>
+      <div className="stage-focus"><div><span>交付阶段 {currentIndex + 2} / {project.stages.length + 1}</span><h3>{stageNames[project.currentStage]}</h3>
         <p>{project.stages[currentIndex]?.gateMessage ?? '按交付检查清单完成本阶段任务和产出物。'}</p></div>
         {next ? <Button
-          aria-label={`推进至${next.name}`}
+          aria-label={`推进至${nextName}`}
           type="primary"
           loading={advance.isPending || documents.isLoading}
           onClick={requestAdvance}
-        >推进至 {next.name}</Button> : project.status === 'CLOSED'
+        >推进至 {nextName}</Button> : project.status === 'CLOSED'
           ? <Tag color="green">项目已关闭</Tag>
           : <Button
               aria-label="完成并关闭项目"
@@ -179,6 +244,16 @@ function Lifecycle({ project }: { project: Project }) {
               loading={close.isPending}
               onClick={requestClose}
             >完成并关闭项目</Button>}</div>
+    </Card>
+    <Card className="stage-guide-card" title="本阶段事项与交付物" extra={<Space><Tag color="red">关键卡点</Tag><Tag color="blue">关键过程</Tag><Tag color="green">仅归档</Tag></Space>}>
+      <div className="stage-guide-head"><span>事项</span><span>交付物</span><span>节点类型</span><span>说明</span></div>
+      {guide.flatMap(group => group.deliverables.map((deliverable, index) =>
+        <div className="stage-guide-row" key={`${group.matter}-${deliverable.title}`}>
+          <strong>{index === 0 ? group.matter : ''}</strong>
+          <span>{deliverable.title}</span>
+          <span><Tag color={nodeColors[deliverable.type]}>{deliverable.type}</Tag></span>
+          <span>{deliverable.note}</span>
+        </div>))}
     </Card>
     <Row gutter={16} className="detail-grid"><Col span={16}><Card title="最近活动">
       <Timeline items={project.activities.slice(0, 8).map(activity => ({ children: <div><strong>{String(activity.summary)}</strong><p>{String(activity.actorName ?? '系统')} · {String(activity.createdAt ?? '')}</p></div> }))} />

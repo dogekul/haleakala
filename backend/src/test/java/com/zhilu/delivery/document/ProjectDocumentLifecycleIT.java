@@ -101,7 +101,7 @@ class ProjectDocumentLifecycleIT {
     jdbc.update("insert into project_member(project_id,user_id,project_role,allocation_percent) "
         + "values (7300,7300,'DELIVERY_MANAGER',100),(7300,7301,'DELIVERY_ENGINEER',100)");
     String[] names = {
-        "启动", "需求采集", "二开实施", "上线切换", "试运行与移交", "标准化评估", "项目收尾"
+        "项目立项", "调研与启动", "方案与计划", "开发与测试", "验证与发布", "验收与结项", "过程跟进"
     };
     String[] codes = {
         "START", "REQUIREMENT", "CUSTOM_DEV", "GO_LIVE",

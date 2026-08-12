@@ -119,7 +119,7 @@ export function ProjectDocuments({ project }: { project: Project }) {
           onClick={() => setStage(code)}
           aria-label={`${stageNames[code]} ${counts[code] ?? 0} 份文档`}
         >
-          <b>{String(index + 1).padStart(2, '0')}</b>
+          <b>{String(index + 2).padStart(2, '0')}</b>
           <span>{stageNames[code]}</span>
           <em>{counts[code] ?? 0}</em>
         </button>)}
