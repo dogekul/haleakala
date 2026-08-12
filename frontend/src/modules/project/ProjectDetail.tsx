@@ -1,6 +1,6 @@
 import {
   ArrowLeftOutlined, CheckCircleFilled, CheckSquareOutlined, ClockCircleOutlined, ExclamationCircleFilled,
-  FileTextOutlined, PlusOutlined, RobotOutlined, SettingOutlined,
+  FileTextOutlined, PlusOutlined, ProfileOutlined, RobotOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -15,6 +15,7 @@ import { PageState } from '../../components/PageState'
 import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
 import { ApiError } from '../../services/api'
 import { ProjectDocuments } from './ProjectDocuments'
+import { ProjectDeliveryTracking } from './ProjectDeliveryTracking'
 import { ProjectTasks } from './ProjectTasks'
 import { projectApi } from './projectApi'
 import { stageNames, type Project } from './types'
@@ -29,16 +30,16 @@ export function ProjectDetail() {
 
 function ProjectDetailContent({ project }: { project: Project }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [tab, setTab] = useState(searchParams.get('tab') === 'tasks' ? 'tasks' : 'lifecycle')
+  const [tab, setTab] = useState(searchParams.get('tab') ?? 'lifecycle')
   const taskId = Number(searchParams.get('taskId'))
   const selectedTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : undefined
   useEffect(() => {
-    if (searchParams.get('tab') === 'tasks') setTab('tasks')
+    if (searchParams.get('tab')) setTab(searchParams.get('tab')!)
   }, [searchParams])
   const changeTab = (nextTab: string) => {
     setTab(nextTab)
     const next = new URLSearchParams(searchParams)
-    if (nextTab === 'tasks') next.set('tab', 'tasks')
+    if (nextTab !== 'lifecycle') next.set('tab', nextTab)
     else {
       next.delete('tab')
       next.delete('taskId')
@@ -57,6 +58,7 @@ function ProjectDetailContent({ project }: { project: Project }) {
     <Tabs activeKey={tab} onChange={changeTab} items={[
       { key: 'lifecycle', label: '七阶段看板', children: <Lifecycle project={project} /> },
       { key: 'tasks', label: <span><CheckSquareOutlined /> 项目任务</span>, children: <ProjectTasks project={project} selectedTaskId={selectedTaskId} /> },
+      { key: 'tracking', label: <span><ProfileOutlined /> 交付执行跟踪</span>, children: <ProjectDeliveryTracking project={project} /> },
       { key: 'documents', label: <span><FileTextOutlined /> 项目文档</span>, children: <ProjectDocuments project={project} /> },
       { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
       { key: 'templates', label: '模板中心', children: <Templates /> },

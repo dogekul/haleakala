@@ -1,7 +1,7 @@
 import { api } from '../../services/api'
 import { apiPath } from '../../services/apiPath'
 import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
-import type { Product, ProductVersion, Project, ProjectDocument } from './types'
+import type { DeliveryTrackingItem, Product, ProductVersion, Project, ProjectDocument } from './types'
 
 export const projectApi = {
   list: () => api<Project[]>('/api/v1/projects'),
@@ -44,6 +44,11 @@ export const projectApi = {
   addMilestone: (id: number, input: Record<string, unknown>) => api<Record<string, unknown>>(`/api/v1/projects/${id}/milestones`, {
     method: 'POST', body: JSON.stringify(input),
   }),
+  deliveryTracking: (id: number) => api<DeliveryTrackingItem[]>(`/api/v1/projects/${id}/delivery-tracking`),
+  saveDeliveryTracking: (projectId: number, itemId: number | undefined, input: Record<string, unknown>) =>
+    api<DeliveryTrackingItem>(`/api/v1/projects/${projectId}/delivery-tracking${itemId ? `/${itemId}` : ''}`, {
+      method: itemId ? 'PUT' : 'POST', body: JSON.stringify(input),
+    }),
   saveTemplate: (projectId: number, templateId: number | null, input: Record<string, unknown>) =>
     api<Record<string, unknown>>(`/api/v1/projects/${projectId}/templates${templateId ? `/${templateId}` : ''}`, {
       method: templateId ? 'PUT' : 'POST', body: JSON.stringify(input),

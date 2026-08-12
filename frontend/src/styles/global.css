@@ -673,6 +673,21 @@ button, input { font: inherit; }
 .task-reminder-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 2px; border-bottom: 1px solid #eff0f1; }
 .task-reminder-item:last-child { border-bottom: 0; }
 
+.project-tracking { display: flex; flex-direction: column; gap: 12px; }
+.tracking-stats .ant-card { height: 100%; border-color: #e5e6eb; }
+.tracking-stats .ant-card-body { padding: 14px 18px; }
+.tracking-toolbar, .tracking-table { border-color: #e5e6eb; }
+.tracking-toolbar .ant-card-body { padding: 12px 14px; }
+.tracking-toolbar .ant-card-body > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tracking-toolbar .ant-input-affix-wrapper { width: 250px; }
+.tracking-toolbar .ant-select { width: 130px; }
+.tracking-table .ant-card-body { padding: 0; }
+.tracking-main-cell, .tracking-effort, .tracking-dependency { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.tracking-main-cell > span, .tracking-main-cell > small, .tracking-dependency > small { color: #8f959e; font-size: 11px; }
+.tracking-main-cell > strong, .tracking-main-cell > small, .tracking-dependency > span, .tracking-dependency > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-effort > span, .tracking-dependency > span { color: #646a73; font-size: 12px; }
+.tracking-effort .ant-tag, .tracking-dependency .ant-tag { align-self: flex-start; margin: 0; }
+
 @media (max-width: 1260px) {
   .project-task-layout { grid-template-columns: 140px minmax(360px,1fr) 320px; }
   .project-task-quick-row { grid-template-columns: minmax(180px,1fr) 130px; }
@@ -687,4 +702,6 @@ button, input { font: inherit; }
   .project-task-filters .ant-space { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
   .project-task-quick-row, .project-task-detail-grid, .project-task-reminder-setting { grid-template-columns: 1fr; }
   .task-reminder-list { width: min(300px,calc(100vw - 64px)); }
+  .tracking-toolbar .ant-card-body > div { align-items: stretch; flex-direction: column; }
+  .tracking-toolbar .ant-space, .tracking-toolbar .ant-space-item, .tracking-toolbar .ant-input-affix-wrapper, .tracking-toolbar .ant-select { width: 100%; }
 }

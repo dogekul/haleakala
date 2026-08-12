@@ -73,6 +73,30 @@ export interface ProductVersion {
   status: string
 }
 
+export interface DeliveryTrackingItem {
+  id: number
+  itemCode: string
+  originalRequest: string
+  classification: 'CONFIGURATION' | 'INTEGRATION' | 'ENHANCEMENT' | 'NEW_FEATURE'
+  deliveryEnd: 'C' | 'B' | 'BACKEND'
+  featurePoint: string
+  complexity: 'S' | 'M' | 'L' | 'XL'
+  productDependency?: string
+  dependencyStatus: 'READY' | 'PROCESSING' | 'GAP' | 'NA'
+  dependencyNote?: string
+  extensionPoint?: string
+  estimatedDays: number
+  actualDays?: number
+  deviationPercent?: number
+  reusableLevel: 'SEED' | 'GROWING' | 'MATURE' | 'NA'
+  status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | 'CANCELLED'
+  ownerUserId?: number
+  ownerName?: string
+  notes?: string
+  version: number
+  updatedAt?: string
+}
+
 export const stageNames: Record<string, string> = {
   START: '启动', REQUIREMENT: '需求采集', CUSTOM_DEV: '二开实施', GO_LIVE: '上线切换',
   TRIAL_HANDOVER: '试运行与移交', STANDARDIZATION: '标准化评估', CLOSE: '项目收尾',
