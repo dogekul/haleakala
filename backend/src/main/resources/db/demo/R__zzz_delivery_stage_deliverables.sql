@@ -31,12 +31,12 @@ DELETE pd FROM project_document pd
 JOIN delivery_project p ON p.id=pd.project_id
 WHERE p.organization_id=100 AND pd.source_template_id IN (
   SELECT id FROM obsolete_stage_template);
-DELETE FROM outline_document_link
-WHERE id IN (SELECT id FROM obsolete_stage_link);
 DELETE c FROM document_template_config c
 JOIN obsolete_stage_template old ON old.id=c.knowledge_item_id;
 DELETE k FROM knowledge_item k
 JOIN obsolete_stage_template old ON old.id=k.id;
+DELETE FROM outline_document_link
+WHERE id IN (SELECT id FROM obsolete_stage_link);
 
 INSERT IGNORE INTO knowledge_item(
   id,organization_id,type,title,summary,content_text,tags_text,visibility,status,
