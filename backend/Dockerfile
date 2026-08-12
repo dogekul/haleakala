@@ -2,7 +2,7 @@ FROM maven:3.9.9-eclipse-temurin-8 AS build
 WORKDIR /workspace
 COPY pom.xml .
 COPY src src
-RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:8-jre
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
