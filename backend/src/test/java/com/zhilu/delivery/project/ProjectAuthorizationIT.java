@@ -1,7 +1,9 @@
 package com.zhilu.delivery.project;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -52,7 +54,8 @@ class ProjectAuthorizationIT {
         + "(620,620,'manager','交付负责人','ACTIVE'),"
         + "(621,620,'outsider','非项目成员','ACTIVE'),"
         + "(622,620,'pmo','PMO','ACTIVE'),"
-        + "(623,621,'other-admin','其他组织管理员','ACTIVE')");
+        + "(623,621,'other-admin','其他组织管理员','ACTIVE'),"
+        + "(624,620,'disabled','已停用用户','DISABLED')");
     jdbc.update("insert into product(id,organization_id,code,name,status) "
         + "values (620,620,'ERP-AUTH','ERP','ACTIVE')");
     jdbc.update("insert into product_version(id,product_id,version_name,status) "
@@ -132,6 +135,16 @@ class ProjectAuthorizationIT {
   }
 
   @Test
+  void managerOptionsOnlyExposeActiveUsersInCurrentOrganization() throws Exception {
+    mvc.perform(get("/api/v1/projects/manager-options")
+            .with(actor(620, 620, "DELIVERY_MANAGER", "project:read")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[*].id", containsInAnyOrder(620, 621, 622)))
+        .andExpect(jsonPath("$[*].displayName",
+            containsInAnyOrder("交付负责人", "非项目成员", "PMO")));
+  }
+
+  @Test
   void blockingGateCannotBeBypassedByWarningInRequestBody() throws Exception {
     jdbc.update("update stage_instance set gate_status='BLOCKING',gate_message='检查未通过' "
         + "where project_id=? and stage_code='START'", projectId);
@@ -174,7 +187,22 @@ class ProjectAuthorizationIT {
                 + "\"productId\":620,\"productVersionId\":620,\"gateMode\":\"BLOCK\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.customerId").value(620))
-        .andExpect(jsonPath("$.customerName").value("客户"));
+        .andExpect(jsonPath("$.customerName").value("客户"))
+        .andExpect(jsonPath("$.managerUserId").value(620))
+        .andExpect(jsonPath("$.managerName").value("交付负责人"));
+  }
+
+  @Test
+  void createsProjectWithSelectedActiveManager() throws Exception {
+    mvc.perform(post("/api/v1/projects")
+            .with(actor(620, 620, "DELIVERY_MANAGER", "project:write")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"指定负责人项目\",\"customerId\":620,"
+                + "\"productId\":620,\"productVersionId\":620,"
+                + "\"managerUserId\":621,\"gateMode\":\"BLOCK\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.managerUserId").value(621))
+        .andExpect(jsonPath("$.managerName").value("非项目成员"));
   }
 
   @Test

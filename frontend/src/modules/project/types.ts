@@ -73,6 +73,11 @@ export interface ProductVersion {
   status: string
 }
 
+export interface ProjectManagerOption {
+  id: number
+  displayName: string
+}
+
 export interface DeliveryTrackingItem {
   id: number
   itemCode: string

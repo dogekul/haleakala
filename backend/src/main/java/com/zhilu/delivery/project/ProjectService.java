@@ -126,6 +126,13 @@ public class ProjectService {
     return result;
   }
 
+  public List<Map<String, Object>> managerOptions(long organizationId) {
+    return jdbc.query("select id,display_name from app_user "
+            + "where organization_id=? and status='ACTIVE' order by display_name,id",
+        (row, index) -> map("id", row.getLong("id"),
+            "displayName", row.getString("display_name")), organizationId);
+  }
+
   public ProjectView get(long projectId) {
     List<ProjectView> values = jdbc.query(
         "select p.*,coalesce(c.name,p.customer_name) customer_display_name,"

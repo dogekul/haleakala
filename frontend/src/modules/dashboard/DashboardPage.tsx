@@ -9,6 +9,7 @@ import {
 } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../app/AuthProvider'
 import { PageState } from '../../components/PageState'
 import { SearchSelect } from '../../components/SearchSelect'
 import { api } from '../../services/api'
@@ -103,6 +104,7 @@ function ProductMatrix({ values }: { values: MatrixRow[] }) {
 }
 
 function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { me } = useAuth()
   const [form] = Form.useForm()
   const lastSuggestedName = useRef<string>()
   const lastSelectionKey = useRef<string>()
@@ -112,7 +114,10 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
   const client = useQueryClient()
   const customers = useQuery({ queryKey: ['active-customers'], queryFn: () => customerApi.list({ status: 'ACTIVE' }), enabled: open })
   const products = useQuery({ queryKey: ['bindable-products'], queryFn: projectApi.bindableProducts, enabled: open })
+  const managers = useQuery({ queryKey: ['project-manager-options'], queryFn: projectApi.managerOptions, enabled: open })
   const versions = useQuery({ queryKey: ['bindable-product-versions', productId], queryFn: () => projectApi.bindableVersions(productId), enabled: open && Boolean(productId) })
+  const managerOptions = managers.data?.some(item => item.id === me?.id)
+    ? managers.data : [...(me ? [{ id: me.id, displayName: me.displayName }] : []), ...(managers.data ?? [])]
   useEffect(() => {
     const selectionKey = JSON.stringify([customerId, productId, productVersionId])
     const selectionChanged = selectionKey !== lastSelectionKey.current
@@ -135,7 +140,7 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
   }, onSuccess: async (project: Project) => { await Promise.all([client.invalidateQueries({ queryKey: ['dashboard-summary'] }), client.invalidateQueries({ queryKey: ['dashboard-projects'] })]); form.resetFields(); onClose(); message.success(`${project.name} 已创建`) }, onError: (error: Error) => message.error(error.message) })
   return <Drawer title="快速创建交付项目" width={520} open={open} onClose={close} extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
     <Alert className="drawer-hint" type="info" showIcon message="创建后自动初始化七阶段，可选立即执行 deliver-init。" />
-    <Form form={form} layout="vertical" initialValues={{ initializeAgent: true }} onFinish={values => create.mutate(values)}>
+    <Form form={form} layout="vertical" initialValues={{ managerUserId: me?.id, initializeAgent: true }} onFinish={values => create.mutate(values)}>
       <Form.Item label="客户" name="customerId" rules={[{ required: true, message: '请选择客户' }]}>
         <SearchSelect loading={customers.isLoading} placeholder="选择启用客户"
           notFoundContent={customers.isError ? '客户加载失败，请重试' : <div className="customer-select-empty">
@@ -147,6 +152,10 @@ function QuickCreate({ open, onClose }: { open: boolean; onClose: () => void }) 
         onChange={(value) => form.setFieldsValue({ productId: value, productVersionId: undefined })} options={products.data?.map(item => ({ value: item.id, label: `${item.code} · ${item.name}` }))} /></Form.Item></Col><Col span={12}><Form.Item label="版本" name="productVersionId" rules={[{ required: true }]}><SearchSelect disabled={!productId} loading={versions.isLoading} options={versions.data?.map(item => ({ value: item.id, label: item.versionName }))} /></Form.Item></Col></Row>
       <Form.Item label="项目名称" name="name" extra="项目编号由系统自动生成"
         rules={[{ required: true }]}><Input /></Form.Item>
+      <Form.Item label="项目负责人" name="managerUserId" rules={[{ required: true, message: '请选择项目负责人' }]}>
+        <SearchSelect loading={managers.isLoading} placeholder="选择项目负责人"
+          options={managerOptions.map(item => ({ value: item.id, label: item.displayName }))} />
+      </Form.Item>
       <Row gutter={12}><Col span={12}><Form.Item label="计划开始" name="startDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col><Col span={12}><Form.Item label="计划完成" name="plannedEndDate"><DatePicker style={{ width: '100%' }} /></Form.Item></Col></Row>
       <Form.Item name="initializeAgent" valuePropName="checked"><Checkbox>创建后执行项目初始化 Skill</Checkbox></Form.Item>
     </Form>

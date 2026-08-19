@@ -1,10 +1,11 @@
 import { api } from '../../services/api'
 import { apiPath } from '../../services/apiPath'
 import type { DocumentContent, DocumentFormat, SaveDocumentInput } from '../document/types'
-import type { DeliveryTrackingItem, Product, ProductVersion, Project, ProjectDocument } from './types'
+import type { DeliveryTrackingItem, Product, ProductVersion, Project, ProjectDocument, ProjectManagerOption } from './types'
 
 export const projectApi = {
   list: () => api<Project[]>('/api/v1/projects'),
+  managerOptions: () => api<ProjectManagerOption[]>('/api/v1/projects/manager-options'),
   get: (id: number) => api<Project>(`/api/v1/projects/${id}`),
   create: (input: Record<string, unknown>) => api<Project>('/api/v1/projects', {
     method: 'POST', body: JSON.stringify(input),

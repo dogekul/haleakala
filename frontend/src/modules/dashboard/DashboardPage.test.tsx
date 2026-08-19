@@ -2,7 +2,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { DashboardPage } from './DashboardPage'
+
+const authState: AuthState = {
+  me: { id: 7, organizationId: 1, username: 'current', displayName: '当前用户', roles: ['DELIVERY_MANAGER'], permissions: ['dashboard:read', 'project:write'] },
+  loading: false,
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
+
+function renderDashboard(client: QueryClient) {
+  return render(<AuthContext.Provider value={authState}><QueryClientProvider client={client}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><DashboardPage /></MemoryRouter>
+  </QueryClientProvider></AuthContext.Provider>)
+}
 
 it('默认展示高密度项目列表并保留卡片视图', async () => {
   window.localStorage.clear()
@@ -13,7 +28,7 @@ it('默认展示高密度项目列表并保留卡片视图', async () => {
     return Promise.resolve({ ok: true, json: async () => body })
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><DashboardPage /></MemoryRouter></QueryClientProvider>)
+  renderDashboard(client)
 
   await waitFor(() => expect(screen.getAllByRole('table')[0]).toBeVisible())
   expect(screen.getByText('项目健康度')).toBeVisible()
@@ -41,6 +56,9 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
     if (path === '/api/v1/dashboard/projects' || path === '/api/v1/dashboard/risk-heatmap' || path === '/api/v1/dashboard/matrix') {
       return Promise.resolve(new Response('[]', { status: 200 }))
     }
+    if (path === '/api/v1/projects/manager-options') return Promise.resolve(new Response(JSON.stringify([
+      { id: 7, displayName: '当前用户' }, { id: 8, displayName: '李负责人' },
+    ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     if (path === '/api/v1/customers?status=ACTIVE') return Promise.resolve(new Response(JSON.stringify([
       { id: 81, name: '华东银行', shortName: '华东行', contactName: '王经理', status: 'ACTIVE' },
     ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -59,11 +77,15 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
     throw new Error(`unexpected request: ${path}`)
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><DashboardPage /></MemoryRouter></QueryClientProvider>)
+  renderDashboard(client)
   const user = userEvent.setup()
 
   await user.click(await screen.findByRole('button', { name: /快速创建项目$/ }))
   let drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
+  let manager = within(drawer).getByRole('combobox', { name: '项目负责人' })
+  expect(manager.closest('.ant-select')).toHaveTextContent('当前用户')
+  await user.click(manager)
+  await user.click(await screen.findByRole('option', { name: '李负责人' }))
   await user.click(within(drawer).getByRole('combobox', { name: '客户' }))
   expect(await screen.findByRole('option', { name: /华东银行.*华东行/ })).toBeInTheDocument()
   await user.click(screen.getByText(/华东银行.*华东行/))
@@ -89,6 +111,10 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '快速创建交付项目' })).not.toBeInTheDocument())
   await user.click(screen.getByRole('button', { name: /快速创建项目$/ }))
   drawer = screen.getByRole('dialog', { name: '快速创建交付项目' })
+  manager = within(drawer).getByRole('combobox', { name: '项目负责人' })
+  expect(manager.closest('.ant-select')).toHaveTextContent('当前用户')
+  await user.click(manager)
+  await user.click(await screen.findByRole('option', { name: '李负责人' }))
   for (const field of ['客户', '产品', '版本']) {
     const select = within(drawer).getByRole('combobox', { name: field }).closest('.ant-select')
     expect(select?.querySelector('.ant-select-selection-item')).toBeNull()
@@ -136,7 +162,7 @@ it('快速创建使用可绑定产品版本且切换产品会清空已选版本'
   await user.type(name, '最终人工项目名称')
   await user.click(within(drawer).getByRole('checkbox', { name: '创建后执行项目初始化 Skill' }))
   await user.click(within(drawer).getByRole('button', { name: '创建项目' }))
-  await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81, name: '最终人工项目名称' })))
+  await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81, managerUserId: 8, name: '最终人工项目名称' })))
   expect(projectBody).not.toHaveProperty('customerName')
   expect(projectBody).not.toHaveProperty('code')
 })

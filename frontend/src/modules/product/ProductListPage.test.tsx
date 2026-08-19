@@ -70,11 +70,22 @@ it('筛选产品并在列表和卡片视图间切换', async () => {
   expect(screen.queryByRole('link', { name: '智鹿 ERP' })).not.toBeInTheDocument()
 
   await user.clear(screen.getByPlaceholderText('搜索产品名称或编码'))
+  const productRow = screen.getByRole('link', { name: '智鹿 ERP' }).closest('tr')!
+  await user.click(within(productRow).getByText('3 / 12'))
+  expect(await screen.findByText('产品详情')).toBeVisible()
+})
+
+it('卡片主体区域可进入产品详情', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => responseFor(input)))
+  const user = userEvent.setup()
+  show()
+
+  expect(await screen.findByRole('link', { name: '智鹿 ERP' })).toBeVisible()
   expect(screen.getByRole('radio', { name: '卡片' })).toBeInTheDocument()
   await user.click(screen.getByText('卡片'))
   expect(screen.getByTestId('product-card-grid')).toBeVisible()
   expect(screen.getByTestId('product-card-10')).toHaveClass('product-card')
-  await user.click(within(screen.getByTestId('product-card-8')).getByRole('link', { name: '智鹿 ERP' }))
+  await user.click(within(screen.getByTestId('product-card-8')).getByText('覆盖核心经营流程'))
   expect(await screen.findByText('产品详情')).toBeVisible()
 })
 

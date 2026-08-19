@@ -247,6 +247,7 @@ test('product capability flows from catalog to delivery and back', async ({ page
   await page.setViewportSize({ width: 1024, height: 768 })
   await page.getByText('卡片', { exact: true }).click()
   await expect(page.getByTestId('product-card-grid')).toBeVisible()
+  await assertProductCardsDoNotOverlap(page)
   await assertVisual(page, testInfo.outputPath('products-card-1024.png'))
   await page.getByText('列表', { exact: true }).click()
   await page.getByPlaceholder('搜索产品名称或编码').fill('企业财务云')
@@ -417,6 +418,21 @@ async function assertVisual(page: Page, path: string) {
   await expect(page.locator('.ant-message-notice')).toHaveCount(0, { timeout: 5_000 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path, fullPage: true })
+}
+
+async function assertProductCardsDoNotOverlap(page: Page) {
+  const bounds = await page.locator('.product-card').evaluateAll(cards => cards.map(card => {
+    const cardRect = card.getBoundingClientRect()
+    const actionsRect = card.querySelector('.ant-card-actions')?.getBoundingClientRect()
+    return { top: cardRect.top, bottom: cardRect.bottom, actionsBottom: actionsRect?.bottom ?? cardRect.bottom }
+  }))
+
+  for (const card of bounds) expect(card.actionsBottom).toBeLessThanOrEqual(card.bottom + 1)
+
+  const rowTops = [...new Set(bounds.map(card => Math.round(card.top)))].sort((a, b) => a - b)
+  if (rowTops.length < 2) return
+  const firstRowBottom = Math.max(...bounds.filter(card => Math.round(card.top) === rowTops[0]).map(card => card.bottom))
+  expect(rowTops[1] - firstRowBottom).toBeGreaterThanOrEqual(14)
 }
 
 async function assertDialogVisual(page: Page, dialog: Locator, path: string) {

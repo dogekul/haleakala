@@ -216,11 +216,11 @@ it('移动模块时提交新父级和当前乐观锁版本', async () => {
   })))
 })
 
-it('编辑版本并以当前版本号全量替换功能清单', async () => {
+it('版本功能清单按模块树展示、支持父模块批量设置并保存全部状态', async () => {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (init?.method === 'PUT' && path.endsWith('/versions/31/features')) {
-      return json({ versionId: 31, version: 4, entries: [{ featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'INCLUDED' }] })
+      return json({ versionId: 31, version: 4, entries: [{ featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'PLANNED' }] })
     }
     if (init?.method === 'PUT' && path.endsWith('/versions/31')) return json({ ...versions[0], status: 'RELEASED', version: 4 })
     return responseFor(path)
@@ -233,12 +233,17 @@ it('编辑版本并以当前版本号全量替换功能清单', async () => {
   expect(within(drawer).getByLabelText('版本名称')).toBeDisabled()
   await user.click(within(drawer).getByRole('button', { name: '关闭' }))
 
-  await user.selectOptions(await screen.findByLabelText('总账处理可用性'), 'PLANNED')
-  await user.selectOptions(screen.getByLabelText('应收对账可用性'), 'INCLUDED')
+  const tree = await screen.findByTestId('version-manifest-tree')
+  expect(within(tree).getByText('FIN · 财务管理')).toBeVisible()
+  expect(within(tree).getByText('AR · 应收管理')).toBeVisible()
+  expect(within(tree).getByText('AR-SETTLE · 对账中心')).toBeVisible()
+  await user.selectOptions(screen.getByLabelText('财务管理全部功能批量设置'), 'PLANNED')
+  expect(screen.getByLabelText('总账处理可用性')).toHaveValue('PLANNED')
+  expect(screen.getByLabelText('应收对账可用性')).toHaveValue('PLANNED')
   await user.click(screen.getByRole('button', { name: '保存功能清单' }))
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/products/8/versions/31/features', expect.objectContaining({
     method: 'PUT', body: JSON.stringify({ version: 3, entries: [
-      { featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'INCLUDED' },
+      { featureId: 21, availability: 'PLANNED' }, { featureId: 22, availability: 'PLANNED' },
     ] }),
   })))
 })

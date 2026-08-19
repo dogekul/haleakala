@@ -41,6 +41,12 @@ public class ProjectController {
     return projects.list(user);
   }
 
+  @GetMapping("/manager-options")
+  public List<Map<String, Object>> managerOptions(
+      @AuthenticationPrincipal CurrentUser user) {
+    return projects.managerOptions(user.getOrganizationId());
+  }
+
   @GetMapping("/{id}")
   public ProjectView project(
       @PathVariable long id, @AuthenticationPrincipal CurrentUser user) {

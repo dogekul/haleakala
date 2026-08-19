@@ -2,7 +2,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { AuthContext, type AuthState } from '../../app/AuthProvider'
 import { ProjectWorkspace } from './ProjectWorkspace'
+
+const authState: AuthState = {
+  me: { id: 7, organizationId: 1, username: 'current', displayName: '当前用户', roles: ['DELIVERY_MANAGER'], permissions: ['project:read', 'project:write'] },
+  loading: false,
+  login: async () => undefined,
+  logout: async () => undefined,
+  refresh: async () => undefined,
+}
+
+function renderWorkspace(client: QueryClient) {
+  return render(<AuthContext.Provider value={authState}><QueryClientProvider client={client}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <ProjectWorkspace />
+    </MemoryRouter>
+  </QueryClientProvider></AuthContext.Provider>)
+}
 
 const projects = [{
   id: 1,
@@ -23,11 +40,7 @@ const projects = [{
 it('默认使用高密度列表并可切换为卡片视图', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => projects }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}>
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <ProjectWorkspace />
-    </MemoryRouter>
-  </QueryClientProvider>)
+  renderWorkspace(client)
 
   await waitFor(() => expect(screen.getByRole('table')).toBeVisible())
   expect(screen.getByText('华东银行核心系统交付')).toBeVisible()
@@ -48,6 +61,9 @@ it('创建项目使用独立的可绑定产品版本查询并在切换产品时�
       return Promise.resolve(new Response(JSON.stringify({ id: 99, name: '新项目' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
     }
     if (path === '/api/v1/projects') return Promise.resolve(new Response('[]', { status: 200 }))
+    if (path === '/api/v1/projects/manager-options') return Promise.resolve(new Response(JSON.stringify([
+      { id: 7, displayName: '当前用户' }, { id: 8, displayName: '李负责人' },
+    ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     if (path === '/api/v1/customers?status=ACTIVE') return Promise.resolve(new Response(JSON.stringify([
       { id: 81, name: '华东银行', shortName: '华东行', contactName: '王经理', status: 'ACTIVE' },
     ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -66,15 +82,16 @@ it('创建项目使用独立的可绑定产品版本查询并在切换产品时�
     throw new Error(`unexpected request: ${path}`)
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}>
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <ProjectWorkspace />
-    </MemoryRouter>
-  </QueryClientProvider>)
+  renderWorkspace(client)
   const user = userEvent.setup()
 
   await user.click(screen.getByRole('button', { name: /创建项目$/ }))
   let drawer = screen.getByRole('dialog', { name: '创建交付项目' })
+  let manager = within(drawer).getByRole('combobox', { name: '项目负责人' })
+  expect(manager.closest('.ant-select')).toHaveTextContent('当前用户')
+  await user.click(manager)
+  await user.click(await screen.findByRole('option', { name: '李负责人' }))
+  expect(manager.closest('.ant-select')).toHaveTextContent('李负责人')
   await user.click(within(drawer).getByRole('combobox', { name: '客户' }))
   expect(await screen.findByRole('option', { name: /华东银行.*华东行/ })).toBeInTheDocument()
   await user.click(screen.getByText(/华东银行.*华东行/))
@@ -97,6 +114,10 @@ it('创建项目使用独立的可绑定产品版本查询并在切换产品时�
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '创建交付项目' })).not.toBeInTheDocument())
   await user.click(screen.getByRole('button', { name: /创建项目$/ }))
   drawer = screen.getByRole('dialog', { name: '创建交付项目' })
+  manager = within(drawer).getByRole('combobox', { name: '项目负责人' })
+  expect(manager.closest('.ant-select')).toHaveTextContent('当前用户')
+  await user.click(manager)
+  await user.click(await screen.findByRole('option', { name: '李负责人' }))
   for (const field of ['客户', '产品', '标品版本']) {
     const select = within(drawer).getByRole('combobox', { name: field }).closest('.ant-select')
     expect(select?.querySelector('.ant-select-selection-item')).toBeNull()
@@ -142,8 +163,9 @@ it('创建项目使用独立的可绑定产品版本查询并在切换产品时�
   await waitFor(() => expect(name).toHaveValue('华东银行 - 生效产品 V1 已发布 实施项目'))
   await user.clear(name)
   await user.type(name, '最终人工项目名称')
+  expect(manager.closest('.ant-select')).toHaveTextContent('李负责人')
   await user.click(within(drawer).getByRole('button', { name: '创建项目' }))
-  await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81, name: '最终人工项目名称' })))
+  await waitFor(() => expect(projectBody).toEqual(expect.objectContaining({ customerId: 81, managerUserId: 8, name: '最终人工项目名称' })))
   expect(projectBody).not.toHaveProperty('customerName')
   expect(projectBody).not.toHaveProperty('code')
 })
@@ -151,15 +173,14 @@ it('创建项目使用独立的可绑定产品版本查询并在切换产品时�
 it('没有启用客户时提示先维护客户主数据', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const path = String(input)
-    if (path === '/api/v1/projects' || path === '/api/v1/customers?status=ACTIVE' || path === '/api/v1/products?bindable=true') {
+    if (path === '/api/v1/projects' || path === '/api/v1/projects/manager-options'
+      || path === '/api/v1/customers?status=ACTIVE' || path === '/api/v1/products?bindable=true') {
       return Promise.resolve(new Response('[]', { status: 200 }))
     }
     throw new Error(`unexpected request: ${path}`)
   }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-    <ProjectWorkspace />
-  </MemoryRouter></QueryClientProvider>)
+  renderWorkspace(client)
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: /创建项目$/ }))
   const drawer = screen.getByRole('dialog', { name: '创建交付项目' })

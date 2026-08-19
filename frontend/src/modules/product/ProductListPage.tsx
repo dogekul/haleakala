@@ -5,7 +5,7 @@ import {
   Table, Tag, Typography, message,
 } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { SearchSelect } from '../../components/SearchSelect'
 import { useAuth } from '../../app/AuthProvider'
@@ -27,6 +27,7 @@ const allowedStatuses: Record<ProductStatus, ProductStatus[]> = {
 }
 
 export function ProductListPage() {
+  const navigate = useNavigate()
   const { me } = useAuth()
   const canWrite = me?.permissions.includes('product:write') ?? false
   const [view, setView] = useState<'list' | 'card'>('list')
@@ -50,7 +51,7 @@ export function ProductListPage() {
 
   const columns = [
     { title: '产品', key: 'product', width: 280, render: (_: unknown, item: Product) => <div className="product-list-name">
-      <Link to={`/products/${item.id}`}>{item.name}</Link><span>{item.code} · {item.category || '未分类'}</span>
+      <Link to={`/products/${item.id}`} onClick={event => event.stopPropagation()}>{item.name}</Link><span>{item.code} · {item.category || '未分类'}</span>
     </div> },
     { title: '模块 / 功能', key: 'structure', width: 150, render: (_: unknown, item: Product) => `${item.moduleCount} / ${item.featureCount}` },
     { title: '最新版本', dataIndex: 'latestVersionName', width: 130, render: (value?: string) => value || '尚未创建' },
@@ -61,7 +62,7 @@ export function ProductListPage() {
       const editable = canWrite && item.status !== 'ARCHIVED'
       return <Button type="link" size="small" aria-label={`${editable ? '编辑' : '查看'}${item.name}`}
         icon={editable ? <EditOutlined /> : <EyeOutlined />}
-        onClick={() => setEditing(item)}>{editable ? '编辑' : '查看'}</Button>
+        onClick={event => { event.stopPropagation(); setEditing(item) }}>{editable ? '编辑' : '查看'}</Button>
     } },
   ]
 
@@ -94,8 +95,11 @@ export function ProductListPage() {
     <PageState loading={query.isLoading} error={query.error} empty={!query.isLoading && data.length === 0}
       onRetry={() => void query.refetch()}>
       {view === 'list' ? <Table rowKey="id" className="product-list-table" columns={columns} dataSource={data}
-        pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: 1000 }} /> :
-        <Row data-testid="product-card-grid" gutter={[16, 16]}>{data.map(product => <Col xs={24} lg={12} xxl={8} key={product.id}>
+        pagination={{ pageSize: 12, hideOnSinglePage: true }} scroll={{ x: 1000 }} onRow={item => ({
+          className: 'product-list-row',
+          onClick: () => navigate(`/products/${item.id}`),
+        })} /> :
+        <Row data-testid="product-card-grid" gutter={[16, 16]}>{data.map(product => <Col className="product-card-col" xs={24} md={12} xl={8} key={product.id}>
           <ProductCard product={product} canWrite={canWrite} onEdit={() => setEditing(product)} />
         </Col>)}</Row>}
     </PageState>
@@ -110,12 +114,14 @@ function ProductCard({ product, canWrite, onEdit }: { product: Product; canWrite
       <Button key="edit" type="link" aria-label={`${editable ? '编辑' : '查看'}${product.name}`}
         onClick={onEdit}>{editable ? '编辑' : '查看'}</Button>,
     ]}>
-    <div className="product-card-head"><div><span>{product.code}</span><Link to={`/products/${product.id}`}>{product.name}</Link></div>
-      <ProductStatusTag status={product.status} /></div>
-    <p>{product.description || '暂无产品说明'}</p>
-    <div className="product-card-metrics"><span><strong>{product.moduleCount}</strong>模块</span>
-      <span><strong>{product.featureCount}</strong>功能</span><span><strong>{product.latestVersionName || '—'}</strong>最新版本</span></div>
-    <div className="product-card-foot"><span>{product.category || '未分类'}</span><span>{formatDate(product.updatedAt)}</span></div>
+    <Link className="product-card-main" to={`/products/${product.id}`} aria-label={`查看${product.name}详情`}>
+      <div className="product-card-head"><div><span>{product.code}</span><strong>{product.name}</strong></div>
+        <ProductStatusTag status={product.status} /></div>
+      <p>{product.description || '暂无产品说明'}</p>
+      <div className="product-card-metrics"><span><strong>{product.moduleCount}</strong>模块</span>
+        <span><strong>{product.featureCount}</strong>功能</span><span><strong>{product.latestVersionName || '—'}</strong>最新版本</span></div>
+      <div className="product-card-foot"><span>{product.category || '未分类'}</span><span>{formatDate(product.updatedAt)}</span></div>
+    </Link>
   </Card>
 }
 

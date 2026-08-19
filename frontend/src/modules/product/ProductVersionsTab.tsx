@@ -1,10 +1,11 @@
 import { EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, message } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Tree, message } from 'antd'
+import type { DataNode } from 'antd/es/tree'
+import { useEffect, useState } from 'react'
 import { PageState } from '../../components/PageState'
 import { productApi } from './productApi'
-import type { Availability, ProductFeature, ProductVersion, VersionManifest, VersionStatus } from './types'
+import type { Availability, ProductFeature, ProductModule, ProductVersion, VersionManifest, VersionStatus } from './types'
 
 const versionLabels: Record<VersionStatus, string> = { PLANNING: '规划中', RELEASED: '已发布', SUNSET: '停止维护', ARCHIVED: '已归档' }
 const nextStatuses: Record<VersionStatus, VersionStatus[]> = {
@@ -20,6 +21,7 @@ type ManifestSaveVariables = {
 export function ProductVersionsTab({ productId, readOnly }: { productId: number; readOnly: boolean }) {
   const client = useQueryClient()
   const versions = useQuery({ queryKey: ['product-versions', productId], queryFn: () => productApi.versions(productId) })
+  const modules = useQuery({ queryKey: ['product-modules', productId], queryFn: () => productApi.modules(productId) })
   const features = useQuery({ queryKey: ['product-features', productId], queryFn: () => productApi.features(productId) })
   const [selectedId, setSelectedId] = useState<number>()
   const [editing, setEditing] = useState<ProductVersion | null | undefined>()
@@ -41,11 +43,15 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
     setRows(Object.fromEntries(features.data.map(item => [item.id, existing.get(item.id) ?? 'REMOVED'])))
   }, [features.data, manifest.data])
 
-  const visibleFeatures = useMemo(() => {
-    const term = keyword.trim().toLowerCase()
-    return (features.data ?? []).filter(item => !term || `${item.code}${item.name}`.toLowerCase().includes(term))
-  }, [features.data, keyword])
   const manifestReadOnly = readOnly || selected?.status !== 'PLANNING'
+  const updateRows = (featureIds: number[], value: Availability) => setRows(current => ({
+    ...current, ...Object.fromEntries(featureIds.map(featureId => [featureId, value])),
+  }))
+  const treeData = buildManifestTree(
+    modules.data ?? [], features.data ?? [], keyword, rows, manifestReadOnly, updateRows,
+  )
+  const includedCount = (features.data ?? []).filter(item => rows[item.id] === 'INCLUDED').length
+  const plannedCount = (features.data ?? []).filter(item => rows[item.id] === 'PLANNED').length
   const saveManifest = useMutation({
     mutationFn: ({ versionId, payload }: ManifestSaveVariables) => productApi.replaceManifest(productId, versionId, payload),
     onSuccess: async (data, variables) => {
@@ -58,8 +64,9 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
       await client.invalidateQueries({ queryKey: ['product-manifest', productId, variables.versionId], exact: true })
     },
   })
-  return <PageState loading={versions.isLoading || features.isLoading} error={(versions.error || features.error) as Error | null}
-    onRetry={() => void Promise.all([versions.refetch(), features.refetch()])}>
+  return <PageState loading={versions.isLoading || modules.isLoading || features.isLoading}
+    error={(versions.error || modules.error || features.error) as Error | null}
+    onRetry={() => void Promise.all([versions.refetch(), modules.refetch(), features.refetch()])}>
     <div className="product-version-layout">
       <Card className="product-version-list" title="产品版本" extra={!readOnly && <Button size="small" icon={<PlusOutlined />}
         aria-label="新建版本" onClick={() => setEditing(null)}>新建版本</Button>}>
@@ -84,11 +91,14 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
           })}>保存功能清单</Button>}>
         {!selected ? <div className="product-empty-copy">请选择版本</div> : <PageState loading={manifest.isLoading} error={manifest.error}
           onRetry={() => void manifest.refetch()}>
-          <Input className="version-manifest-search" allowClear prefix={<SearchOutlined />} placeholder="搜索功能" value={keyword}
-            onChange={event => setKeyword(event.target.value)} />
-          <div className="version-manifest-list">
-            {visibleFeatures.map(feature => <ManifestRow key={feature.id} feature={feature} value={rows[feature.id] ?? 'REMOVED'}
-              disabled={manifestReadOnly} onChange={value => setRows(current => ({ ...current, [feature.id]: value }))} />)}
+          <div className="version-manifest-toolbar">
+            <Input className="version-manifest-search" allowClear prefix={<SearchOutlined />} placeholder="搜索模块或功能" value={keyword}
+              onChange={event => setKeyword(event.target.value)} />
+            <span>已纳入 {includedCount} · 计划中 {plannedCount}</span>
+          </div>
+          <div className="version-manifest-tree" data-testid="version-manifest-tree">
+            {treeData.length ? <Tree key={keyword.trim().toLowerCase()} defaultExpandAll blockNode selectable={false} treeData={treeData} />
+              : <div className="product-empty-copy">未找到匹配的模块或功能</div>}
           </div>
         </PageState>}
       </Card>
@@ -100,13 +110,69 @@ export function ProductVersionsTab({ productId, readOnly }: { productId: number;
   </PageState>
 }
 
-function ManifestRow({ feature, value, disabled, onChange }: {
+function buildManifestTree(
+  modules: ProductModule[], features: ProductFeature[], keyword: string,
+  rows: Record<number, Availability>, disabled: boolean,
+  onChange: (featureIds: number[], value: Availability) => void,
+): DataNode[] {
+  const term = keyword.trim().toLowerCase()
+  const moduleChildren = new Map<number | undefined, ProductModule[]>()
+  const moduleFeatures = new Map<number, ProductFeature[]>()
+  ;[...modules].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'zh-CN')).forEach(item => {
+    const parentId = item.parentId ?? undefined
+    moduleChildren.set(parentId, [...(moduleChildren.get(parentId) ?? []), item])
+  })
+  ;[...features].sort((a, b) => a.code.localeCompare(b.code)).forEach(item => {
+    moduleFeatures.set(item.moduleId, [...(moduleFeatures.get(item.moduleId) ?? []), item])
+  })
+  const matches = (code: string, name: string) => !term || `${code}${name}`.toLowerCase().includes(term)
+  const descendantFeatureIds = (moduleId: number): number[] => [
+    ...(moduleFeatures.get(moduleId) ?? []).map(item => item.id),
+    ...(moduleChildren.get(moduleId) ?? []).flatMap(item => descendantFeatureIds(item.id)),
+  ]
+  const build = (module: ProductModule, revealAll = false): DataNode | undefined => {
+    const revealChildren = revealAll || matches(module.code, module.name)
+    const childModules = (moduleChildren.get(module.id) ?? []).map(item => build(item, revealChildren)).filter(Boolean) as DataNode[]
+    const directFeatures = (moduleFeatures.get(module.id) ?? []).filter(item => revealChildren || matches(item.code, item.name))
+    if (!revealChildren && childModules.length === 0 && directFeatures.length === 0) return undefined
+    const featureIds = descendantFeatureIds(module.id)
+    return {
+      key: `module:${module.id}`,
+      title: <ManifestModuleTitle module={module} featureIds={featureIds} disabled={disabled} onChange={onChange} />,
+      children: [
+        ...childModules,
+        ...directFeatures.map(feature => ({
+          key: `feature:${feature.id}`, isLeaf: true,
+          title: <ManifestFeatureTitle feature={feature} value={rows[feature.id] ?? 'REMOVED'} disabled={disabled}
+            onChange={value => onChange([feature.id], value)} />,
+        })),
+      ],
+    }
+  }
+  return (moduleChildren.get(undefined) ?? []).map(item => build(item)).filter(Boolean) as DataNode[]
+}
+
+function ManifestModuleTitle({ module, featureIds, disabled, onChange }: {
+  module: ProductModule; featureIds: number[]; disabled: boolean
+  onChange: (featureIds: number[], value: Availability) => void
+}) {
+  return <div className="version-manifest-node is-module">
+    <div><strong title={module.name}>{module.code} · {module.name}</strong><span>{featureIds.length} 个功能</span></div>
+    {!disabled && featureIds.length > 0 && <select aria-label={`${module.name}全部功能批量设置`} value=""
+      onClick={event => event.stopPropagation()} onChange={event => onChange(featureIds, event.target.value as Availability)}>
+      <option value="">批量设置</option>
+      {(Object.keys(availabilityLabels) as Availability[]).map(option => <option key={option} value={option}>{availabilityLabels[option]}</option>)}
+    </select>}
+  </div>
+}
+
+function ManifestFeatureTitle({ feature, value, disabled, onChange }: {
   feature: ProductFeature; value: Availability; disabled: boolean; onChange: (value: Availability) => void
 }) {
-  return <div className="version-manifest-row">
+  return <div className="version-manifest-node is-feature">
     <div><strong title={feature.name}>{feature.name}</strong><span>{feature.code}</span></div>
     <select aria-label={`${feature.name}可用性`} value={value} disabled={disabled}
-      onChange={event => onChange(event.target.value as Availability)}>
+      onClick={event => event.stopPropagation()} onChange={event => onChange(event.target.value as Availability)}>
       {(Object.keys(availabilityLabels) as Availability[]).map(option => <option key={option} value={option}>{availabilityLabels[option]}</option>)}
     </select>
   </div>
