@@ -1,12 +1,12 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import { buildArtifacts, supportedSkills } from './contract.mjs'
 
 const port = Number(process.env.PORT ?? 8090)
 const secret = process.env.AGENT_SHARED_SECRET ?? 'change-me'
 const jobs = new Map()
 const idempotentJobs = new Map()
-const skills = new Set(['deliver-init', 'deliver-require', 'deliver-dev', 'deliver-transition', 'deliver-standardize', 'deliver-close'])
 
 const server = createServer(async (request, response) => {
   try {
@@ -31,7 +31,7 @@ const server = createServer(async (request, response) => {
 
 function createJob(raw, headers, response) {
   const input = JSON.parse(raw || '{}')
-  if (!skills.has(input.skill)) return send(response, 422, { code: 'UNSUPPORTED_SKILL' })
+  if (!supportedSkills.has(input.skill)) return send(response, 422, { code: 'UNSUPPORTED_SKILL' })
   const idempotencyKey = headers['idempotency-key']
   if (typeof idempotencyKey === 'string' && idempotentJobs.has(idempotencyKey)) {
     return send(response, 202, publicJob(idempotentJobs.get(idempotencyKey)))
@@ -44,8 +44,12 @@ function createJob(raw, headers, response) {
   if (job.scenario === 'normal') {
     setTimeout(() => transition(job, 'RUNNING', 70), 900)
     setTimeout(() => {
-      job.artifacts = [{ name: `${job.skill}-result.md`, mimeType: 'text/markdown', artifactType: 'AGENT_OUTPUT', content: artifact(job, input.context) }]
-      transition(job, 'SUCCEEDED', 100)
+      try {
+        job.artifacts = buildArtifacts(job.skill, input.context)
+        transition(job, 'SUCCEEDED', 100)
+      } catch (error) {
+        transition(job, 'FAILED', 70, error.message)
+      }
     }, 1600)
   } else if (job.scenario === 'failure') {
     setTimeout(() => transition(job, 'FAILED', 60, 'Mock Agent 按场景返回失败'), 1200)
@@ -84,7 +88,6 @@ function verify(headers, body) {
 function sign(value) { return createHmac('sha256', secret).update(value).digest('hex') }
 function publicJob(job) { return { externalJobId: job.id, status: job.status, progress: job.progress, error: job.error, artifacts: job.artifacts } }
 function terminal(status) { return ['SUCCEEDED', 'FAILED', 'TIMED_OUT', 'CANCELLED'].includes(status) }
-function artifact(job, context = {}) { return `# ${job.skill} 执行结果\n\n- 项目：${context.name ?? '未命名项目'}\n- 客户：${context.customer_name ?? '-'}\n- 状态：执行成功\n\n> 此文件由 Mock Agent 按稳定契约生成，可无缝替换为外部团队 Agent。\n` }
 function send(response, status, value) { const body = JSON.stringify(value); response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) }); response.end(body) }
 function readBody(request) { return new Promise((resolve, reject) => { const chunks = []; request.on('data', chunk => chunks.push(chunk)); request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); request.on('error', reject) }) }
 

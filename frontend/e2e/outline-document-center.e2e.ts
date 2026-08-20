@@ -64,14 +64,8 @@ test('Outline drives knowledge templates and project stage documents end to end'
   await expect(templateCard.getByText('已发布')).toBeVisible()
 
   const projectId = await createProject(page, projectName)
-  await expect.poll(async () => {
-    const value = await api<Project>(page, `/api/v1/projects/${projectId}`)
-    return value.documentSpaceStatus
-  }, { timeout: 30_000 }).toBe('READY')
-
-  await page.reload()
   await page.getByRole('tab', { name: /项目文档/ }).click()
-  await expect(page.getByText(templateTitle, { exact: true })).toBeVisible()
+  await expect(page.getByText(templateTitle, { exact: true })).toBeVisible({ timeout: 30_000 })
   await page.getByText(templateTitle, { exact: true }).click()
   const projectDocument = page.getByRole('dialog', { name: templateTitle })
   await projectDocument.getByRole('button', { name: '编辑' }).click()
@@ -84,7 +78,7 @@ test('Outline drives knowledge templates and project stage documents end to end'
   await projectDocument.getByRole('button', { name: '关闭' }).click()
 
   await page.getByRole('tab', { name: '七阶段看板' }).click()
-  await page.getByRole('button', { name: /推进至需求采集/ }).click()
+  await page.getByRole('button', { name: /推进至调研与启动/ }).click()
   await expect(page.getByText('阶段推进成功')).toBeVisible()
 
   const projectDocuments = await api<ProjectDocument[]>(

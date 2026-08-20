@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -12,11 +13,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zhilu.delivery.common.error.ConflictException;
-import java.util.Collections;
+import com.zhilu.delivery.document.ProjectDocumentService;
+import com.zhilu.delivery.project.DeliveryStage;
 import java.sql.Timestamp;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -33,6 +39,7 @@ class AgentJobServiceTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private AgentJobService jobs;
   @MockBean private AgentGateway gateway;
+  @MockBean private ProjectDocumentService projectDocuments;
 
   @BeforeEach
   void seed() {
@@ -59,6 +66,99 @@ class AgentJobServiceTest {
     jdbc.update("insert into product_version(id,product_id,version_name,status) values (700,700,'V1','RELEASED')");
     jdbc.update("insert into delivery_project(id,organization_id,code,name,customer_name,product_id,product_version_id,manager_user_id,created_by) values (700,700,'PRJ-700','Agent 项目','客户',700,700,700,700)");
     jdbc.update("insert into project_member(project_id,user_id,project_role) values (700,700,'ENGINEER')");
+    when(projectDocuments.agentDocuments(anyLong(), any(DeliveryStage.class)))
+        .thenReturn(Collections.<Map<String, Object>>emptyList());
+    when(projectDocuments.agentDocumentIds(anyLong(), any(DeliveryStage.class)))
+        .thenReturn(Collections.<Long>emptyList());
+  }
+
+  @Test
+  void deliverTestDispatchesGoLiveDocumentContext() {
+    jdbc.update("update delivery_project set current_stage='GO_LIVE' where id=700");
+    Map<String, Object> document = document(
+        901L, DeliveryStage.GO_LIVE, "功能性测试报告", 7L);
+    when(projectDocuments.agentDocuments(700, DeliveryStage.GO_LIVE))
+        .thenReturn(Collections.singletonList(document));
+    when(gateway.submit(anyString(), any()))
+        .thenReturn(new AgentSubmission("external-go-live", "RUNNING"));
+
+    AgentJobView job = jobs.submit(700, "deliver-test", "normal", "go-live-key", 700);
+    jobs.dispatchPending();
+
+    ArgumentCaptor<AgentRequest> request = ArgumentCaptor.forClass(AgentRequest.class);
+    verify(gateway).submit(eq("platform-job-" + job.getId()), request.capture());
+    assertEquals("GO_LIVE", request.getValue().getContext().get("targetStage"));
+    assertEquals(Collections.singletonList(document),
+        request.getValue().getContext().get("documents"));
+  }
+
+  @Test
+  void projectDocumentCallbackAppliesDraftAndCompletesJob() {
+    Map<String, Object> document = document(
+        901L, DeliveryStage.START, "项目立项登记表", 7L);
+    when(projectDocuments.agentDocuments(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(document));
+    when(projectDocuments.agentDocumentIds(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(901L));
+    when(projectDocuments.applyAgentDraft(
+        700, DeliveryStage.START, 901L, "项目立项登记表", "# 完整正文", 7L))
+        .thenReturn(Collections.<String, Object>emptyMap());
+    when(gateway.submit(anyString(), any()))
+        .thenReturn(new AgentSubmission("external-document", "RUNNING"));
+    AgentJobView job = jobs.submit(700, "deliver-init", "normal", "document-key", 700);
+    jobs.dispatchPending();
+
+    jobs.accept(new AgentEvent("evt-document", "external-document", "SUCCEEDED", 100, null,
+        Collections.singletonList(new AgentArtifact("项目立项登记表", "text/markdown",
+            "# 完整正文", "PROJECT_DOCUMENT", 901L, 7L))));
+
+    verify(projectDocuments).applyAgentDraft(
+        700, DeliveryStage.START, 901L, "项目立项登记表", "# 完整正文", 7L);
+    assertEquals("SUCCEEDED", jobs.get(job.getId()).getStatus());
+  }
+
+  @Test
+  void missingProjectDocumentArtifactFailsJob() {
+    when(projectDocuments.agentDocuments(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(document(
+            901L, DeliveryStage.START, "项目立项登记表", 7L)));
+    when(projectDocuments.agentDocumentIds(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(901L));
+    when(gateway.submit(anyString(), any()))
+        .thenReturn(new AgentSubmission("external-missing", "RUNNING"));
+    AgentJobView job = jobs.submit(700, "deliver-init", "normal", "missing-key", 700);
+    jobs.dispatchPending();
+
+    jobs.accept(new AgentEvent("evt-missing", "external-missing", "SUCCEEDED", 100, null,
+        Collections.<AgentArtifact>emptyList()));
+
+    assertEquals("FAILED", jobs.get(job.getId()).getStatus());
+    verify(projectDocuments, never()).applyAgentDraft(
+        anyLong(), any(DeliveryStage.class), anyLong(), anyString(), anyString(), anyLong());
+  }
+
+  @Test
+  void duplicateProjectDocumentArtifactFailsJobBeforeApplyingDraft() {
+    when(projectDocuments.agentDocuments(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(document(
+            901L, DeliveryStage.START, "项目立项登记表", 7L)));
+    when(projectDocuments.agentDocumentIds(700, DeliveryStage.START))
+        .thenReturn(Collections.singletonList(901L));
+    when(gateway.submit(anyString(), any()))
+        .thenReturn(new AgentSubmission("external-duplicate", "RUNNING"));
+    AgentJobView job = jobs.submit(700, "deliver-init", "normal", "duplicate-key", 700);
+    jobs.dispatchPending();
+    AgentArtifact first = new AgentArtifact("项目立项登记表", "text/markdown",
+        "# 完整正文", "PROJECT_DOCUMENT", 901L, 7L);
+    AgentArtifact duplicate = new AgentArtifact("项立项登记表", "text/markdown",
+        "# 重复正文", "PROJECT_DOCUMENT", 901L, 7L);
+
+    jobs.accept(new AgentEvent("evt-duplicate", "external-duplicate", "SUCCEEDED", 100, null,
+        Arrays.asList(first, duplicate)));
+
+    assertEquals("FAILED", jobs.get(job.getId()).getStatus());
+    verify(projectDocuments, never()).applyAgentDraft(
+        anyLong(), any(DeliveryStage.class), anyLong(), anyString(), anyString(), anyLong());
   }
 
   @Test
@@ -140,5 +240,17 @@ class AgentJobServiceTest {
     assertEquals("SUCCEEDED", jobs.get(queued.getId()).getStatus());
     assertEquals(Integer.valueOf(1), jdbc.queryForObject(
         "select count(*) from callback_receipt where agent_job_id=?", Integer.class, queued.getId()));
+  }
+
+  private Map<String, Object> document(
+      long id, DeliveryStage stage, String title, long revision) {
+    Map<String, Object> value = new LinkedHashMap<String, Object>();
+    value.put("projectDocumentId", id);
+    value.put("stageCode", stage.name());
+    value.put("title", title);
+    value.put("markdown", "# " + title + "\n\n模版内容");
+    value.put("expectedRevision", revision);
+    value.put("gateRequired", true);
+    return value;
   }
 }

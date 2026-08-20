@@ -298,6 +298,24 @@ class ProjectDocumentInitializationTest {
   }
 
   @Test
+  void requeuesFailedProjectDocumentsAfterOutlineConfigurationIsRepaired() {
+    ProjectView project = projects.create(command());
+    jdbc.update("update document_job set status='RETRY',attempt_count=3,"
+            + "last_error='Outline is unavailable' where job_type='PROJECT_INIT' "
+            + "and business_id=?",
+        project.getId());
+    jdbc.update("update delivery_project set document_space_status='FAILED',"
+            + "document_space_error='Outline is unavailable' where id=?",
+        project.getId());
+
+    assertEquals(1, jobs.requeueFailedProjectJobs(701));
+
+    assertEquals("PENDING", jobStatus(project.getId()));
+    assertEquals(0, jobAttempts(project.getId()));
+    assertEquals("PENDING", projects.get(project.getId()).getDocumentSpaceStatus());
+  }
+
+  @Test
   void recoversAJobLeftRunningByAStoppedProcess() {
     ProjectView project = projects.create(command());
     jdbc.update("update document_job set status='RUNNING',lease_token='stale-worker',"

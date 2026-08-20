@@ -42,6 +42,13 @@ export function ProjectDocuments({ project }: { project: Project }) {
   const query = useQuery({
     queryKey: ['project-documents', project.id],
     queryFn: () => projectApi.documents(project.id),
+    refetchInterval: state => {
+      const initializing = ['PENDING', 'INITIALIZING'].includes(
+        project.documentSpaceStatus ?? '')
+      const stale = Array.isArray(state.state.data)
+        && state.state.data.some(item => item.status === 'PENDING')
+      return initializing || (project.documentSpaceStatus === 'READY' && stale) ? 2000 : false
+    },
   })
   const retry = useMutation({
     mutationFn: () => projectApi.retryDocuments(project.id),

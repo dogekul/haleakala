@@ -293,7 +293,7 @@ function HandoffDrawer({ opportunity, onClose }: { opportunity?: Opportunity; on
         productVersionId: input.productVersionId, managerUserId: input.managerUserId,
         gateMode: input.gateMode, startDate: input.startDate, plannedEndDate: input.plannedEndDate,
       } }),
-    onSuccess: async () => { await Promise.all([client.invalidateQueries({ queryKey: ['opportunities'] }), client.invalidateQueries({ queryKey: ['projects'] }), client.invalidateQueries({ queryKey: ['implementation'] })]); message.success('已转交实施'); onClose() },
+    onSuccess: async (_value, input) => { await Promise.all([client.invalidateQueries({ queryKey: ['opportunities'] }), client.invalidateQueries({ queryKey: ['projects'] }), client.invalidateQueries({ queryKey: ['implementation'] })]); message.success(input.mode === 'CREATE' ? '已转交实施，七阶段文档正在自动初始化' : '已关联实施项目'); onClose() },
     onError: (error: Error) => message.error(error.message) })
   return <Drawer title="转交实施" open={Boolean(opportunity)} width={620} onClose={onClose} extra={<Button type="primary" onClick={() => form.submit()}>确认转交</Button>}>
     <Form form={form} layout="vertical" initialValues={{ mode: 'CREATE', gateMode: 'BLOCK' }} onFinish={save.mutate}>

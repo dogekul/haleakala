@@ -4,6 +4,8 @@ import com.zhilu.delivery.admin.SystemSettingService;
 import com.zhilu.delivery.audit.AuditService;
 import com.zhilu.delivery.common.error.ConflictException;
 import com.zhilu.delivery.common.error.NotFoundException;
+import com.zhilu.delivery.document.ProjectDocumentService;
+import com.zhilu.delivery.project.DeliveryStage;
 import com.zhilu.delivery.storage.FileObjectView;
 import com.zhilu.delivery.storage.FileService;
 import java.io.ByteArrayInputStream;
@@ -12,8 +14,11 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,24 +31,38 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AgentJobService {
   private static final int MAX_DISPATCH_ATTEMPTS = 3;
-  private static final Set<String> SKILLS = Collections.unmodifiableSet(new HashSet<String>(
-      Arrays.asList("deliver-init", "deliver-require", "deliver-dev", "deliver-transition",
-          "deliver-standardize", "deliver-close")));
+  private static final Map<String, DeliveryStage> SKILL_STAGES;
+  private static final Set<String> SKILLS;
   private static final Set<String> TERMINAL = Collections.unmodifiableSet(new HashSet<String>(
       Arrays.asList("SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED")));
+
+  static {
+    Map<String, DeliveryStage> stages = new LinkedHashMap<String, DeliveryStage>();
+    stages.put("deliver-init", DeliveryStage.START);
+    stages.put("deliver-require", DeliveryStage.REQUIREMENT);
+    stages.put("deliver-dev", DeliveryStage.CUSTOM_DEV);
+    stages.put("deliver-test", DeliveryStage.GO_LIVE);
+    stages.put("deliver-transition", DeliveryStage.TRIAL_HANDOVER);
+    stages.put("deliver-standardize", DeliveryStage.STANDARDIZATION);
+    stages.put("deliver-close", DeliveryStage.CLOSE);
+    SKILL_STAGES = Collections.unmodifiableMap(stages);
+    SKILLS = Collections.unmodifiableSet(new LinkedHashSet<String>(stages.keySet()));
+  }
 
   private final JdbcTemplate jdbc;
   private final AgentGateway gateway;
   private final FileService files;
+  private final ProjectDocumentService projectDocuments;
   private final AuditService audit;
   private final SystemSettingService settings;
   private final String callbackUrl;
 
   public AgentJobService(JdbcTemplate jdbc, AgentGateway gateway, FileService files,
-      AuditService audit, SystemSettingService settings,
+      ProjectDocumentService projectDocuments, AuditService audit, SystemSettingService settings,
       @Value("${delivery.agent.callback-url:http://backend:8080/api/v1/integrations/agent/events}") String callbackUrl) {
-    this.jdbc = jdbc; this.gateway = gateway; this.files = files; this.audit = audit;
-    this.settings = settings; this.callbackUrl = callbackUrl;
+    this.jdbc = jdbc; this.gateway = gateway; this.files = files;
+    this.projectDocuments = projectDocuments; this.audit = audit; this.settings = settings;
+    this.callbackUrl = callbackUrl;
   }
 
   @Transactional
@@ -133,18 +152,28 @@ public class AgentJobService {
     String current = String.valueOf(row.get("status"));
     String next = event.getStatus().toUpperCase(java.util.Locale.ROOT);
     ensureTransition(current, next);
+    if (TERMINAL.contains(current)) {
+      jdbc.update("insert into callback_receipt(event_id,agent_job_id,status) values (?,?,?)",
+          event.getEventId(), id, next);
+      return;
+    }
+    String error = event.getError();
+    if ("SUCCEEDED".equals(next)) {
+      try {
+        bindArtifacts(row, event.getArtifacts());
+      } catch (RuntimeException failure) {
+        next = "FAILED";
+        error = "Agent 文档回写失败：" + concise(failure);
+      }
+    }
     jdbc.update("insert into callback_receipt(event_id,agent_job_id,status) values (?,?,?)",
         event.getEventId(), id, next);
-    if (TERMINAL.contains(current)) return;
     int progress = Math.max(0, Math.min(100, event.getProgress()));
     boolean terminal = TERMINAL.contains(next);
     jdbc.update("update agent_job set status=?,progress=?,error_message=?,"
             + (terminal ? "finished_at=current_timestamp," : "")
             + "updated_at=current_timestamp,version=version+1 where id=?",
-        next, progress, event.getError(), id);
-    if ("SUCCEEDED".equals(next)) {
-      bindArtifacts(row, event.getArtifacts());
-    }
+        next, progress, error, id);
     audit.record(((Number) row.get("organization_id")).longValue(), null,
         "AGENT_CALLBACK", "AGENT_JOB", String.valueOf(id), event.getEventId() + ":" + next);
   }
@@ -169,20 +198,60 @@ public class AgentJobService {
   }
 
   private void bindArtifacts(Map<String, Object> job, List<AgentArtifact> artifacts) {
-    if (artifacts == null) return;
-    for (AgentArtifact artifact : artifacts) {
-      if (artifact == null || blank(artifact.getName()) || artifact.getContent() == null) continue;
-      byte[] bytes = artifact.getContent().getBytes(StandardCharsets.UTF_8);
-      String mime = blank(artifact.getMimeType()) ? "text/markdown" : artifact.getMimeType();
-      long organizationId = ((Number) job.get("organization_id")).longValue();
-      long actor = ((Number) job.get("created_by")).longValue();
-      FileObjectView file = files.store(new ByteArrayInputStream(bytes), artifact.getName(), mime,
-          bytes.length, organizationId, actor);
-      jdbc.update("insert into project_artifact(project_id,stage_code,file_id,artifact_type,name) "
-              + "values (?,?,?,?,?)", ((Number) job.get("project_id")).longValue(), null,
-          file.getId(), blank(artifact.getArtifactType()) ? "AGENT_OUTPUT" : artifact.getArtifactType(),
-          artifact.getName());
+    long projectId = ((Number) job.get("project_id")).longValue();
+    DeliveryStage stage = stage(String.valueOf(job.get("skill_code")));
+    List<Long> expectedIds = projectDocuments.agentDocumentIds(projectId, stage);
+    Map<Long, AgentArtifact> documentArtifacts = new LinkedHashMap<Long, AgentArtifact>();
+    List<AgentArtifact> fileArtifacts = new ArrayList<AgentArtifact>();
+    for (AgentArtifact artifact : artifacts == null
+        ? Collections.<AgentArtifact>emptyList() : artifacts) {
+      if (artifact == null) continue;
+      if ("PROJECT_DOCUMENT".equals(artifact.getArtifactType())) {
+        if (artifact.getProjectDocumentId() == null || artifact.getExpectedRevision() == null
+            || blank(documentTitle(artifact)) || blank(artifact.getContent())) {
+          throw new IllegalArgumentException("Agent 返回的项目文档字段不完整");
+        }
+        if (documentArtifacts.put(artifact.getProjectDocumentId(), artifact) != null) {
+          throw new ConflictException("Agent 重复返回项目文档：" + artifact.getProjectDocumentId());
+        }
+      } else {
+        fileArtifacts.add(artifact);
+      }
     }
+    Set<Long> expected = new LinkedHashSet<Long>(expectedIds);
+    if (!expected.equals(documentArtifacts.keySet())) {
+      throw new ConflictException("Agent 返回的项目文档集合与当前阶段待补全文档不一致");
+    }
+    for (Long documentId : expectedIds) {
+      AgentArtifact artifact = documentArtifacts.get(documentId);
+      projectDocuments.validateAgentDraft(
+          projectId, stage, documentId.longValue(), documentTitle(artifact),
+          artifact.getContent(), artifact.getExpectedRevision().longValue());
+    }
+    for (Long documentId : expectedIds) {
+      AgentArtifact artifact = documentArtifacts.get(documentId);
+      projectDocuments.applyAgentDraft(
+          projectId, stage, documentId.longValue(), documentTitle(artifact),
+          artifact.getContent(), artifact.getExpectedRevision().longValue());
+    }
+    for (AgentArtifact artifact : fileArtifacts) {
+      storeFileArtifact(job, stage, artifact);
+    }
+  }
+
+  private void storeFileArtifact(
+      Map<String, Object> job, DeliveryStage stage, AgentArtifact artifact) {
+    if (artifact == null || blank(artifact.getName()) || artifact.getContent() == null) return;
+    byte[] bytes = artifact.getContent().getBytes(StandardCharsets.UTF_8);
+    String mime = blank(artifact.getMimeType()) ? "text/markdown" : artifact.getMimeType();
+    long organizationId = ((Number) job.get("organization_id")).longValue();
+    long actor = ((Number) job.get("created_by")).longValue();
+    FileObjectView file = files.store(new ByteArrayInputStream(bytes), artifact.getName(), mime,
+        bytes.length, organizationId, actor);
+    jdbc.update("insert into project_artifact(project_id,stage_code,file_id,artifact_type,name) "
+            + "values (?,?,?,?,?)", ((Number) job.get("project_id")).longValue(), stage.name(),
+        file.getId(), blank(artifact.getArtifactType()) ? "AGENT_OUTPUT" : artifact.getArtifactType(),
+        artifact.getName());
   }
 
   private void recoverAbandonedClaims() {
@@ -206,7 +275,7 @@ public class AgentJobService {
       long projectId = ((Number) job.get("project_id")).longValue();
       AgentSubmission submission = gateway.submit("platform-job-" + id, new AgentRequest(
           String.valueOf(job.get("skill_code")), String.valueOf(job.get("scenario")), callbackUrl,
-          projectContext(projectId)));
+          agentContext(projectId, String.valueOf(job.get("skill_code")))));
       if (submission == null || blank(submission.getExternalJobId())) {
         throw new IllegalStateException("Agent 未返回 externalJobId");
       }
@@ -245,9 +314,42 @@ public class AgentJobService {
   private Map<String, Object> projectContext(long projectId) {
     return jdbc.queryForMap(
         "select p.organization_id,p.code,p.name,p.customer_name,p.current_stage,"
+            + "p.start_date,p.planned_end_date,p.description,u.display_name manager_name,"
             + "pr.name product_name,pv.version_name from delivery_project p "
             + "join product pr on pr.id=p.product_id "
+            + "join app_user u on u.id=p.manager_user_id "
             + "join product_version pv on pv.id=p.product_version_id where p.id=?", projectId);
+  }
+
+  private Map<String, Object> agentContext(long projectId, String skill) {
+    DeliveryStage stage = stage(skill);
+    Map<String, Object> context = new LinkedHashMap<String, Object>(projectContext(projectId));
+    context.put("target_stage", stage.name());
+    context.put("targetStage", stage.name());
+    context.put("stage_name", stageName(stage));
+    context.put("stageName", stageName(stage));
+    context.put("documents", projectDocuments.agentDocuments(projectId, stage));
+    return context;
+  }
+
+  private DeliveryStage stage(String skill) {
+    DeliveryStage stage = SKILL_STAGES.get(skill);
+    if (stage == null) throw new IllegalArgumentException("不支持的 Skill: " + skill);
+    return stage;
+  }
+
+  private String stageName(DeliveryStage stage) {
+    if (DeliveryStage.START.equals(stage)) return "项目立项";
+    if (DeliveryStage.REQUIREMENT.equals(stage)) return "调研与启动";
+    if (DeliveryStage.CUSTOM_DEV.equals(stage)) return "方案与计划";
+    if (DeliveryStage.GO_LIVE.equals(stage)) return "开发与测试";
+    if (DeliveryStage.TRIAL_HANDOVER.equals(stage)) return "验证与发布";
+    if (DeliveryStage.STANDARDIZATION.equals(stage)) return "验收与结项";
+    return "过程跟进";
+  }
+
+  private String documentTitle(AgentArtifact artifact) {
+    return blank(artifact.getTitle()) ? artifact.getName() : artifact.getTitle();
   }
 
   private AgentJobView map(java.sql.ResultSet row, int index) throws java.sql.SQLException {

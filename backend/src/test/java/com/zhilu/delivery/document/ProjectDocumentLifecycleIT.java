@@ -2,9 +2,12 @@ package com.zhilu.delivery.document;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -14,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhilu.delivery.iam.service.CurrentUser;
+import com.zhilu.delivery.project.DeliveryStage;
 import com.zhilu.delivery.project.ProjectService;
 import java.time.Instant;
 import java.util.Arrays;
@@ -124,6 +128,81 @@ class ProjectDocumentLifecycleIT {
         7330, "参考资料", "# 参考资料\n\n请补充相关链接", 1, "OPTIONAL");
     when(outline.info(any(OutlineConnection.class), anyString())).thenAnswer(
         invocation -> outlineDocuments.get(invocation.getArgument(1)));
+    when(outline.update(any(OutlineConnection.class), anyString(), anyString(), anyString()))
+        .thenAnswer(invocation -> {
+          String id = invocation.getArgument(1);
+          OutlineDocument current = outlineDocuments.get(id);
+          OutlineDocument updated = document(
+              id, invocation.getArgument(2), invocation.getArgument(3),
+              current.getRevision() + 1);
+          outlineDocuments.put(id, updated);
+          return updated;
+        });
+  }
+
+  @Test
+  void agentDraftWritesCompleteMarkdownAndWaitsForManagerConfirmation() {
+    String markdown = "# 项目启动检查单\n\n## 项目目标\n"
+        + "华东银行核心系统升级范围和验收目标已明确。\n\n"
+        + "## 风险与计划\n需求边界与环境依赖由项目经理持续跟踪。";
+
+    Map<String, Object> updated = projectDocuments.applyAgentDraft(
+        projectId, DeliveryStage.START, todoDocumentId,
+        "项目启动检查单", markdown, 1L);
+
+    assertEquals("PENDING_CONFIRMATION", updated.get("status"));
+    assertNull(updated.get("confirmedRevision"));
+    assertNull(updated.get("confirmedBy"));
+    OutlineDocument outlineDocument = outlineDocuments.get("project-document-7310");
+    assertEquals(markdown, outlineDocument.getText());
+    assertEquals(2L, outlineDocument.getRevision());
+    Map<String, Object> stored = jdbc.queryForMap(
+        "select status,confirmed_revision,confirmed_by from project_document where id=?",
+        todoDocumentId);
+    assertEquals("PENDING_CONFIRMATION", stored.get("status"));
+    assertNull(stored.get("confirmed_revision"));
+    assertNull(stored.get("confirmed_by"));
+  }
+
+  @Test
+  void agentDraftWithPlaceholderIsRejectedWithoutWritingToOutline() {
+    String outlineId = "project-document-7310";
+    OutlineDocument before = outlineDocuments.get(outlineId);
+    String incomplete = "# 项目启动检查单\n\n## 项目目标\n目标已明确。\n\n"
+        + "## 风险与计划\n请填写";
+
+    assertThrows(com.zhilu.delivery.common.error.ConflictException.class,
+        () -> projectDocuments.applyAgentDraft(
+            projectId, DeliveryStage.START, todoDocumentId,
+            "项目启动检查单", incomplete, 1L));
+
+    OutlineDocument after = outlineDocuments.get(outlineId);
+    assertEquals(before.getRevision(), after.getRevision());
+    assertEquals(before.getText(), after.getText());
+    verify(outline, never()).update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString());
+    assertEquals("PENDING", jdbc.queryForObject(
+        "select status from project_document where id=?", String.class, todoDocumentId));
+  }
+
+  @Test
+  void staleAgentRevisionCannotOverwriteAConcurrentHumanEdit() {
+    String outlineId = "project-document-7310";
+    String humanMarkdown = "# 项目启动检查单\n\n人工已补充最新项目目标和执行计划。";
+    outlineDocuments.put(outlineId, document(
+        outlineId, "项目启动检查单", humanMarkdown, 2L));
+    String agentMarkdown = "# 项目启动检查单\n\nAgent 基于旧版本生成的内容。";
+
+    assertThrows(com.zhilu.delivery.common.error.ConflictException.class,
+        () -> projectDocuments.applyAgentDraft(
+            projectId, DeliveryStage.START, todoDocumentId,
+            "项目启动检查单", agentMarkdown, 1L));
+
+    OutlineDocument after = outlineDocuments.get(outlineId);
+    assertEquals(2L, after.getRevision());
+    assertEquals(humanMarkdown, after.getText());
+    verify(outline, never()).update(
+        any(OutlineConnection.class), anyString(), anyString(), anyString());
   }
 
   @Test

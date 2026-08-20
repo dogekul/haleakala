@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DocumentJobService {
@@ -141,6 +142,26 @@ public class DocumentJobService {
             + "document_space_error=null,updated_at=current_timestamp where id=? "
             + "and organization_id=?",
         projectId, organizationId);
+  }
+
+  @Transactional
+  public int requeueFailedProjectJobs(long organizationId) {
+    jdbc.update("update delivery_project set document_space_status='PENDING',"
+            + "document_space_error=null,updated_at=current_timestamp "
+            + "where organization_id=? and exists (select 1 from document_job j "
+            + "where j.organization_id=? and j.business_id=delivery_project.id "
+            + "and j.job_type in (?,?,?) and j.status in ('FAILED','RETRY'))",
+        organizationId, organizationId, PROJECT_INIT, PROJECT_TEMPLATE_SYNC,
+        DocumentMigrationService.PROJECT_MIGRATION);
+    return jdbc.update(
+        "update document_job set status='PENDING',attempt_count=0,"
+            + "next_attempt_at=current_timestamp,last_error=null,started_at=null,"
+            + "completed_at=null,lease_token=null,lease_expires_at=null,"
+            + "updated_at=current_timestamp,version=version+1 "
+            + "where organization_id=? and job_type in (?,?,?) "
+            + "and status in ('FAILED','RETRY')",
+        organizationId, PROJECT_INIT, PROJECT_TEMPLATE_SYNC,
+        DocumentMigrationService.PROJECT_MIGRATION);
   }
 
   private void run(long jobId) {

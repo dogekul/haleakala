@@ -24,14 +24,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/admin/document-center")
 public class DocumentAdminController {
   private final DocumentMigrationService migrations;
+  private final DocumentJobService documentJobs;
   private final OutlineConfigurationService configurations;
   private final OutlineClient outline;
   private final AuditService audit;
 
   public DocumentAdminController(
-      DocumentMigrationService migrations, OutlineConfigurationService configurations,
-      OutlineClient outline, AuditService audit) {
+      DocumentMigrationService migrations, DocumentJobService documentJobs,
+      OutlineConfigurationService configurations, OutlineClient outline, AuditService audit) {
     this.migrations = migrations;
+    this.documentJobs = documentJobs;
     this.configurations = configurations;
     this.outline = outline;
     this.audit = audit;
@@ -79,6 +81,7 @@ public class DocumentAdminController {
         draft.getConnection(), draft.getCollectionReference());
     Map<String, Object> value = configurations.saveValidated(
         user.getOrganizationId(), draft, collection);
+    documentJobs.requeueFailedProjectJobs(user.getOrganizationId());
     audit(user, "UPDATE", "OUTLINE_CONFIGURATION",
         String.valueOf(user.getOrganizationId()),
         "更新 Outline 配置 · collection=" + collection.getId()

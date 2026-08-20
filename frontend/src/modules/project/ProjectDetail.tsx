@@ -5,12 +5,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Form, Input, InputNumber,
-  List, Modal, Progress, Radio, Row, Select, Space, Steps, Table, Tabs, Tag, Timeline,
+  List, Modal, Progress, Radio, Row, Select, Space, Table, Tabs, Tag, Timeline,
   Typography, message,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PageState } from '../../components/PageState'
 import { AgentExecutionPanel } from '../../components/AgentExecutionPanel'
 import { ApiError } from '../../services/api'
@@ -97,7 +97,13 @@ const documentStatusMeta: Record<ProjectDocument['status'], { label: string; col
 
 export function ProjectDetail() {
   const id = Number(useParams().id)
-  const query = useQuery({ queryKey: ['project', id], queryFn: () => projectApi.get(id), enabled: Number.isFinite(id) })
+  const query = useQuery({
+    queryKey: ['project', id],
+    queryFn: () => projectApi.get(id),
+    enabled: Number.isFinite(id),
+    refetchInterval: state => ['PENDING', 'INITIALIZING'].includes(
+      state.state.data?.documentSpaceStatus ?? '') ? 2000 : false,
+  })
   return <PageState loading={query.isLoading} error={query.error} onRetry={() => void query.refetch()} empty={!query.data && !query.isLoading}>
     {query.data && <ProjectDetailContent project={query.data} />}
   </PageState>
@@ -137,7 +143,7 @@ function ProjectDetailContent({ project }: { project: Project }) {
       { key: 'documents', label: <span><FileTextOutlined /> 项目文档</span>, children: <ProjectDocuments project={project} /> },
       { key: 'risks', label: `风险登记册 (${project.risks.length})`, children: <Risks project={project} /> },
       { key: 'milestones', label: '里程碑与时间线', children: <Milestones project={project} /> },
-      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} /> },
+      { key: 'agent', label: <span><RobotOutlined /> Skill / Agent</span>, children: <AgentExecutionPanel projectId={project.id} currentStage={project.currentStage} /> },
       { key: 'settings', label: <span><SettingOutlined /> 项目信息与设置</span>, children: <Settings project={project} /> },
     ]} />
   </div>
@@ -145,13 +151,22 @@ function ProjectDetailContent({ project }: { project: Project }) {
 
 function Lifecycle({ project }: { project: Project }) {
   const client = useQueryClient()
+  const navigate = useNavigate()
   const currentIndex = project.stages.findIndex(item => item.code === project.currentStage)
+  const completedStages = project.stages.filter(item => item.status === 'COMPLETED').length
   const next = project.stages[currentIndex + 1]
   const nextName = next ? stageNames[next.code] ?? next.name : undefined
   const guide = stageGuides[project.currentStage] ?? []
   const documents = useQuery({
     queryKey: ['project-documents', project.id],
     queryFn: () => projectApi.documents(project.id),
+    refetchInterval: state => {
+      const initializing = ['PENDING', 'INITIALIZING'].includes(
+        project.documentSpaceStatus ?? '')
+      const stale = Array.isArray(state.state.data)
+        && state.state.data.some(item => item.status === 'PENDING')
+      return initializing || (project.documentSpaceStatus === 'READY' && stale) ? 2000 : false
+    },
   })
   const syncDocuments = useMutation({
     mutationFn: () => projectApi.syncDocuments(project.id),
@@ -244,25 +259,41 @@ function Lifecycle({ project }: { project: Project }) {
   }
   return <div>
     <Card className="lifecycle-card">
-      <Steps current={currentIndex} items={project.stages.map(stage => ({
-        title: stageNames[stage.code] ?? stage.name,
-        status: stage.status === 'COMPLETED' ? 'finish'
-          : stage.status === 'ACTIVE' ? 'process'
-          : stage.status === 'BLOCKED' ? 'error' : 'wait',
-        description: <Space size={4} wrap>
-          <Tag color={stageStatusColors[stage.status]}>{stageStatusNames[stage.status]}</Tag>
-          {stage.gateStatus === 'BLOCKING' && <Tag color="red">门禁阻断</Tag>}
-        </Space>,
-      }))} />
-      <div className="stage-focus"><div><span>交付阶段 {currentIndex + 2} / {project.stages.length + 1}</span><h3>{stageNames[project.currentStage]}</h3>
-        <p>{project.stages[currentIndex]?.gateMessage ?? '按交付检查清单完成本阶段任务和产出物。'}</p></div>
-        {documents.isLoading ? <Button type="primary" loading disabled>正在校验文档门禁</Button>
+      <div className="lifecycle-heading">
+        <div><span>DELIVERY FLOW</span><strong>七阶段交付流程</strong></div>
+        <div><span>已完成 {completedStages} 个阶段</span><b>{Math.round(completedStages / project.stages.length * 100)}%</b></div>
+      </div>
+      <div className="stage-flow-scroll">
+        <ol className="stage-flow" aria-label="项目七阶段">
+          {project.stages.map((stage, index) => {
+            const name = stageNames[stage.code] ?? stage.name
+            return <li className={`stage-flow-item is-${stage.status.toLowerCase()}${index === currentIndex ? ' is-current' : ''}`} key={stage.code}>
+              <div className="stage-flow-node" aria-current={index === currentIndex ? 'step' : undefined}
+                aria-label={`${index === currentIndex ? '当前阶段：' : ''}${name}，${stageStatusNames[stage.status]}${stage.gateStatus === 'BLOCKING' ? '，门禁阻断' : ''}`}>
+                <span className="stage-flow-index">{stage.status === 'COMPLETED' ? <CheckCircleFilled /> : index + 1}</span>
+                <span className="stage-flow-copy"><strong>{name}</strong><small>{stageStatusNames[stage.status]}</small></span>
+                {stage.gateStatus === 'BLOCKING' && <span className="stage-flow-warning" title="门禁阻断"><ExclamationCircleFilled />阻断</span>}
+              </div>
+            </li>
+          })}
+        </ol>
+      </div>
+      <div className="stage-focus">
+        <div className="stage-focus-copy"><span><i /> 当前节点 · 阶段 {currentIndex + 1}</span><h3>{stageNames[project.currentStage]}</h3>
+          <p>{project.stages[currentIndex]?.gateMessage ?? '按交付检查清单完成本阶段任务和产出物。'}</p></div>
+        <div className="stage-focus-meta">
+          <div><span>阶段位置</span><strong>{currentIndex + 1} / {project.stages.length}</strong></div>
+          <div><span>门禁文档</span><strong>{documents.isError ? '加载失败' : `${completedCount} / ${requiredDocuments.length || '-'}`}</strong></div>
+          <div><span>项目负责人</span><strong>{project.managerName}</strong></div>
+        </div>
+        <div className="stage-focus-action">
+        {documents.isError ? <Button type="primary" disabled>文档状态不可用</Button>
+          : documents.isLoading ? <Button type="primary" loading disabled>正在校验文档门禁</Button>
           : project.status === 'CLOSED' ? <Tag color="green">项目已关闭</Tag>
-          : incompleteDocuments.length ? <Button type="primary" icon={<FileTextOutlined />}>
-          <Link to={projectDocumentUrl(project, incompleteDocuments[0])}>
+          : incompleteDocuments.length ? <Button type="primary" icon={<FileTextOutlined />}
+            onClick={() => navigate(projectDocumentUrl(project, incompleteDocuments[0]))}>
             去完善 {incompleteDocuments.length} 份门禁文档
-          </Link>
-        </Button> : next ? <Button
+          </Button> : next ? <Button
           aria-label={`推进至${nextName}`}
           type="primary"
           loading={advance.isPending || documents.isLoading}
@@ -273,9 +304,12 @@ function Lifecycle({ project }: { project: Project }) {
               danger
               loading={close.isPending}
               onClick={requestClose}
-            >完成并关闭项目</Button>}</div>
+            >完成并关闭项目</Button>}
+        </div>
+      </div>
     </Card>
-    <Card className="stage-guide-card" title="本阶段文档门禁" extra={<Space><Tag color="red">关键卡点</Tag><Tag color="blue">关键过程</Tag><Tag color="green">仅归档</Tag></Space>}>
+    <Card className="stage-guide-card" title="本阶段文档门禁"
+      extra={<Typography.Text type="secondary">{guide.reduce((total, item) => total + item.deliverables.length, 0)} 份阶段交付物</Typography.Text>}>
       <div className="stage-gate-summary">
         <div>
           <strong>{requiredDocuments.length ? `${completedCount} / ${requiredDocuments.length}` : '等待同步'}</strong>
@@ -296,19 +330,23 @@ function Lifecycle({ project }: { project: Project }) {
       </div>
       {documents.error && <Alert className="stage-gate-alert" type="error" showIcon
         message="文档状态加载失败" description={(documents.error as Error).message} />}
-      <div className="stage-guide-head"><span>事项</span><span>交付物</span><span>完成状态</span><span>说明 / 操作</span></div>
-      {guide.flatMap(group => group.deliverables.map((deliverable, index) => {
-        const document = preferredDocument(currentDocuments, deliverable.title)
-        const status = document ? documentStatusMeta[document.status] : undefined
-        return <div className="stage-guide-row" key={`${group.matter}-${deliverable.title}`}>
-          <strong>{index === 0 ? group.matter : ''}</strong>
-          <span className="stage-guide-document"><span>{deliverable.title}</span><Tag color={nodeColors[deliverable.type]}>{deliverable.type}</Tag></span>
-          <span><Tag color={status?.color ?? 'default'}>{status?.label ?? '待从知识库同步'}</Tag></span>
-          <span className="stage-guide-action"><span>{deliverable.note}</span>{document
-            ? <Link to={projectDocumentUrl(project, document)}>{document.status === 'COMPLETED' ? '查看文档' : '去完善文档'}</Link>
-            : <Button type="link" loading={syncDocuments.isPending} onClick={() => syncDocuments.mutate()}>立即同步</Button>}</span>
-        </div>
-      }))}
+      <div className="stage-deliverable-groups">{guide.map(group => <section className="stage-deliverable-group" key={group.matter}>
+        <header><div><span>交付事项</span><strong>{group.matter}</strong></div><b>{group.deliverables.length} 份交付物</b></header>
+        <div>{group.deliverables.map(deliverable => {
+          const document = preferredDocument(currentDocuments, deliverable.title)
+          const status = document ? documentStatusMeta[document.status] : undefined
+          return <div className="stage-deliverable-row" key={deliverable.title}>
+            <div className="stage-deliverable-main">
+              <span className={`stage-deliverable-type is-${nodeColors[deliverable.type]}`}><i />{deliverable.type}</span>
+              <strong>{deliverable.title}</strong><p>{deliverable.note}</p>
+            </div>
+            <div className="stage-deliverable-status"><span>完成状态</span><Tag color={status?.color ?? 'default'}>{status?.label ?? '待从知识库同步'}</Tag></div>
+            <div className="stage-deliverable-action">{document
+              ? <Link to={projectDocumentUrl(project, document)}>{document.status === 'COMPLETED' ? '查看文档' : '去完善文档'}</Link>
+              : <Button type="link" loading={syncDocuments.isPending} onClick={() => syncDocuments.mutate()}>立即同步</Button>}</div>
+          </div>
+        })}</div>
+      </section>)}</div>
     </Card>
     <Row gutter={16} className="detail-grid"><Col span={16}><Card title="最近活动">
       <Timeline items={project.activities.slice(0, 8).map(activity => ({ children: <div><strong>{String(activity.summary)}</strong><p>{String(activity.actorName ?? '系统')} · {String(activity.createdAt ?? '')}</p></div> }))} />

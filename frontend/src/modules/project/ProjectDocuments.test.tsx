@@ -142,6 +142,35 @@ it('项目负责人可编辑并确认，普通成员只能编辑查看', async (
   expect(screen.queryByRole('button', { name: '确认文档' })).not.toBeInTheDocument()
 })
 
+it('项目文档初始化期间自动轮询项目与文档状态', async () => {
+  let projectCalls = 0
+  let documentCalls = 0
+  const pendingProject = { ...project, documentSpaceStatus: 'PENDING' as const }
+  const pendingDocument = { ...documents[2], status: 'PENDING' as const }
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/projects/9') {
+      projectCalls += 1
+      return json(projectCalls === 1
+        ? pendingProject : { ...pendingProject, documentSpaceStatus: 'READY' })
+    }
+    if (path === '/api/v1/projects/9/documents') {
+      documentCalls += 1
+      return json(documentCalls === 1
+        ? [pendingDocument] : [{ ...pendingDocument, status: 'TODO' }])
+    }
+    throw new Error(`unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
+    managerAuth, '/projects/9')
+
+  await waitFor(() => {
+    expect(projectCalls).toBeGreaterThanOrEqual(2)
+    expect(documentCalls).toBeGreaterThanOrEqual(2)
+  }, { timeout: 3500 })
+})
+
 it('保存正文后同步刷新当前抽屉中的项目文档状态', async () => {
   let currentDocuments = documents
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -267,6 +296,7 @@ it('七阶段看板统一展示新版阶段名称和中文状态', async () => {
     stages: stages.map((stage, index) => ({
       ...stage,
       status: index === 0 ? 'COMPLETED' : index === 1 ? 'ACTIVE' : index === 2 ? 'BLOCKED' : 'PENDING',
+      gateStatus: index === 2 ? 'BLOCKING' : stage.gateStatus,
     })),
   }
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
@@ -284,12 +314,31 @@ it('七阶段看板统一展示新版阶段名称和中文状态', async () => {
   expect(screen.getByText('验证与发布')).toBeVisible()
   expect(screen.getByText('验收与结项')).toBeVisible()
   expect(screen.getByText('过程跟进')).toBeVisible()
+  expect(screen.getByRole('list', { name: '项目七阶段' })).toBeVisible()
+  expect(screen.getByLabelText(/当前阶段：调研与启动，进行中/)).toHaveAttribute('aria-current', 'step')
+  expect(screen.getByLabelText(/方案与计划，已阻塞，门禁阻断/)).toBeVisible()
+  expect(screen.getByText('阻断')).toBeVisible()
+  expect(screen.getByText('2 / 7')).toBeVisible()
   expect(screen.queryByText('需求采集')).not.toBeInTheDocument()
   expect(screen.queryByText('二开实施')).not.toBeInTheDocument()
   expect(screen.getByText('已完成')).toBeVisible()
   expect(screen.getByText('进行中')).toBeVisible()
   expect(screen.getByText('已阻塞')).toBeVisible()
   expect(screen.getAllByText('待开始').length).toBe(4)
+})
+
+it('文档状态加载失败时禁止阶段推进', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    if (String(input) === '/api/v1/projects/9') return json(project)
+    if (String(input) === '/api/v1/projects/9/documents') return Promise.reject(new Error('Outline 暂时不可用'))
+    throw new Error(`unexpected request: ${String(input)}`)
+  }))
+  show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
+    managerAuth, '/projects/9')
+
+  expect(await screen.findByText('文档状态加载失败')).toBeVisible()
+  expect(screen.getByRole('button', { name: '文档状态不可用' })).toBeDisabled()
+  expect(screen.queryByRole('button', { name: /推进至/ })).not.toBeInTheDocument()
 })
 
 it('项目阶段推进按钮使用可见的白色文字', async () => {
@@ -354,8 +403,11 @@ it('WARNING 项目也必须先完成知识库必需文档', async () => {
   show(<Routes><Route path="/projects/:id" element={<ProjectDetail />} /></Routes>,
     managerAuth, '/projects/9')
 
-  const complete = await screen.findByRole('link', { name: /去完善 1 份门禁文档/ })
-  expect(complete).toHaveAttribute('href', '/projects/9?tab=documents&stage=START&docId=10')
+  const complete = await screen.findByRole('button', { name: /去完善 1 份门禁文档/ })
+  expect(complete.closest('a')).toBeNull()
+  await userEvent.click(complete)
+  await waitFor(() => expect(screen.getByRole('tab', { name: /项目文档/ }))
+    .toHaveAttribute('aria-selected', 'true'))
   expect(screen.queryByRole('button', { name: /推进至调研与启动/ })).not.toBeInTheDocument()
   expect(fetch).not.toHaveBeenCalledWith('/api/v1/projects/9/advance', expect.anything())
 })

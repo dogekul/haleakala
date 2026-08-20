@@ -181,6 +181,126 @@ public class ProjectDocumentService {
     return result;
   }
 
+  public List<Map<String, Object>> agentDocuments(long projectId, DeliveryStage stage) {
+    Map<String, Object> project = project(projectId);
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    boolean hasCustomDevelopment = hasCustomDevelopment(projectId);
+    List<Long> ids = stageDocumentIds(projectId, stage);
+    List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+    for (Long id : ids) {
+      Map<String, Object> row = record(id.longValue(), projectId);
+      Object linkValue = row.get("outline_link_id");
+      if (linkValue == null) {
+        throw new ConflictException("项目文档尚未初始化：" + row.get("template_title"));
+      }
+      DocumentView document = documents.readLink(
+          ((Number) linkValue).longValue(), organizationId);
+      Map<String, Object> item = new LinkedHashMap<String, Object>();
+      item.put("projectDocumentId", id);
+      item.put("stageCode", stage.name());
+      item.put("title", document.getTitle());
+      item.put("markdown", document.getMarkdown());
+      item.put("expectedRevision", document.getRevision());
+      item.put("requirement", row.get("requirement"));
+      item.put("conditionCode", condition(row.get("condition_code")));
+      boolean required = gateRequired(item, hasCustomDevelopment);
+      item.put("gateRequired", required);
+      item.put("sourceTemplateId", row.get("source_template_id"));
+      item.put("sourceTemplateRevision", row.get("source_template_revision"));
+      String status = contentStatus(
+          document.getTitle(), document.getMarkdown(),
+          row.get("source_markdown_snapshot") == null
+              ? null : String.valueOf(row.get("source_markdown_snapshot")));
+      Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
+      if ("PENDING_CONFIRMATION".equals(status)
+          && confirmedRevision != null
+          && confirmedRevision.longValue() == document.getRevision()) {
+        status = "COMPLETED";
+      }
+      item.put("status", status);
+      if (required && !"PENDING_CONFIRMATION".equals(status)
+          && !"COMPLETED".equals(status)) {
+        result.add(item);
+      }
+    }
+    return result;
+  }
+
+  public List<Long> agentDocumentIds(long projectId, DeliveryStage stage) {
+    List<Long> result = new ArrayList<Long>();
+    for (Map<String, Object> document : agentDocuments(projectId, stage)) {
+      result.add(((Number) document.get("projectDocumentId")).longValue());
+    }
+    return result;
+  }
+
+  private List<Long> stageDocumentIds(long projectId, DeliveryStage stage) {
+    return jdbc.queryForList(
+        "select id from project_document where project_id=? and stage_code=? order by id",
+        Long.class, projectId, stage.name());
+  }
+
+  public void validateAgentDraft(
+      long projectId, DeliveryStage stage, long projectDocumentId, String title,
+      String markdown, long expectedRevision) {
+    Map<String, Object> project = project(projectId);
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    Map<String, Object> row = record(projectDocumentId, projectId);
+    validateAgentDraft(stage, title, markdown, expectedRevision, organizationId, row);
+  }
+
+  public Map<String, Object> applyAgentDraft(
+      long projectId, DeliveryStage stage, long projectDocumentId, String title,
+      String markdown, long expectedRevision) {
+    Map<String, Object> project = project(projectId);
+    long organizationId = ((Number) project.get("organization_id")).longValue();
+    Map<String, Object> row = record(projectDocumentId, projectId);
+    validateAgentDraft(stage, title, markdown, expectedRevision, organizationId, row);
+    long linkId = ((Number) row.get("outline_link_id")).longValue();
+    documents.updateLink(linkId, organizationId, title.trim(), markdown, expectedRevision);
+    Map<String, Object> updated = refresh(projectDocumentId, projectId, organizationId);
+    if (!"PENDING_CONFIRMATION".equals(updated.get("status"))) {
+      throw new ConflictException("Agent 产出仍包含待填写内容，请重新执行或人工完善");
+    }
+    return updated;
+  }
+
+  private void validateAgentDraft(
+      DeliveryStage stage, String title, String markdown, long expectedRevision,
+      long organizationId, Map<String, Object> row) {
+    if (!stage.name().equals(row.get("stage_code"))) {
+      throw new ConflictException("Agent 产出与目标阶段不一致");
+    }
+    if (title == null || title.trim().isEmpty() || markdown == null || markdown.trim().isEmpty()) {
+      throw new IllegalArgumentException("Agent 返回的项目文档内容不完整");
+    }
+    Object linkValue = row.get("outline_link_id");
+    if (linkValue == null) throw new ConflictException("项目文档尚未初始化");
+    DocumentView current = documents.readLink(((Number) linkValue).longValue(), organizationId);
+    if (current.getRevision() != expectedRevision) {
+      throw new ConflictException("Outline 文档已被修改，请刷新后重新执行 Agent");
+    }
+    if (!current.getTitle().equals(title.trim())) {
+      throw new ConflictException("Agent 不能修改项目文档标题");
+    }
+    Long confirmedRevision = nullableLong(row.get("confirmed_revision"));
+    String currentStatus = contentStatus(
+        current.getTitle(), current.getMarkdown(),
+        row.get("source_markdown_snapshot") == null
+            ? null : String.valueOf(row.get("source_markdown_snapshot")));
+    if ("PENDING_CONFIRMATION".equals(currentStatus)
+        || (confirmedRevision != null && confirmedRevision.longValue() == current.getRevision())) {
+      throw new ConflictException("项目文档已提交确认或完成，不能由 Agent 覆盖");
+    }
+    String outputStatus = contentStatus(
+        current.getTitle(), markdown,
+        row.get("source_markdown_snapshot") == null
+            ? null : String.valueOf(row.get("source_markdown_snapshot")));
+    if (!"PENDING_CONFIRMATION".equals(outputStatus)) {
+      throw new ConflictException("Agent 产出仍包含待填写内容，请重新执行或人工完善");
+    }
+  }
+
   private void copyTemplate(
       long projectId, long organizationId, Map<String, Object> template,
       Map<String, Long> stages) {

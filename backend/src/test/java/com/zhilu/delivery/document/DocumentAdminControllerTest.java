@@ -7,6 +7,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -23,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -38,8 +40,39 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class DocumentAdminControllerTest {
   @Autowired private MockMvc mvc;
   @MockBean private DocumentMigrationService migrations;
+  @MockBean private DocumentJobService documentJobs;
   @MockBean private OutlineConfigurationService configurations;
+  @MockBean private OutlineClient outline;
   @MockBean private AuditService audit;
+
+  @Test
+  void savingValidOutlineConfigurationRequeuesFailedProjectDocuments() throws Exception {
+    OutlineConnection connection = new OutlineConnection(
+        7100, "http://outline", "http://outline", "ol_api_test",
+        "collection-ref", "", "ORGANIZATION");
+    OutlineConfigurationDraft draft = new OutlineConfigurationDraft(
+        connection, "collection-ref", true);
+    OutlineCollection collection = new OutlineCollection(
+        "collection-id", "交付文档", "delivery");
+    when(configurations.draft(
+        7100, "http://outline", "http://outline", "ol_api_test", "collection-ref"))
+        .thenReturn(draft);
+    when(outline.testConnection(connection, "collection-ref")).thenReturn(collection);
+    when(configurations.saveValidated(7100, draft, collection))
+        .thenReturn(Collections.singletonMap("collectionId", "collection-id"));
+
+    mvc.perform(put("/api/v1/admin/document-center/config")
+            .with(actor(true)).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"baseUrl\":\"http://outline\","
+                + "\"publicBaseUrl\":\"http://outline\","
+                + "\"apiToken\":\"ol_api_test\","
+                + "\"collectionId\":\"collection-ref\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.collectionId").value("collection-id"));
+
+    verify(documentJobs).requeueFailedProjectJobs(7100);
+  }
 
   @Test
   void exposesStatusAndOperationsOnlyToSystemManagers() throws Exception {

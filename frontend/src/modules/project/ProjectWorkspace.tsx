@@ -128,12 +128,12 @@ function CreateProjectDrawer({ open, onClose }: { open: boolean; onClose: () => 
   const close = () => { form.resetFields(); onClose() }
   const create = useMutation({ mutationFn: projectApi.create, onSuccess: async () => {
     await client.invalidateQueries({ queryKey: ['projects'] })
-    message.success('项目创建成功，七阶段已初始化')
+    message.success('项目已创建，七阶段文档正在自动初始化')
     form.resetFields(); onClose()
-  } })
+  }, onError: (error: Error) => message.error(error.message) })
   return <Drawer width={520} open={open} onClose={close} title="创建交付项目"
     extra={<Button type="primary" loading={create.isPending} onClick={() => form.submit()}>创建项目</Button>}>
-    <div className="drawer-hint">项目创建后会自动生成七阶段、初始负责人和项目活动记录。</div>
+    <div className="drawer-hint">项目创建后会自动生成七阶段，并从知识库模版初始化各阶段 Outline 文档。</div>
     <Form form={form} layout="vertical" onFinish={values => create.mutate({ ...values,
       startDate: values.startDate?.format('YYYY-MM-DD'), plannedEndDate: values.plannedEndDate?.format('YYYY-MM-DD') })}
       initialValues={{ managerUserId: me?.id, gateMode: 'BLOCK', startDate: dayjs() }}>
